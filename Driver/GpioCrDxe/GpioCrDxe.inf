@@ -1,0 +1,45 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = GpioCrDxe
+  FILE_GUID                      = a68ba075-27e8-44fe-bdda-6c86a216dad2
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = GpioEntryPoint
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = AARCH64
+#
+
+[Sources]
+  GpioCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  GpioLib
+  PdcLib
+  MemoryAllocationLib
+  IoLib
+  BaseMemoryLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiGpioCrProtocolGuid   # PRODUCER
+
+[Depex]
+  TRUE

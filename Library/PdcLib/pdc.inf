@@ -1,0 +1,30 @@
+
+  #/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = PdcLib
+  FILE_GUID                      = 266dd8e8-670d-4a85-b657-37b7242cc172
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PdcLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  QcomPkg/QcomPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  IoLib
+  CrTargetLib
+  OskInterruptLib
+
+[Sources.common]
+  pdc.c

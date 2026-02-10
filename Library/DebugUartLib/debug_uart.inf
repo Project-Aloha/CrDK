@@ -1,0 +1,30 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = DebugUartLib
+  FILE_GUID                      = 01d9a22c-fe1a-417b-ab1a-e5abb804c576
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = DebugUartLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  QcomPkg/QcomPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  IoLib
+  MemoryMapHelperLib
+  CrTargetLib
+  OskInterruptLib
+
+[Sources.common]
+  debug_uart.c

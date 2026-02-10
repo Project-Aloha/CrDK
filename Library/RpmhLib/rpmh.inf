@@ -1,0 +1,29 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = RpmhLib
+  FILE_GUID                      = 9469674b-2e12-4671-8d6a-027a161ddcb9
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = RpmhLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  QcomPkg/QcomPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  IoLib
+  OskInterruptLib
+  CrTargetLib
+
+[Sources.common]
+  rpmh.c

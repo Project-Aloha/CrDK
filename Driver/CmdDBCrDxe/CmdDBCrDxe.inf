@@ -1,0 +1,43 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CmdDBCrDxe
+  FILE_GUID                      = 0B5DF34A-CC57-4A47-B3F2-D64DA641B1B0
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = CmdDBEntryPoint
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = AARCH64
+#
+
+[Sources]
+  CmdDBCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  CmdDBLib
+  MemoryAllocationLib
+  BaseMemoryLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  DevicePathLib
+
+[Protocols]
+  gEfiCmdDBCrProtocolGuid   # PRODUCER
+
+[Depex]
+  TRUE

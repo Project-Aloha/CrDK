@@ -1,0 +1,30 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OskInterruptLib
+  FILE_GUID                      = eb40c6ea-5e51-4f75-9101-c821b010498e
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = OskInterruptLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  TimerLib
+  IoLib
+
+[Protocols]
+  gHardwareInterrupt2ProtocolGuid
+
+[Sources.common]
+  oskinterrupt.c

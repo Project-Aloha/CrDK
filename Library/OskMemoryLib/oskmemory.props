@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <CRANE_CRDK_LIB_OSKMEMORY_DIR>$(MSBuildThisFileDirectory)\</CRANE_CRDK_LIB_OSKMEMORY_DIR>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_PropertySheetDisplayName>Oskmemory</_PropertySheetDisplayName>
+    <SourcePath>$(CRANE_CRDK_LIB_OSKMEMORY_DIR);$(SourcePath)</SourcePath>
+    <IncludePath>$(SolutionDir);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <BuildMacro Include="CRANE_CRDK_LIB_OSKMEMORY_DIR">
+      <Value>$(CRANE_CRDK_LIB_OSKMEMORY_DIR)</Value>
+    </BuildMacro>
+    <ClCompile Include="$(CRANE_CRDK_LIB_OSKMEMORY_DIR)/OskMemoryLib.c" />
+  </ItemGroup>
+</Project>

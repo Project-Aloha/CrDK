@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <CRANE_CRDK_DIR_NAME>CrDK</CRANE_CRDK_DIR_NAME>
+    <CRANE_CRDK_PATH>$(MSBuildThisFileDirectory)/../$(CRANE_CRDK_DIR_NAME)/</CRANE_CRDK_PATH>
+    <CRANE_CRDK_INCLUDE_DIR>$(CRANE_CRDK_PATH)/Include</CRANE_CRDK_INCLUDE_DIR>
+    <CRANE_CRDK_LIBRARY_DIR>$(CRANE_CRDK_PATH)/Library</CRANE_CRDK_LIBRARY_DIR>
+  </PropertyGroup>
+  <PropertyGroup>
+    <IncludePath>$(CRANE_CRDK_INCLUDE_DIR);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WppAdditionalIncludeDirectories>%(WppAdditionalIncludeDirectories)</WppAdditionalIncludeDirectories>
+      <WppPreprocessorDefinitions>CR_LOG_CHAR8_STR_FMT="%s"</WppPreprocessorDefinitions>
+    </ClCompile>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <BuildMacro Include="CRANE_CRDK_DIR_NAME">
+      <Value>$(CRANE_CRDK_DIR_NAME)</Value>
+    </BuildMacro>
+    <BuildMacro Include="CRANE_CRDK_PATH">
+      <Value>$(CRANE_CRDK_PATH)</Value>
+    </BuildMacro>
+    <BuildMacro Include="CRANE_CRDK_INCLUDE_DIR">
+      <Value>$(CRANE_CRDK_INCLUDE_DIR)</Value>
+    </BuildMacro>
+    <BuildMacro Include="CRANE_CRDK_LIBRARY_DIR">
+      <Value>$(CRANE_CRDK_LIBRARY_DIR)</Value>
+    </BuildMacro>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,28 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CmdDBLib
+  FILE_GUID                      = 24fb3d7f-911e-4ef9-b849-bbc040f688ef
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CmdDBLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  IoLib
+  MemoryMapHelperLib
+  PlatformMemoryMapLib
+  PlatformPrePiLib
+
+[Sources.common]
+  cmddb.c

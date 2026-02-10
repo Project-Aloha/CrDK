@@ -1,0 +1,27 @@
+#/** @file
+#    Copyright (c) 2024-2026. Project Aloha Authors. All rights reserved.
+#    Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+#    SPDX-License-Identifier: MIT
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OskMemmapLib
+  FILE_GUID                      = ed4c56fe-f5e5-4a24-9cb1-756a1b1fb826
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = OskMemmapLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  DxeServicesTableLib
+  TimerLib
+  IoLib
+
+[Sources.common]
+  oskmemmap.c
