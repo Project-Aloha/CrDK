@@ -81,7 +81,7 @@ VOID DumpCmdDBInfo(IN CmdDbHeader *cmd_db_header)
       continue;
     log_info("  Slave ID: %u", rsc_header->slaveId);
     log_info(
-        "    Slave Type: %s",
+        "    Slave Type: " CR_LOG_CHAR8_STR_FMT,
         rsc_slave_id_to_string((enum RSC_SLAVE_ID_TYPE)rsc_header->slaveId));
     log_info("    Entries Count: %u", rsc_header->count);
     log_info(

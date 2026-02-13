@@ -21,8 +21,9 @@ STATIC CmdDbHeader *gCmdDbHeader = NULL;
 // Protocol wrapper functions
 EFI_STATUS
 EFIAPI
-ProtocolGetEntryAddressByName(IN EFI_CMD_DB_PROTOCOL *This,
-                              IN CONST CHAR8 *Name, OUT UINT32 *Address) {
+ProtocolGetEntryAddressByName(
+    IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name, OUT UINT32 *Address)
+{
   if (gCmdDbHeader == NULL || Name == NULL || Address == NULL) {
     return EFI_INVALID_PARAMETER;
   }
@@ -33,8 +34,9 @@ ProtocolGetEntryAddressByName(IN EFI_CMD_DB_PROTOCOL *This,
 
 EFI_STATUS
 EFIAPI
-ProtocolGetEntryNameByAddress(IN EFI_CMD_DB_PROTOCOL *This, IN UINT32 Address,
-                              OUT CONST CHAR8 *Name) {
+ProtocolGetEntryNameByAddress(
+    IN EFI_CMD_DB_PROTOCOL *This, IN UINT32 Address, OUT CONST CHAR8 *Name)
+{
   if (gCmdDbHeader == NULL || Name == NULL) {
     return EFI_INVALID_PARAMETER;
   }
@@ -46,8 +48,10 @@ ProtocolGetEntryNameByAddress(IN EFI_CMD_DB_PROTOCOL *This, IN UINT32 Address,
 
 EFI_STATUS
 EFIAPI
-ProtocolGetAuxDataByName(IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name,
-                         OUT UINT8 *AuxData, OUT UINT32 *Length) {
+ProtocolGetAuxDataByName(
+    IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name, OUT UINT8 *AuxData,
+    OUT UINT32 *Length)
+{
   if (gCmdDbHeader == NULL || Name == NULL || AuxData == NULL ||
       Length == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -59,9 +63,10 @@ ProtocolGetAuxDataByName(IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name,
 
 EFI_STATUS
 EFIAPI
-ProtocolGetAuxDataByAddress(IN EFI_CMD_DB_PROTOCOL *This,
-                            IN CONST UINT32 Address, OUT UINT8 *AuxData,
-                            OUT UINT32 *Length) {
+ProtocolGetAuxDataByAddress(
+    IN EFI_CMD_DB_PROTOCOL *This, IN CONST UINT32 Address, OUT UINT8 *AuxData,
+    OUT UINT32 *Length)
+{
   if (gCmdDbHeader == NULL || AuxData == NULL || Length == NULL) {
     return EFI_INVALID_PARAMETER;
   }
@@ -77,15 +82,17 @@ EFI_CMD_DB_PROTOCOL gCmdDBProtocol = {
     ProtocolGetAuxDataByAddress};
 
 EFI_STATUS
-CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
+CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+{
   EFI_STATUS Status = EFI_SUCCESS;
 
   // Get AOP CMD DB address from memory map
   ARM_MEMORY_REGION_DESCRIPTOR_EX CmdDBMemoryRegion = {0};
   Status = LocateMemoryMapAreaByName("AOP CMD DB", &CmdDBMemoryRegion);
   if (EFI_ERROR(Status)) {
-    DEBUG((EFI_D_ERROR,
-           "CmdDBEntryPoint: LocateMemoryMapAreaByName returned %r\n", Status));
+    DEBUG(
+        (EFI_D_ERROR,
+         "CmdDBEntryPoint: LocateMemoryMapAreaByName returned %r\n", Status));
     return Status;
   }
 
@@ -101,14 +108,16 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
   Status = gBS->InstallMultipleProtocolInterfaces(
       &ImageHandle, &gEfiCmdDBCrProtocolGuid, &gCmdDBProtocol, NULL, NULL);
   if (EFI_ERROR(Status)) {
-    DEBUG((EFI_D_ERROR,
-           "CmdDBEntryPoint: InstallProtocolInterface returned %r\n", Status));
+    DEBUG(
+        (EFI_D_ERROR, "CmdDBEntryPoint: InstallProtocolInterface returned %r\n",
+         Status));
     return Status;
   }
 
 // Testcases
-#if 1
+#if 0
   {
+    UINT32 entry_address = 0;
     // Dump CmdDB information to see all available entries
     DumpCmdDBInfo(gCmdDbHeader);
 
@@ -122,8 +131,7 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
       return Status;
     }
 
-    UINTN entry_address = 0;
-    Status              = CmdDBProtocol->GetEntryAddressByName(
+    Status = CmdDBProtocol->GetEntryAddressByName(
         CmdDBProtocol, "ebi.lvl", &entry_address);
     DEBUG(
         (EFI_D_WARN, "CmdDBEntryPoint: Protocol ebi.lvl address = 0x%08X\n",
@@ -145,7 +153,7 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
          entry_address));
 
     UINT8  aux_data[MAX_CMD_DB_AUX_DATA_LENGTH] = {0};
-    UINT16 length                               = 0;
+    UINT32 length                               = 0;
     Status = CmdDBProtocol->GetAuxDataByName(
         CmdDBProtocol, "rfclka1", aux_data, &length);
     DEBUG(
@@ -163,19 +171,22 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable) {
         CmdDBProtocol, 0x00030020, entry_name);
     DEBUG(
         (EFI_D_WARN,
-         "CmdDBEntryPoint: Protocol entry name for address 0x00030020 = " CR_LOG_CHAR8_STR_FMT "\n",
+         "CmdDBEntryPoint: Protocol entry name for address 0x00030020 "
+         "= " CR_LOG_CHAR8_STR_FMT "\n",
          entry_name));
     Status = CmdDBProtocol->GetEntryNameByAddress(
         CmdDBProtocol, 0x0005003C, entry_name);
     DEBUG(
         (EFI_D_WARN,
-         "CmdDBEntryPoint: Protocol entry name for address 0x0005003C = " CR_LOG_CHAR8_STR_FMT "\n",
+         "CmdDBEntryPoint: Protocol entry name for address 0x0005003C "
+         "= " CR_LOG_CHAR8_STR_FMT "\n",
          entry_name));
     Status = CmdDBProtocol->GetEntryNameByAddress(
         CmdDBProtocol, 0x00045000, entry_name);
     DEBUG(
         (EFI_D_WARN,
-         "CmdDBEntryPoint: Protocol entry name for address 0x00045000 = " CR_LOG_CHAR8_STR_FMT "\n",
+         "CmdDBEntryPoint: Protocol entry name for address 0x00045000 "
+         "= " CR_LOG_CHAR8_STR_FMT "\n",
          entry_name));
 
     // Get aux data by address

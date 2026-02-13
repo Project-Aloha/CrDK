@@ -7,11 +7,11 @@
 
 #include <oskal/common.h>
 #include <oskal/cr_debug.h>
+#include <oskal/cr_interrupt.h>
 #include <oskal/cr_memory.h>
 #include <oskal/cr_status.h>
 #include <oskal/cr_time.h>
 #include <oskal/cr_types.h>
-#include <oskal/cr_interrupt.h>
 
 // TCS(Trigger Command Set) commands type
 typedef struct {
@@ -55,16 +55,15 @@ typedef struct {
 
 /* Driver context */
 typedef struct {
-  UINTN             drv_base_address;
-  UINT32            tcs_offset;
-  UINT32            drv_id;
-  // UINT32            interrupt_no;
+  UINTN               drv_base_address;
+  UINT32              tcs_offset;
+  UINT32              drv_id;
   CR_INTERRUPT_CONFIG InterruptConfig;
-  UINT32            NumCmdsPerTcs;
-  UINT32            TcsBusy;
-  RpmhDrvTcsConfig  tcs_config;
-  RpmhDrvRegisters *drv_registers;
-  BOOLEAN           IrqFromRpmhCr; // Workaround for compatible with bsp drivers
+  UINT32              NumCmdsPerTcs;
+  UINT32              TcsBusy;
+  RpmhDrvTcsConfig    tcs_config;
+  RpmhDrvRegisters   *drv_registers;
+  BOOLEAN IrqFromRpmhCr; // Workaround for compatible with bsp drivers
 } RpmhDeviceContext;
 
 enum TcsIndex {

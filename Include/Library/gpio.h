@@ -5,14 +5,16 @@
  */
 #pragma once
 
+#include "pdc.h"
 #include <oskal/common.h>
+#include <oskal/cr_interrupt.h>
 #include <oskal/cr_status.h>
 #include <oskal/cr_types.h>
-#include <oskal/cr_interrupt.h>
 
 #define GPIO_PINS_MAX 300
 #define GPIO_FUNCS_NUM_MAX 10
 #define GPIO_PDC_PIN_NUMBER_INVALID 0xFFFF
+#define GPIO_TLMM_PIN_STRIDE 0x1000
 
 // Width info in gpio regs
 #define GPIO_REG_CFG_CTL_REG_MUX_SEL_FIELD_WIDTH 4
@@ -52,13 +54,13 @@ typedef enum {
 
 /* Gpio config params */
 typedef enum {
-  GPIO_PULL_NONE = 0,
-  GPIO_PULL_DOWN = 1,
-  GPIO_PULL_KEEPER = 2,
+  GPIO_PULL_NONE         = 0,
+  GPIO_PULL_DOWN         = 1,
+  GPIO_PULL_KEEPER       = 2,
   GPIO_PULL_UP_NO_KEEPER = 2,
-  GPIO_PULL_UP = 3,
-  GPIO_PULL_MAX = GPIO_PULL_UP,
-  GPIO_PULL_UNCHANGE = 0xFF,
+  GPIO_PULL_UP           = 3,
+  GPIO_PULL_MAX          = GPIO_PULL_UP,
+  GPIO_PULL_UNCHANGE     = 0xFF,
 } GpioPullType;
 
 typedef enum {
@@ -78,47 +80,47 @@ typedef enum {
   GPIO_FUNC_13,
   GPIO_FUNC_14,
   GPIO_FUNC_15,
-  GPIO_FUNC_MAX = GPIO_FUNC_15,
+  GPIO_FUNC_MAX      = GPIO_FUNC_15,
   GPIO_FUNC_UNCHANGE = 0xFF,
 } GpioFunctionType;
 
 #define GPIO_DRIVE_STRENGTH_MAX_MA 16
 // way to calc: ma / 2 - 1
 typedef enum {
-  GPIO_DRIVE_STRENGTH_2MA = 0,
-  GPIO_DRIVE_STRENGTH_4MA = 1,
-  GPIO_DRIVE_STRENGTH_6MA = 2,
-  GPIO_DRIVE_STRENGTH_8MA = 3,
-  GPIO_DRIVE_STRENGTH_10MA = 4,
-  GPIO_DRIVE_STRENGTH_12MA = 5,
-  GPIO_DRIVE_STRENGTH_14MA = 6,
-  GPIO_DRIVE_STRENGTH_16MA = 7,
-  GPIO_DRIVE_STRENGTH_MAX = GPIO_DRIVE_STRENGTH_16MA,
+  GPIO_DRIVE_STRENGTH_2MA      = 0,
+  GPIO_DRIVE_STRENGTH_4MA      = 1,
+  GPIO_DRIVE_STRENGTH_6MA      = 2,
+  GPIO_DRIVE_STRENGTH_8MA      = 3,
+  GPIO_DRIVE_STRENGTH_10MA     = 4,
+  GPIO_DRIVE_STRENGTH_12MA     = 5,
+  GPIO_DRIVE_STRENGTH_14MA     = 6,
+  GPIO_DRIVE_STRENGTH_16MA     = 7,
+  GPIO_DRIVE_STRENGTH_MAX      = GPIO_DRIVE_STRENGTH_16MA,
   GPIO_DRIVE_STRENGTH_UNCHANGE = 0xFF,
 } GpioDriveStrength;
 
 typedef enum {
   GPIO_EGPIO_OWNER_REMOTE_OWNER = 0,
-  GPIO_EGPIO_OWNER_APPS_OWNER = 1,
-  GPIO_EGPIO_OWNER_MAX = GPIO_EGPIO_OWNER_APPS_OWNER,
-  GPIO_EGPIO_OWNER_UNCHANGE = 0xFF,
+  GPIO_EGPIO_OWNER_APPS_OWNER   = 1,
+  GPIO_EGPIO_OWNER_MAX          = GPIO_EGPIO_OWNER_APPS_OWNER,
+  GPIO_EGPIO_OWNER_UNCHANGE     = 0xFF,
 } GpioEGpioOwnerType;
 
 // IO Reg
 typedef enum {
-  GPIO_VALUE_LOW = 0,
-  GPIO_VALUE_HIGH = 1,
-  GPIO_VALUE_MAX = GPIO_VALUE_HIGH,
+  GPIO_VALUE_LOW      = 0,
+  GPIO_VALUE_HIGH     = 1,
+  GPIO_VALUE_MAX      = GPIO_VALUE_HIGH,
   GPIO_VALUE_UNCHANGE = 0xFF,
 } GpioValueType;
 
 typedef struct {
-  UINT16 PinNumber;
-  BOOLEAN OutputEnable; // 0 = Input, 1 = Output
-  GpioFunctionType FunctionSel;
-  GpioPullType Pull;
+  UINT16            PinNumber;
+  BOOLEAN           OutputEnable; // 0 = Input, 1 = Output
+  GpioFunctionType  FunctionSel;
+  GpioPullType      Pull;
   GpioDriveStrength DriveStrength; // in mA
-  GpioValueType OutputValue;       // Valid if OutputEnable is 1
+  GpioValueType     OutputValue;   // Valid if OutputEnable is 1
 } GpioConfigParams;
 
 // Gpio Register configuration
@@ -164,13 +166,13 @@ typedef struct {
 
 // Gpio Pin Info
 typedef struct {
-  UINTN PinAddress;
-  UINT8 WakeBit;
-  BOOLEAN Reserved;
-  UINT16 PdcPinNumber;
-  UINT32 WakeRegOffset;
+  UINTN              PinAddress;
+  UINT8              WakeBit;
+  BOOLEAN            Reserved;
+  UINT16             PdcPinNumber;
+  UINT32             WakeRegOffset;
   GpioConfigRegInfo *pRegCfg;
-  GpioTlmmTileInfo *pTileInfo;
+  GpioTlmmTileInfo  *pTileInfo;
   // Bit map for function available
   UINT32 FuncMuxMap;
 } GpioPinInfo;
@@ -178,9 +180,9 @@ typedef struct {
 // Context
 #define GPIO_MAX_REG_CFG 16
 typedef struct {
-  UINT64 TlmmBaseAddress;
-  UINT16 PinCount;
-  BOOLEAN PullUpNoKeeper; // not used in kmd
+  UINT64              TlmmBaseAddress;
+  UINT16              PinCount;
+  BOOLEAN             PullUpNoKeeper; // not used in kmd
   CR_INTERRUPT_CONFIG InterruptConfig;
 
   /* TLMM Tile info */
@@ -193,42 +195,43 @@ typedef struct {
   GpioPinInfo GpioPins[GPIO_PINS_MAX];
 } GpioDeviceContext;
 
-GpioValueType GpioReadInputVal(IN GpioDeviceContext *GpioContext,
-                               IN UINT16 GpioIndex);
+GpioValueType
+GpioReadInputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex);
 
-GpioValueType GpioReadOutputVal(IN GpioDeviceContext *GpioContext,
-                                IN UINT16 GpioIndex);
+GpioValueType
+GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex);
 
-VOID GpioSetConfig(IN GpioDeviceContext *GpioContext,
-                   IN GpioConfigParams *ConfigParams);
+VOID GpioSetConfig(
+    IN GpioDeviceContext *GpioContext, IN GpioConfigParams *ConfigParams);
 
-VOID GpioReadConfig(IN GpioDeviceContext *GpioContext,
-                    IN OUT GpioConfigParams *ConfigParams);
+VOID GpioReadConfig(
+    IN GpioDeviceContext *GpioContext, IN OUT GpioConfigParams *ConfigParams);
 
-VOID GpioInitConfigParams(OUT GpioConfigParams *ConfigParams,
-                          IN UINT16 PinNumber);
+VOID GpioInitConfigParams(
+    OUT GpioConfigParams *ConfigParams, IN UINT16 PinNumber);
 
-CR_STATUS GpioEnableInterrupt(IN GpioDeviceContext *GpioContext,
-                              IN UINT16 GpioIndex, BOOLEAN Enable);
+CR_STATUS GpioEnableInterrupt(
+    IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, BOOLEAN Enable);
 
-CR_STATUS GpioRegisterGpioIrq(IN GpioDeviceContext *Context,
-                              IN UINT16 GpioIndex,
-                              IN CR_INTERRUPT_HANDLER InterruptHandler,
-                              IN VOID *Param,
-                              IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
+CR_STATUS GpioRegisterGpioIrq(
+    IN GpioDeviceContext *Context, IN PdcDeviceContext *PdcContext,
+    IN UINT16 GpioIndex, IN CR_INTERRUPT_HANDLER InterruptHandler,
+    IN VOID *Param, IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
 
-BOOLEAN GpioReadIrqStatus(IN GpioDeviceContext *GpioContext,
-                          IN UINT16 GpioIndex);
-CR_STATUS GpioMaskInterrupt(IN GpioDeviceContext *GpioContext,
-                            IN UINT16 GpioIndex, BOOLEAN Mask);
+CR_STATUS GpioInitIrq(GpioDeviceContext *Context);
+
+BOOLEAN
+GpioReadIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex);
+CR_STATUS GpioMaskInterrupt(
+    IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, BOOLEAN Mask);
 CR_STATUS
-GpioCheckInterruptEnabled(IN GpioDeviceContext *GpioContext,
-                          IN UINT16 GpioIndex, BOOLEAN *Enabled);
+GpioCheckInterruptEnabled(
+    IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, BOOLEAN *Enabled);
 
 VOID GpioCleanIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex);
 
-CR_STATUS GpioSetInterruptCfg(IN GpioDeviceContext *GpioContext,
-                              IN UINT16 GpioIndex,
-                              IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
+CR_STATUS GpioSetInterruptCfg(
+    IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex,
+    IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
 
 CR_STATUS GpioLibInit(OUT GpioDeviceContext **GpioContext);

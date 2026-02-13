@@ -17,6 +17,7 @@
 #include <Protocol/EFIRpmhCrProtocol.h>
 
 STATIC GpioDeviceContext *mGpioContext = NULL;
+STATIC PdcDeviceContext  *mPdcContext  = NULL;
 
 /* Protocol wrapper implementation */
 EFI_STATUS
@@ -95,10 +96,12 @@ EFIAPI ProtocolGpioRegisterGpioInterrupt(
 
   // Register interrupt
   Status = GpioRegisterGpioIrq(
-      mGpioContext, GpioIndex, GpioIrqHandler, HandlerParam, TriggerType);
+      mGpioContext, mPdcContext, GpioIndex, GpioIrqHandler, HandlerParam,
+      TriggerType);
   if (CR_ERROR(Status)) {
     log_err(
-        CR_LOG_CHAR8_STR_FMT ": Failed to register interrupt for GPIO %d, Status=0x%X",
+        CR_LOG_CHAR8_STR_FMT
+        ": Failed to register interrupt for GPIO %d, Status=0x%X",
         __FUNCTION__, GpioIndex, Status);
     return EFI_DEVICE_ERROR;
   }
@@ -107,12 +110,12 @@ EFIAPI ProtocolGpioRegisterGpioInterrupt(
 }
 
 EFI_GPIO_CR_PROTOCOL gGpioCrProtocol = {
-    .Revision             = EFI_GPIO_CR_PROTOCOL_REVISION,
-    .ReadIoValue          = ProtocolGpioReadInputValue,
-    .SetIoValue           = ProtocolGpioSetIOValue,
-    .InitGpioConfigParams = ProtocolGpioInitConfigParams,
-    .ConfigGpio           = ProtocolGpioConfig,
-    .GetGpioConfig        = ProtocolGpioGetConfig,
+    .Revision              = EFI_GPIO_CR_PROTOCOL_REVISION,
+    .ReadIoValue           = ProtocolGpioReadInputValue,
+    .SetIoValue            = ProtocolGpioSetIOValue,
+    .InitGpioConfigParams  = ProtocolGpioInitConfigParams,
+    .ConfigGpio            = ProtocolGpioConfig,
+    .GetGpioConfig         = ProtocolGpioGetConfig,
     .RegisterGpioInterrupt = ProtocolGpioRegisterGpioInterrupt,
 };
 
@@ -130,8 +133,7 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   EFI_STATUS Status = EFI_SUCCESS;
 
   // Init PDC
-  PdcDeviceContext *PdcCtx = NULL;
-  if (CR_ERROR(PdcLibInit(&PdcCtx)) || (PdcCtx == NULL)) {
+  if (CR_ERROR(PdcLibInit(&mPdcContext)) || (mPdcContext == NULL)) {
     log_err("PdcLibInit failed");
     return EFI_DEVICE_ERROR;
   }
@@ -139,6 +141,12 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   // Init Gpio
   if (CR_ERROR(GpioLibInit(&mGpioContext)) || (mGpioContext == NULL)) {
     log_err("GpioLibInit failed");
+    return EFI_DEVICE_ERROR;
+  }
+
+  // Init Gpio interrupt
+  if (CR_ERROR(GpioInitIrq(mGpioContext))) {
+    log_err("GpioInitIrq failed");
     return EFI_DEVICE_ERROR;
   }
 
@@ -275,7 +283,7 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 #endif
 
 // Protocol test cases (hdk8450)
-#if 0
+#if 1
   {
     EFI_GPIO_CR_PROTOCOL *GpioProtocol = NULL;
     GpioConfigParams      ConfigParams = {0};

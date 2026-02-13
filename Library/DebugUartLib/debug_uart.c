@@ -18,9 +18,9 @@ VOID MsmGeniSerialIsr(VOID *Params)
   StatusSIrq = CrMmioRead32(
       DebugUartContext->BaseAddress + DEBUG_UART_GENI_S_IRQ_STATUS);
 
-//  log_info(
-//      "MsmGeniSerialIsr called, StatusMIrq=0x%X, StatusSIrq=0x%X", StatusMIrq,
-//      StatusSIrq);
+  //  log_info(
+  //      "MsmGeniSerialIsr called, StatusMIrq=0x%X, StatusSIrq=0x%X",
+  //      StatusMIrq, StatusSIrq);
 
   // Clear the IRQ
   CrMmioWrite32(
@@ -35,9 +35,9 @@ VOID MsmGeniSerialIsr(VOID *Params)
   }
 
   if (StatusSIrq & DEBUG_UART_GENI_S_RX_FIFO_WR_ERR_EN) {
-//    log_warn(
-//        "Debug UART Buffer Overrun. StatusMIrq=0x%X, StatusSIrq=0x%X",
-//        StatusMIrq, StatusSIrq);
+    //    log_warn(
+    //        "Debug UART Buffer Overrun. StatusMIrq=0x%X, StatusSIrq=0x%X",
+    //        StatusMIrq, StatusSIrq);
   }
 
   if (StatusMIrq & DEBUG_UART_GENI_M_CMD_DONE_EN) {
@@ -62,32 +62,41 @@ VOID MsmGeniSerialIsr(VOID *Params)
   while (WordCount--) {
     UINT32 Data =
         CrMmioRead32(DebugUartContext->BaseAddress + DEBUG_UART_GENI_RX_FIFOn);
-        // Fill ring buffer with up to 4 bytes
-        for (UINT8 i = 0; i < 4; i++) {
-            if (DebugUartContext->InputBuffer == NULL ||
-                    DebugUartContext->InputBufferCapacity == 0) {
-                break;
-            }
-            UINT8 byte = (Data >> (i * 8)) & 0xFF;
-            if (DebugUartContext->InputBufferSize < DebugUartContext->InputBufferCapacity) {
-                // space available: write at tail
-                ((UINT8 *)DebugUartContext->InputBuffer)[DebugUartContext->InputBufferTail] = byte;
-                DebugUartContext->InputBufferTail++;
-                if (DebugUartContext->InputBufferTail >= DebugUartContext->InputBufferCapacity)
-                    DebugUartContext->InputBufferTail = 0;
-                DebugUartContext->InputBufferSize++;
-            } else {
-                // buffer full: overwrite oldest by advancing head, then write at tail
-                DebugUartContext->InputBufferHead++;
-                if (DebugUartContext->InputBufferHead >= DebugUartContext->InputBufferCapacity)
-                    DebugUartContext->InputBufferHead = 0;
-                ((UINT8 *)DebugUartContext->InputBuffer)[DebugUartContext->InputBufferTail] = byte;
-                DebugUartContext->InputBufferTail++;
-                if (DebugUartContext->InputBufferTail >= DebugUartContext->InputBufferCapacity)
-                    DebugUartContext->InputBufferTail = 0;
-                // size remains at capacity
-            }
-        }
+    // Fill ring buffer with up to 4 bytes
+    for (UINT8 i = 0; i < 4; i++) {
+      if (DebugUartContext->InputBuffer == NULL ||
+          DebugUartContext->InputBufferCapacity == 0) {
+        break;
+      }
+      UINT8 byte = (Data >> (i * 8)) & 0xFF;
+      if (DebugUartContext->InputBufferSize <
+          DebugUartContext->InputBufferCapacity) {
+        // space available: write at tail
+        ((UINT8 *)
+             DebugUartContext->InputBuffer)[DebugUartContext->InputBufferTail] =
+            byte;
+        DebugUartContext->InputBufferTail++;
+        if (DebugUartContext->InputBufferTail >=
+            DebugUartContext->InputBufferCapacity)
+          DebugUartContext->InputBufferTail = 0;
+        DebugUartContext->InputBufferSize++;
+      }
+      else {
+        // buffer full: overwrite oldest by advancing head, then write at tail
+        DebugUartContext->InputBufferHead++;
+        if (DebugUartContext->InputBufferHead >=
+            DebugUartContext->InputBufferCapacity)
+          DebugUartContext->InputBufferHead = 0;
+        ((UINT8 *)
+             DebugUartContext->InputBuffer)[DebugUartContext->InputBufferTail] =
+            byte;
+        DebugUartContext->InputBufferTail++;
+        if (DebugUartContext->InputBufferTail >=
+            DebugUartContext->InputBufferCapacity)
+          DebugUartContext->InputBufferTail = 0;
+        // size remains at capacity
+      }
+    }
   }
   // log_info("Count: %d", DebugUartContext->InputBufferSize);
 }
@@ -325,11 +334,9 @@ CrDebugUartLibInit(OUT CrDebugUartContext **OutDebugUartContext)
       DebugUartContext->BaseAddress + DEBUG_UART_GENI_TX_STOP_BIT_LEN, 0);
 
   // Register interrupt handler
-  Status = CrRegisterInterrupt(
-      DebugUartContext->InterruptNo,    // Irq Number
-      MsmGeniSerialIsr,                 // Handler
-      DebugUartContext,                 // Param
-      CR_INTERRUPT_TRIGGER_LEVEL_HIGH); // Level trigger
+  DebugUartContext->InterruptConfig.Handler = MsmGeniSerialIsr;
+  DebugUartContext->InterruptConfig.Param   = DebugUartContext;
+  Status = CrRegisterInterrupt(&DebugUartContext->InterruptConfig);
   if (CR_ERROR(Status)) {
     log_err("Failed to register DebugUart interrupt, Status=0x%X", Status);
     return Status;

@@ -6,9 +6,9 @@
 #pragma once
 
 #include <oskal/common.h>
+#include <oskal/cr_interrupt.h>
 #include <oskal/cr_status.h>
 #include <oskal/cr_types.h>
-
 #define DEBUG_UART_INPUT_BUF_SIZE 256
 
 typedef enum {
@@ -17,8 +17,9 @@ typedef enum {
 } DEBUG_UART_TYPE;
 
 typedef struct {
-  UINTN   BaseAddress;
-  UINTN   InterruptNo;
+  UINTN               BaseAddress;
+  CR_INTERRUPT_CONFIG InterruptConfig;
+
   BOOLEAN IsDebugUart; // TRUE if using inited debug uart by previous boot stage
   DEBUG_UART_TYPE Type;
   UINT32          ClockFrequency;
@@ -39,5 +40,6 @@ typedef struct {
 } CrDebugUartContext;
 
 CR_STATUS CrDebugUartLibInit(CrDebugUartContext **DebugUartContext);
-VOID      MsmGeniWriteTxFifo(
-         CrDebugUartContext *DebugUartContext, VOID *Buffer, UINTN Length);
+
+VOID MsmGeniWriteTxFifo(
+    CrDebugUartContext *DebugUartContext, VOID *Buffer, UINTN Length);

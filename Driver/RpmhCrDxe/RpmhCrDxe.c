@@ -54,14 +54,17 @@ ProtocolRpmhEnableVreg(
       mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
   if (EFI_ERROR(Status)) {
     log_err(
-        CR_LOG_CHAR8_STR_FMT ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
+        CR_LOG_CHAR8_STR_FMT
+        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
         "Status=0x%X",
         __FUNCTION__, Name, Status);
     return Status;
   }
   Status = RpmhEnableVreg(mRpmhContext, Address, Enable);
   if (CR_ERROR(Status)) {
-    log_err(CR_LOG_CHAR8_STR_FMT ": RpmhEnableVreg failed with status 0x%X", __FUNCTION__, Status);
+    log_err(
+        CR_LOG_CHAR8_STR_FMT ": RpmhEnableVreg failed with status 0x%X",
+        __FUNCTION__, Status);
     return EFI_DEVICE_ERROR;
   }
   return EFI_SUCCESS;
@@ -85,7 +88,8 @@ ProtocolRpmhSetVregVoltage(
       mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
   if (EFI_ERROR(Status)) {
     log_err(
-        CR_LOG_CHAR8_STR_FMT ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
+        CR_LOG_CHAR8_STR_FMT
+        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
         "Status=0x%X",
         __FUNCTION__, Name, Status);
     return Status;
@@ -95,7 +99,7 @@ ProtocolRpmhSetVregVoltage(
   if (CR_ERROR(Status)) {
     log_err(
         CR_LOG_CHAR8_STR_FMT ": RpmhSetVregVoltage failed with status "
-        "0x%X",
+                             "0x%X",
         __FUNCTION__, Status);
     return EFI_DEVICE_ERROR;
   }
@@ -120,7 +124,8 @@ ProtocolRpmhSetVregMode(
       mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
   if (EFI_ERROR(Status)) {
     log_err(
-        CR_LOG_CHAR8_STR_FMT ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
+        CR_LOG_CHAR8_STR_FMT
+        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
         "Status=0x%X",
         __FUNCTION__, Name, Status);
     return Status;
@@ -129,7 +134,8 @@ ProtocolRpmhSetVregMode(
   Status = RpmhSetVregMode(mRpmhContext, Address, Mode);
   if (CR_ERROR(Status)) {
     log_err(
-        CR_LOG_CHAR8_STR_FMT ": RpmhSetVregMode failed with status 0x%X", __FUNCTION__, Status);
+        CR_LOG_CHAR8_STR_FMT ": RpmhSetVregMode failed with status 0x%X",
+        __FUNCTION__, Status);
     return EFI_DEVICE_ERROR;
   }
   return EFI_SUCCESS;
@@ -173,7 +179,6 @@ RpmhEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 #if 1
   {
     // Get vreg address from cmd db
-    UINT32       Address   = 0;
     CONST CHAR8 *VregName  = "ldoc3"; // for hdk sm8450
     UINT32       VoltageMv = 3300;
 
@@ -186,47 +191,37 @@ RpmhEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
       return Status;
     }
 
-    Status = mCmdDbProtocol->GetEntryAddressByName(
-        mCmdDbProtocol, VregName, &Address);
-    if (EFI_ERROR(Status)) {
-      log_err(
-          "GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", Status=0x%X", VregName,
-          Status);
-      return Status;
-    }
-
-    // Print retrieved address
-    log_info("Vreg " CR_LOG_CHAR8_STR_FMT " address: 0x%X", VregName, Address);
-
     // Enable vreg
-    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, Address, TRUE);
+    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, VregName, TRUE);
     if (EFI_ERROR(Status)) {
       log_err("RpmhEnableVreg failed, Status=0x%X", Status);
       return Status;
     }
     log_info("Vreg " CR_LOG_CHAR8_STR_FMT " enabled", VregName);
     // Wait 5s for observation
-    cr_sleep(5000);
+    cr_sleep(5 * 1000 * 1000);
     // Disable vreg
-    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, Address, FALSE);
+    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, VregName, FALSE);
     if (EFI_ERROR(Status)) {
       log_err("RpmhEnableVreg failed, Status=0x%X", Status);
       return Status;
     }
     log_info("Vreg " CR_LOG_CHAR8_STR_FMT " disabled", VregName);
     // Wait 5s for observation
-    cr_sleep(5000);
+    cr_sleep(5 * 1000 * 1000);
 
     // Set vreg voltage to 3.3v
     Status = RpmhCrProtocol->RpmhSetVregVoltage(
-        RpmhCrProtocol, Address, VoltageMv); // in mV
+        RpmhCrProtocol, VregName, VoltageMv); // in mV
     if (EFI_ERROR(Status)) {
       log_err("RpmhSetVregVoltage failed, Status=0x%X", Status);
       return Status;
     }
-    log_info("Vreg " CR_LOG_CHAR8_STR_FMT " voltage set to %u mV", VregName, VoltageMv);
+    log_info(
+        "Vreg " CR_LOG_CHAR8_STR_FMT " voltage set to %u mV", VregName,
+        VoltageMv);
     // Wait 5s for observation
-    cr_sleep(5000);
+    cr_sleep(5 * 1000 * 1000);
   }
 #endif
   return EFI_SUCCESS;

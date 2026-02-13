@@ -28,3 +28,4 @@
 
 [Sources.common]
   pdc.c
+  pdc_irq.c

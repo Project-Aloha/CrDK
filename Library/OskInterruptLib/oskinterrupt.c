@@ -79,7 +79,7 @@ CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
 
   // Assuming disabling interrupt
   if (InterruptHandler == NULL) {
-    return CrUnregisterInterrupt(InterruptNumber);
+    return CrUnregisterInterrupt(InterruptConfig);
   }
 
   // Initialize protocol if not done already
