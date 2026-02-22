@@ -262,6 +262,12 @@ CrDebugUartLibInit(OUT CrDebugUartContext **OutDebugUartContext)
   CrMmioWrite32(
       DebugUartContext->BaseAddress + DEBUG_UART_GENI_SE_IRQ_EN, 0xffffffff);
 
+  // Enable RX
+  CrMmioUpdateBits32(
+        DebugUartContext->BaseAddress + DEBUG_UART_GENI_S_CMD0,
+        DEBUG_UART_GENI_S_CMD0_S_OPCODE_MSK,
+        (OPCODE_SE_S_UART_START_RX) << DEBUG_UART_GENI_S_CMD0_S_OPCODE_SFT);
+
   // Read RX FIFO depth
   DebugUartContext->RxFifoDepth = DebugUartGetRxFifoDepth(DebugUartContext);
   DebugUartContext->TxFifoDepth = DebugUartGetTxFifoDepth(DebugUartContext);
