@@ -4,7 +4,7 @@ CrDK is the core implementation of [**Project Crane Software Architecture**](htt
 This repo is also a UEFI Package and provides uefi drivers.
 
 ## Integrate with UEFI
-Include `Crane.dsc.inc`, `Crane.fdf.inc` and `Crane.Aprioir.inc` at a correct place of your target uefi package. Then rebuild
+Include `Crane.dsc.inc`, `Crane.fdf.inc` and `Crane.Apriori.inc` at a correct place of your target uefi package. Then rebuild
 your package.  
 A Library named *CrTargetLib* is required for providing silicon-specific information, just like device tree in linux.
 
