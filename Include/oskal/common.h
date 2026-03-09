@@ -18,7 +18,6 @@
 
 // Bit ops
 #if defined(_MSC_VER)
-#include <intrin.h>
 static inline int __ffsll_ms64(unsigned long long x)
 {
   if (x == 0)
@@ -33,7 +32,6 @@ static inline int __ffsll_ms64(unsigned long long x)
 #endif
 
 #if defined(_MSC_VER)
-#include <intrin.h>
 static inline unsigned ctzll(unsigned long long x) {
     unsigned long index;
     if (_BitScanForward64(&index, x))
