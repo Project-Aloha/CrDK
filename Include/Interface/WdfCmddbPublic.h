@@ -26,12 +26,12 @@ typedef NTSTATUS (*CMD_DB_GET_NAME_BY_ADDR)(IN VOID *Context, IN UINT32 Address,
 typedef NTSTATUS (*CMD_DB_GET_AUX_DATA_BY_NAME)(IN VOID *Context,
                                                 IN CONST CHAR8 *Name,
                                                 OUT UINT8 *AuxData,
-                                                OUT UINT32 *Length);
+                                                IN OUT UINT32 *Length);
 
 typedef NTSTATUS (*CMD_DB_GET_AUX_DATA_BY_ADDR)(IN VOID *Context,
                                                 IN CONST UINT32 Address,
                                                 OUT UINT8 *AuxData,
-                                                OUT UINT32 *Length);
+                                                IN OUT UINT32 *Length);
 
 typedef struct _WDF_CMD_DB_INTERFACE {
   INTERFACE Header;

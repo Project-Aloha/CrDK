@@ -51,7 +51,7 @@
 #define LOG_COLOR_ERROR
 
 /* defined in WPP */
- //#define CR_LOG_CHAR8_STR_FMT "%s"
+#define CR_LOG_CHAR8_STR_FMT "%s"
 
 #else
 #include <Library/DebugLib.h>

@@ -22,11 +22,11 @@ typedef EFI_STATUS(EFIAPI *EFI_CMD_DB_GET_NAME_BY_ADDR)(
 
 typedef EFI_STATUS(EFIAPI *EFI_CMD_DB_GET_AUX_DATA_BY_NAME)(
     IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name, OUT UINT8 *AuxData,
-    OUT UINT32 *Length);
+    IN OUT UINT32 *Length);
 
 typedef EFI_STATUS(EFIAPI *EFI_CMD_DB_GET_AUX_DATA_BY_ADDR)(
     IN EFI_CMD_DB_PROTOCOL *This, IN CONST UINT32 Address, OUT UINT8 *AuxData,
-    OUT UINT32 *Length);
+    IN OUT UINT32 *Length);
 
 typedef struct _EFI_CMD_DB_PROTOCOL {
   UINT64                          Revision;
