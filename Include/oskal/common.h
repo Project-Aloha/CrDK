@@ -6,7 +6,7 @@
 
 #pragma once
 
-#ifndef UNREFERENCED_PARAMETER
+#if !defined(_KERNEL_MODE) && !defined(UNREFERENCED_PARAMETER)
 #define UNREFERENCED_PARAMETER(Parameter) ((void)(Parameter))
 #endif
 

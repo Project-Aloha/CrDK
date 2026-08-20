@@ -14,6 +14,10 @@
 #include <oskal/cr_debug.h>
 #include <oskal/cr_string.h>
 
+#ifdef _KERNEL_MODE
+#include "interconnect.tmh"
+#endif
+
 #define INTERCONNECT_BCM_AUX_SIZE       8
 #define INTERCONNECT_BCM_VOTE_MASK      0x3FFFU
 #define INTERCONNECT_BCM_COMMIT_BIT     BIT(30)

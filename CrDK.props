@@ -12,7 +12,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <WppAdditionalIncludeDirectories>%(WppAdditionalIncludeDirectories)</WppAdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <WppAdditionalIncludeDirectories>$(MSBuildProjectDirectory);%(WppAdditionalIncludeDirectories)</WppAdditionalIncludeDirectories>
       <WppPreprocessorDefinitions>CR_LOG_CHAR8_STR_FMT="%s"</WppPreprocessorDefinitions>
     </ClCompile>
     <PostBuildEvent>
