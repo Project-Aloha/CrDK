@@ -49,10 +49,7 @@
 #define LOG_COLOR_WARN
 #define LOG_COLOR_ERROR
 
-/* defined in WPP */
-#ifndef CR_LOG_CHAR8_STR_FMT
-#define CR_LOG_CHAR8_STR_FMT "%s"
-#endif
+/* CR_LOG_CHAR8_STR_FMT is defined by the WPP configuration. */
 
 #else
 #include <Library/DebugLib.h>

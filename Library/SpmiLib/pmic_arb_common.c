@@ -22,6 +22,8 @@ PmicArbInitApidMinMax(SpmiDeviceContext *Ctx) {
 CR_STATUS
 PmicArbInitApidCommonV7V8(SpmiDeviceContext *Ctx, UINT32 Index, UINT32 MaxBuses,
                           UINT64 PeriphMsk) {
+  UINT32 BaseApid;
+  UINT32 ApidCount;
   UINT32 i;
 
   if (Ctx == NULL || Index >= MaxBuses) {
@@ -29,24 +31,26 @@ PmicArbInitApidCommonV7V8(SpmiDeviceContext *Ctx, UINT32 Index, UINT32 MaxBuses,
     return CR_INVALID_PARAMETER;
   }
 
-  Ctx->Bus.BaseApid = 0;
-  Ctx->Bus.ApidCount = 0;
+  BaseApid = 0;
+  ApidCount = 0;
   for (i = 0; i <= Index; i++) {
-    Ctx->Bus.BaseApid += Ctx->Bus.ApidCount;
-    Ctx->Bus.ApidCount = SpmiReadReg32(Ctx, SPMI_MEMORY_REGION_TYPE_CORE,
-                                       SPMI_PMIC_ARB_FEATURES + i * 4) &
-                         (UINT32)PeriphMsk;
+    BaseApid += ApidCount;
+    ApidCount = SpmiReadReg32(Ctx, SPMI_MEMORY_REGION_TYPE_CORE,
+                              SPMI_PMIC_ARB_FEATURES + i * 4) &
+                (UINT32)PeriphMsk;
   }
 
-  if (Ctx->Bus.ApidCount == 0) {
+  if (ApidCount == 0) {
     log_err("SPMI: bus %u not implemented", Index);
     return CR_INVALID_PARAMETER;
   }
-  if (Ctx->Bus.BaseApid + Ctx->Bus.ApidCount > Ctx->PmicArb.MaxPeriphs) {
+  if (BaseApid + ApidCount > Ctx->PmicArb.MaxPeriphs) {
     log_err("SPMI: unsupported max APID %u detected (max %u)",
-            Ctx->Bus.BaseApid + Ctx->Bus.ApidCount, Ctx->PmicArb.MaxPeriphs);
+            BaseApid + ApidCount, Ctx->PmicArb.MaxPeriphs);
     return CR_INVALID_PARAMETER;
   }
+  Ctx->Bus.BaseApid = (UINT16)BaseApid;
+  Ctx->Bus.ApidCount = ApidCount;
 
   return PmicArbInitApidMinMax(Ctx);
 }
@@ -145,13 +149,14 @@ PmicArbReadApidMapCommon(SpmiDeviceContext *Ctx, UINTN PpidBase, UINT64 PpidMsk,
     PrevApidd = Valid ? &Bus->ApidData[Apid] : NULL;
 
     if (!Valid || Apidd->WriteEe == Ctx->ActiveEE) {
-      Bus->PpidToApid[Ppid] = i | (UINT16)SPMI_PMIC_ARB_APID_VALID;
+      Bus->PpidToApid[Ppid] =
+          (UINT16)(i | (UINT32)SPMI_PMIC_ARB_APID_VALID);
     } else if (Valid && IsIrqEe && PrevApidd->WriteEe == Ctx->ActiveEE) {
       PrevApidd->IrqEe = Apidd->IrqEe;
     }
 
     Apidd->Ppid = Ppid;
-    Bus->LastApid = i;
+    Bus->LastApid = (UINT16)i;
   }
 
   Bus->ApidMapValid = TRUE;
