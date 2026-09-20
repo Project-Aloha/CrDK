@@ -44,14 +44,12 @@
 // #define log_err(fmt, ...) \
 //   Trace(TRACE_LEVEL_ERROR, "[ERROR] " fmt " (in %s:%d)", ##__VA_ARGS__, __FILE__, __LINE__)
 /* WPP does not support colors T_T */
-#define LOG_COLOR_INFO
 #define LOG_COLOR_RESET
 #define LOG_COLOR_INFO
 #define LOG_COLOR_WARN
 #define LOG_COLOR_ERROR
 
-/* defined in WPP */
- //#define CR_LOG_CHAR8_STR_FMT "%s"
+/* CR_LOG_CHAR8_STR_FMT is defined by the WPP configuration. */
 
 #else
 #include <Library/DebugLib.h>

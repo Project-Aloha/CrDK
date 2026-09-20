@@ -168,13 +168,35 @@ GetCmdDBEntryNameByAddress(
   return CR_SUCCESS;
 }
 
-// Get aux data
+STATIC CR_STATUS
+CopyCmdDBAuxData(
+    IN CONST cmd_db_entry *entry, OUT UINT8 *aux_data, IN OUT UINT32 *length)
+{
+  UINT32 capacity;
+
+  if (!entry || !length)
+    return CR_INVALID_PARAMETER;
+
+  capacity = *length;
+  *length  = entry->DataLength;
+  if (capacity < entry->DataLength)
+    return CR_BUFFER_TOO_SMALL;
+  if (entry->DataLength == 0)
+    return CR_SUCCESS;
+  if (!aux_data)
+    return CR_INVALID_PARAMETER;
+
+  cr_memcpy(aux_data, entry->Data, entry->DataLength);
+  return CR_SUCCESS;
+}
+
+// Get aux data. Length is the input capacity and output required size.
 CR_STATUS
 GetCmdDBAuxDataByName(
     IN CmdDbHeader *cmd_db_header, IN CONST CHAR8 *name, OUT UINT8 *aux_data,
-    OUT UINT32 *length)
+    IN OUT UINT32 *length)
 {
-  if (!cmd_db_header || !aux_data)
+  if (!cmd_db_header || !name || !length)
     return CR_INVALID_PARAMETER;
 
   cmd_db_entry entry  = {0};
@@ -182,17 +204,15 @@ GetCmdDBAuxDataByName(
   if (status != CR_SUCCESS)
     return status;
 
-  *length = entry.DataLength;
-  cr_memcpy(aux_data, entry.Data, entry.DataLength);
-  return CR_SUCCESS;
+  return CopyCmdDBAuxData(&entry, aux_data, length);
 }
 
 CR_STATUS
 GetCmdDBAuxDataByAddress(
     IN CmdDbHeader *cmd_db_header, IN UINT32 address, OUT UINT8 *aux_data,
-    OUT UINT32 *length)
+    IN OUT UINT32 *length)
 {
-  if (!cmd_db_header || !aux_data || address == 0)
+  if (!cmd_db_header || !length || address == 0)
     return CR_INVALID_PARAMETER;
 
   cmd_db_entry entry  = {0};
@@ -200,7 +220,5 @@ GetCmdDBAuxDataByAddress(
   if (status != CR_SUCCESS)
     return status;
 
-  *length = entry.DataLength;
-  cr_memcpy(aux_data, entry.Data, entry.DataLength);
-  return CR_SUCCESS;
+  return CopyCmdDBAuxData(&entry, aux_data, length);
 }

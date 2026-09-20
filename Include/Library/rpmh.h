@@ -6,8 +6,10 @@
 #pragma once
 
 #include <oskal/common.h>
+#include <oskal/cr_atomic.h>
 #include <oskal/cr_debug.h>
 #include <oskal/cr_interrupt.h>
+#include <oskal/cr_lock.h>
 #include <oskal/cr_memory.h>
 #include <oskal/cr_status.h>
 #include <oskal/cr_time.h>
@@ -60,10 +62,11 @@ typedef struct {
   UINT32              drv_id;
   CR_INTERRUPT_CONFIG InterruptConfig;
   UINT32              NumCmdsPerTcs;
-  UINT32              TcsBusy;
+  volatile UINT32     TcsBusy;
   RpmhDrvTcsConfig    tcs_config;
   RpmhDrvRegisters   *drv_registers;
-  BOOLEAN IrqFromRpmhCr; // Workaround for compatible with bsp drivers
+  CR_LOCK              Lock;
+  BOOLEAN              Initialized;
 } RpmhDeviceContext;
 
 enum TcsIndex {
@@ -75,6 +78,9 @@ enum TcsIndex {
 
 CR_STATUS
 RpmhLibInit(IN OUT RpmhDeviceContext **RpmhContext);
+
+CR_STATUS
+RpmhLibDeinit(IN OUT RpmhDeviceContext *RpmhContext);
 
 CR_STATUS
 RpmhWrite(

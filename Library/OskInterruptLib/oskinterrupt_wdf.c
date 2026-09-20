@@ -35,10 +35,7 @@ VOID EvtWdfInterruptDpc(IN WDFINTERRUPT Interrupt,
     return;
   }
   TRACE_FUNCTION_ENTRY(TRACE_OSKAL);
-  log_info("DPC Enter!");
-  WdfInterruptAcquireLock(Interrupt);
   irqContext->Handler(irqContext->Param);
-  WdfInterruptReleaseLock(Interrupt);
 
   TRACE_FUNCTION_EXIT(TRACE_OSKAL);
   return;
@@ -176,8 +173,8 @@ typedef struct _CR_UNREGISTER_WORK_CTX {
 } CR_UNREGISTER_WORK_CTX, *PCR_UNREGISTER_WORK_CTX;
 
 // IO workitem callback runs at PASSIVE_LEVEL; free workitem & context here.
-static VOID
-CrUnregisterInterruptWorkerIo(PDEVICE_OBJECT DeviceObject, PVOID Context) {
+static VOID CrUnregisterInterruptWorkerIo(PDEVICE_OBJECT DeviceObject,
+                                          PVOID Context) {
   UNREFERENCED_PARAMETER(DeviceObject);
   PCR_UNREGISTER_WORK_CTX ctx = (PCR_UNREGISTER_WORK_CTX)Context;
   PIO_WORKITEM workItem = NULL;
@@ -239,7 +236,8 @@ CrUnregisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
     // Allocate IO workitem associated with the device so the queued routine
     // will execute at PASSIVE_LEVEL. Use WDF helper to get the underlying
     // PDEVICE_OBJECT for the WDF device stored in InterruptConfig.
-    PDEVICE_OBJECT devObj = WdfDeviceWdmGetDeviceObject(InterruptConfig->Device);
+    PDEVICE_OBJECT devObj =
+        WdfDeviceWdmGetDeviceObject(InterruptConfig->Device);
     if (devObj == NULL) {
       ExFreePoolWithTag(ctx, 'rUnI');
       log_err("CrUnregisterInterrupt: cannot get PDEVICE_OBJECT");

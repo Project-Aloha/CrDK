@@ -6,6 +6,10 @@
 
 #pragma once
 
+#if !defined(_KERNEL_MODE) && !defined(UNREFERENCED_PARAMETER)
+#define UNREFERENCED_PARAMETER(Parameter) ((void)(Parameter))
+#endif
+
 // Size ops
 #define CR_SIZE_1B 1ULL
 #define CR_SIZE_1KB (1024ULL * CR_SIZE_1B)
@@ -18,6 +22,7 @@
 
 // Bit ops
 #if defined(_MSC_VER) && defined(_KERNEL_MODE)
+#include <intrin.h>
 static inline int __ffsll_ms64(unsigned long long x)
 {
   if (x == 0)
@@ -33,17 +38,15 @@ static inline int __ffsll_ms64(unsigned long long x)
 
 #if defined(_MSC_VER) && defined(_KERNEL_MODE)
 static inline unsigned ctzll(unsigned long long x) {
-    unsigned long index;
-    if (_BitScanForward64(&index, x))
-        return index;
-    return 64;
+  unsigned long index;
+  if (_BitScanForward64(&index, x))
+    return index;
+  return 64;
 }
 #define __ctzll(x) ctzll((unsigned long long)(x))
 #else
 #define __ctzll __builtin_ctzll
 #endif
-
-
 
 #define BIT(x) (1ULL << (x))
 #define GEN_MSK(high, low) (((BIT((high) + 1) - 1) & ~((BIT(low)) - 1)))
@@ -52,8 +55,7 @@ static inline unsigned ctzll(unsigned long long x) {
 #define CLR_BITS(val, mask) ((val) & ~(unsigned long long)(mask))
 
 #define SET_FIELD(val, mask)                                                   \
-  (((unsigned long long)(val)                                                  \
-    << __ctzll((unsigned long long)(mask))) &                          \
+  (((unsigned long long)(val) << __ctzll((unsigned long long)(mask))) &        \
    (unsigned long long)(mask))
 
 #define GET_FIELD(val, mask) (((val) & (mask)) >> (__ffs(mask) - 1))
@@ -71,3 +73,7 @@ static inline unsigned ctzll(unsigned long long x) {
 #endif
 #define CR_FLEXIBLE_ARRAY_MEMBER(type, name) type name[ANYSIZE_ARRAY]
 #define CR_FLEXIBLE_ARRAY_SIZE(type) (sizeof(type) * ANYSIZE_ARRAY)
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(Array) (sizeof(Array) / sizeof((Array)[0]))
+#endif

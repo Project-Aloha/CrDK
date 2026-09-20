@@ -50,30 +50,27 @@ EFI_STATUS
 EFIAPI
 ProtocolGetAuxDataByName(
     IN EFI_CMD_DB_PROTOCOL *This, IN CONST CHAR8 *Name, OUT UINT8 *AuxData,
-    OUT UINT32 *Length)
+    IN OUT UINT32 *Length)
 {
-  if (gCmdDbHeader == NULL || Name == NULL || AuxData == NULL ||
-      Length == NULL) {
+  if (gCmdDbHeader == NULL || Name == NULL || Length == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  CR_STATUS Status = GetCmdDBAuxDataByName(gCmdDbHeader, Name, AuxData, Length);
-  return (Status == CR_SUCCESS) ? EFI_SUCCESS : EFI_NOT_FOUND;
+  return GetCmdDBAuxDataByName(gCmdDbHeader, Name, AuxData, Length);
 }
 
 EFI_STATUS
 EFIAPI
 ProtocolGetAuxDataByAddress(
     IN EFI_CMD_DB_PROTOCOL *This, IN CONST UINT32 Address, OUT UINT8 *AuxData,
-    OUT UINT32 *Length)
+    IN OUT UINT32 *Length)
 {
-  if (gCmdDbHeader == NULL || AuxData == NULL || Length == NULL) {
+  if (gCmdDbHeader == NULL || Length == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  CR_STATUS Status =
-      GetCmdDBAuxDataByAddress(gCmdDbHeader, (UINT32)Address, AuxData, Length);
-  return (Status == CR_SUCCESS) ? EFI_SUCCESS : EFI_NOT_FOUND;
+  return GetCmdDBAuxDataByAddress(
+      gCmdDbHeader, (UINT32)Address, AuxData, Length);
 }
 
 EFI_CMD_DB_PROTOCOL gCmdDBProtocol = {
