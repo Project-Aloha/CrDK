@@ -12,9 +12,7 @@
 #include <ntstrsafe.h>
 
 // memcmp wrapper
-STATIC inline INTN
-cr_memcmp(const VOID *dest, const VOID *src, UINTN len)
-{
+STATIC inline INTN cr_memcmp(const VOID *dest, const VOID *src, UINTN len) {
   SIZE_T matched = RtlCompareMemory(dest, src, len);
   if (matched == len) {
     return 0;
@@ -24,17 +22,18 @@ cr_memcmp(const VOID *dest, const VOID *src, UINTN len)
 }
 
 // memcpy wrapper
-STATIC inline VOID *
-cr_memcpy(VOID *dest, VOID *src, UINTN len)
-{
+STATIC inline VOID *cr_memcpy(VOID *dest, VOID *src, UINTN len) {
   RtlCopyMemory(dest, src, len);
   return dest;
 }
 
+STATIC inline VOID *cr_memset(VOID *dest, UINT8 value, UINTN len) {
+  RtlFillMemory(dest, len, value);
+  return dest;
+}
+
 // strncmp wrapper
-STATIC inline INTN
-cr_strncmp(const CHAR8 *str1, const CHAR8 *str2, UINTN len)
-{
+STATIC inline INTN cr_strncmp(const CHAR8 *str1, const CHAR8 *str2, UINTN len) {
   for (UINTN i = 0; i < len; i++) {
     if (str1[i] != str2[i]) {
       return (UINT8)str1[i] - (UINT8)str2[i];
@@ -47,9 +46,7 @@ cr_strncmp(const CHAR8 *str1, const CHAR8 *str2, UINTN len)
 }
 
 // strcmp wrapper
-STATIC inline INTN
-cr_strcmp(const CHAR8 *str1, const CHAR8 *str2)
-{
+STATIC inline INTN cr_strcmp(const CHAR8 *str1, const CHAR8 *str2) {
   while (*str1 && (*str1 == *str2)) {
     str1++;
     str2++;
@@ -60,30 +57,26 @@ cr_strcmp(const CHAR8 *str1, const CHAR8 *str2)
 #else
 #include <Library/BaseMemoryLib.h>
 // memcmp wrapper
-STATIC inline INTN
-cr_memcmp(const VOID *dest, const VOID *src, UINTN len)
-{
+STATIC inline INTN cr_memcmp(const VOID *dest, const VOID *src, UINTN len) {
   return CompareMem(dest, src, len);
 }
 
 // memcpy wrapper
-STATIC inline VOID *
-cr_memcpy(VOID *dest, VOID *src, UINTN len)
-{
+STATIC inline VOID *cr_memcpy(VOID *dest, VOID *src, UINTN len) {
   return CopyMem(dest, src, len);
 }
 
+STATIC inline VOID *cr_memset(VOID *dest, UINT8 value, UINTN len) {
+  return SetMem(dest, len, value);
+}
+
 // strcmp_s wrapper
-STATIC inline INTN
-cr_strncmp(const CHAR8 *str1, const CHAR8 *str2, UINTN len)
-{
+STATIC inline INTN cr_strncmp(const CHAR8 *str1, const CHAR8 *str2, UINTN len) {
   return AsciiStrnCmp(str1, str2, len);
 }
 
 // strcpm wrapper
-STATIC inline INTN
-cr_strcmp(const CHAR8 *str1, const CHAR8 *str2)
-{
+STATIC inline INTN cr_strcmp(const CHAR8 *str1, const CHAR8 *str2) {
   return AsciiStrCmp(str1, str2);
 }
 #endif

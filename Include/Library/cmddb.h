@@ -80,12 +80,12 @@ GetCmdDBEntryNameByAddress(
 CR_STATUS
 GetCmdDBAuxDataByName(
     IN CmdDbHeader *cmd_db_header, IN CONST CHAR8 *name, OUT UINT8 *aux_data,
-    OUT UINT32 *length);
+    IN OUT UINT32 *length);
 
 CR_STATUS
 GetCmdDBAuxDataByAddress(
     IN CmdDbHeader *cmd_db_header, IN UINT32 address, OUT UINT8 *aux_data,
-    OUT UINT32 *length);
+    IN OUT UINT32 *length);
 
 STATIC inline BOOLEAN CmdDBIsAddrEqual(IN UINT32 Addr1, IN UINT32 Addr2)
 {
