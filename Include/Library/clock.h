@@ -81,6 +81,8 @@ typedef enum {
   CLOCK_NODE_TYPE_GDSC,
   CLOCK_NODE_TYPE_BRANCH,
   CLOCK_NODE_TYPE_BRANCH_2,
+  /* Qualcomm PHY mux: 0 selects the PHY-generated clock, 2 selects XO. */
+  CLOCK_NODE_TYPE_PHY_MUX,
   CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR,
   CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2,
   CLOCK_NODE_TYPE_MAX = CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2,
@@ -153,6 +155,14 @@ typedef struct _ClockNode {
       UINT16  CxcCount;
       UINT32 *CxcRegisters;
     };
+    struct {
+      /* PHY mux info. The mux is owned by the clock provider, while the
+       * selected source is supplied by the QMP PHY clock provider. */
+      UINT32 MuxRegister;
+      UINT32 MuxMask;
+      UINT32 MuxPhyValue;
+      UINT32 MuxRefValue;
+    };
   };
 } ClockNode;
 
@@ -202,10 +212,15 @@ CR_STATUS GetClockNode(
     IN OUT ClockControllerType *ControllerType, IN OUT UINT32 *ClockId,
     OUT ClockNode **TargetClockNode);
 
+CR_STATUS GetGdscNode(
+    IN ClockDriverContext *ClockContext, IN CONST CHAR8 *GdscName,
+    OUT ClockNode **TargetGdscNode);
+
 BOOLEAN ClockRcg2CheckEnable(
     IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode);
 
 CR_STATUS ClockGdscEnable(IN ClockDriverContext *Context, IN ClockNode *Gdsc);
+CR_STATUS ClockGdscDisable(IN ClockDriverContext *Context, IN ClockNode *Gdsc);
 VOID      DebugccDumpAllClocksFreq(VOID);
 CR_STATUS
 DebugccMeasureClockRate(IN CONST CHAR8 *ClockName, OUT UINT64 *FrequencyHz);

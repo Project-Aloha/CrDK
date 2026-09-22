@@ -84,6 +84,10 @@
 #define PCIE_ATU_TYPE_MEMORY                  0x00U
 #define PCIE_ATU_TYPE_IO                      0x02U
 #define PCIE_ATU_TYPE_CFG0                    0x04U
+#define PCIE_ATU_TYPE_CFG1                    0x05U
+#define PCIE_ATU_BUS(Value)                   ((UINT32)(Value) << 24)
+#define PCIE_ATU_DEV(Value)                   ((UINT32)(Value) << 19)
+#define PCIE_ATU_FUNC(Value)                  ((UINT32)(Value) << 16)
 
 #define PCIE_QMP_SW_RESET                     BIT(0)
 #define PCIE_QMP_SERDES_START                 BIT(0)
@@ -250,6 +254,14 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
       Target->PhyInit == NULL || Target->PhyInitCount == 0) {
     return CR_INVALID_PARAMETER;
   }
+  /* A cold root-complex bring-up must explicitly vote the NoC and hand off
+   * stream ownership.  Letting either operation disappear silently can
+   * expose a DMA-capable endpoint with no fabric or SMMU contract. */
+  if (Io->SetInterconnect == NULL ||
+      (Target->SupplyCount != 0 && Io->SetSupply == NULL) ||
+      (Target->IommuMapCount != 0 && Io->SetIommu == NULL)) {
+    return CR_INVALID_PARAMETER;
+  }
   if ((Target->InterruptCount != 0 && Target->Interrupts == NULL) ||
       (Target->IommuMapCount != 0 && Target->IommuMaps == NULL)) {
     return CR_INVALID_PARAMETER;
@@ -281,7 +293,8 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
   for (Index = 0; Index < Target->ClockCount; Index++) {
     if (Target->Clocks[Index].Name == NULL ||
         Target->Clocks[Index].Controller == NULL ||
-        Target->Clocks[Index].Id == NULL) {
+        Target->Clocks[Index].Id == NULL ||
+        Target->Clocks[Index].Provider >= PCIE_CLOCK_PROVIDER_MAX) {
       return CR_INVALID_PARAMETER;
     }
   }
@@ -289,6 +302,13 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
     if (Target->Resets[Index].Name == NULL ||
         Target->Resets[Index].Controller == NULL ||
         Target->Resets[Index].Id == NULL) {
+      return CR_INVALID_PARAMETER;
+    }
+  }
+  for (Index = 0; Index < Target->SupplyCount; Index++) {
+    if (Target->Supplies[Index].Name == NULL ||
+        Target->Supplies[Index].Controller == NULL ||
+        Target->Supplies[Index].Id == NULL) {
       return CR_INVALID_PARAMETER;
     }
   }
@@ -386,6 +406,8 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
                           Target->ClockCount) ||
         !TargetRangeValid(Controller->ResetOffset, Controller->ResetCount,
                           Target->ResetCount) ||
+        !TargetRangeValid(Controller->SupplyOffset, Controller->SupplyCount,
+                          Target->SupplyCount) ||
         !TargetRangeValid(Controller->GpioOffset, Controller->GpioCount,
                           Target->GpioCount) ||
         !TargetRangeValid(Controller->IommuMapOffset,
@@ -421,7 +443,8 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
         Config->Base - Dbi->Base > ~0ULL - Config->Size ||
         ((Controller->PowerDomainController == NULL) !=
          (Controller->PowerDomainId == NULL)) ||
-        (Controller->PowerDomainId != NULL && Io->SetPowerDomain == NULL)) {
+        (Controller->PowerDomainId != NULL && Io->SetPowerDomain == NULL) ||
+        (Controller->SupplyCount != 0 && Io->SetSupply == NULL)) {
       return CR_INVALID_PARAMETER;
     }
 
@@ -476,14 +499,19 @@ SetClockRange(
 {
   UINT16 Index;
   CR_STATUS Status;
+  CR_STATUS FirstError;
 
   if (!Enable) {
+    FirstError = CR_SUCCESS;
     for (Index = Count; Index > 0; Index--) {
-      (VOID)Context->Io.SetClock(
+      Status = Context->Io.SetClock(
           Context->Io.Context, &Context->Target->Clocks[Offset + Index - 1],
           FALSE);
+      if (CR_ERROR (Status) && !CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
     }
-    return CR_SUCCESS;
+    return FirstError;
   }
 
   for (Index = 0; Index < Count; Index++) {
@@ -494,6 +522,44 @@ SetClockRange(
         Index--;
         (VOID)Context->Io.SetClock(
             Context->Io.Context, &Context->Target->Clocks[Offset + Index],
+            FALSE);
+      }
+      return Status;
+    }
+  }
+  return CR_SUCCESS;
+}
+
+STATIC CR_STATUS
+SetSupplyRange(
+    IN PcieDeviceContext *Context, IN UINT16 Offset, IN UINT16 Count,
+    IN BOOLEAN Enable)
+{
+  UINT16 Index;
+  CR_STATUS Status;
+  CR_STATUS FirstError;
+
+  if (!Enable) {
+    FirstError = CR_SUCCESS;
+    for (Index = Count; Index > 0; Index--) {
+      Status = Context->Io.SetSupply(
+          Context->Io.Context,
+          &Context->Target->Supplies[Offset + Index - 1U], FALSE);
+      if (CR_ERROR (Status) && !CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    }
+    return FirstError;
+  }
+
+  for (Index = 0; Index < Count; Index++) {
+    Status = Context->Io.SetSupply(
+        Context->Io.Context, &Context->Target->Supplies[Offset + Index], TRUE);
+    if (CR_ERROR(Status)) {
+      while (Index > 0) {
+        Index--;
+        (VOID)Context->Io.SetSupply(
+            Context->Io.Context, &Context->Target->Supplies[Offset + Index],
             FALSE);
       }
       return Status;
@@ -569,24 +635,32 @@ SetPerst(
   return CR_NOT_FOUND;
 }
 
-STATIC VOID
+STATIC CR_STATUS
 ReleaseGpios(
     IN PcieDeviceContext *Context, IN CONST PcieTargetController *Controller)
 {
   UINT16 Index;
+  CR_STATUS Status;
+  CR_STATUS FirstError;
+
+  FirstError = CR_SUCCESS;
 
   for (Index = Controller->GpioCount; Index > 0; Index--) {
     CONST PcieTargetGpio *Gpio =
         &Context->Target->Gpios[Controller->GpioOffset + Index - 1U];
 
-    if (cr_strcmp(Gpio->Role, "perst") == 0) {
-      (VOID)Context->Io.SetGpio(
-          Context->Io.Context, Gpio, PCIE_GPIO_OUTPUT, TRUE);
-    } else if (cr_strcmp(Gpio->Role, "enable") == 0) {
-      (VOID)Context->Io.SetGpio(
+    /* PERST is asserted by ReleasePortResources before SMMU revocation.
+     * Keep it asserted while the remaining GPIOs are released, so a failed
+     * enable-line operation cannot reopen the endpoint during teardown. */
+    if (cr_strcmp(Gpio->Role, "enable") == 0) {
+      Status = Context->Io.SetGpio(
           Context->Io.Context, Gpio, PCIE_GPIO_OUTPUT, FALSE);
+      if (CR_ERROR (Status) && !CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
     }
   }
+  return FirstError;
 }
 
 STATIC UINT64
@@ -679,12 +753,12 @@ InitializePhy(
     return Status;
   }
 
+  Port->PhyClocksEnabled = TRUE;
   Status = SetClockRange(
       Context, Phy->ClockOffset, Phy->ClockCount, TRUE);
   if (CR_ERROR(Status)) {
     return Status;
   }
-  Port->PhyClocksEnabled = TRUE;
 
   PcieRmw32(
       Context, Pcs + Phy->PowerDownControl, 0,
@@ -763,8 +837,10 @@ STATIC VOID
 ConfigureRootPort(IN PcieDeviceContext *Context, IN PciePortRuntime *Port)
 {
   UINT32 Value;
+  UINT32 BusNumbers;
   UINT8 Capability;
   UINT16 Guard;
+  UINT8 SecondaryBus;
 
   PcieRmw32(
       Context, Port->DbiBase + PCIE_DBI_MISC_CONTROL_1, 0,
@@ -790,9 +866,22 @@ ConfigureRootPort(IN PcieDeviceContext *Context, IN PciePortRuntime *Port)
   PcieRmw32(
       Context, Port->DbiBase + PCIE_DBI_INTERRUPT_LINE, 0x0000FF00U,
       0x00000100U);
+
+  /* Linux assigns the first downstream bus immediately after the root bus.
+   * Keep the primary/secondary/subordinate fields derived from target data so
+   * a platform using a non-zero bus aperture is initialized consistently.  A
+   * root-only aperture is valid as well; in that case leave secondary equal
+   * to primary instead of wrapping BusStart + 1 at 0xff. */
+  SecondaryBus = Port->Target->BusStart;
+  if (Port->Target->BusStart < Port->Target->BusEnd) {
+    SecondaryBus = (UINT8)(Port->Target->BusStart + 1U);
+  }
+  BusNumbers = ((UINT32)Port->Target->BusEnd << 16) |
+               ((UINT32)SecondaryBus << 8) |
+               (UINT32)Port->Target->BusStart;
   PcieRmw32(
       Context, Port->DbiBase + PCIE_DBI_PRIMARY_BUS, 0x00FFFFFFU,
-      0x00FF0100U);
+      BusNumbers);
   PcieRmw32(
       Context, Port->DbiBase + PCIE_DBI_COMMAND_STATUS, 0x0000FFFFU,
       (UINT32)(PCIE_DBI_COMMAND_IO | PCIE_DBI_COMMAND_MEMORY |
@@ -1017,44 +1106,255 @@ PcieIsLinkUp(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   return LinkUp;
 }
 
-STATIC VOID
+CR_STATUS
+PcieConfigAccess(
+    IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex, IN UINT8 Bus,
+    IN UINT8 Device, IN UINT8 Function, IN UINT16 Register, IN UINTN Width,
+    IN BOOLEAN Write, IN OUT UINT32 *Value)
+{
+  PciePortRuntime *Port;
+  UINT64           Address;
+  UINT64           WindowOffset;
+  UINT32           Raw;
+  UINT32           Mask;
+  UINT32           Shift;
+  UINT32           BusDev;
+  UINT32           AtuType;
+  BOOLEAN          RootPort;
+  CR_STATUS        Status;
+
+  if (Context == NULL || !Context->Initialized || Value == NULL ||
+      PortIndex >= Context->Target->ControllerCount ||
+      (Context->InitializedMask & BIT (PortIndex)) == 0 ||
+      ((Width != 1) && (Width != 2) && (Width != 4)) ||
+      (Register >= 0x1000U) || (Register > 0x1000U - Width) ||
+      (Register & (Width - 1U)) != 0 || Device > 31U || Function > 7U) {
+    return CR_INVALID_PARAMETER;
+  }
+
+  Port = &Context->Ports[PortIndex];
+  if (Port->State == PCIE_PORT_OFF ||
+      Port->State == PCIE_PORT_INITIALIZING ||
+      Port->State == PCIE_PORT_FAILED) {
+    return CR_NOT_FOUND;
+  }
+  if (Bus < Port->Target->BusStart || Bus > Port->Target->BusEnd) {
+    return CR_INVALID_PARAMETER;
+  }
+
+  /* The DesignWare own-conf path exposes only function 0 of the root port.
+   * A root-bus slot must not be sent as CFG0: there is no downstream bus
+   * behind the root bus and Linux's dw_pcie_own_conf_map_bus() returns NULL
+   * for this case. */
+  if (Bus == Port->Target->BusStart && (Device != 0 || Function != 0)) {
+    return CR_NOT_FOUND;
+  }
+
+  RootPort = (Bus == Port->Target->BusStart) && (Device == 0) &&
+             (Function == 0);
+  if (RootPort) {
+    WindowOffset = Register;
+    if (Port->DbiSize < sizeof (UINT32) ||
+        WindowOffset > Port->DbiSize - Width ||
+        (WindowOffset & ~3ULL) > Port->DbiSize - sizeof (UINT32)) {
+      return CR_INVALID_PARAMETER;
+    }
+    if (Port->DbiBase > ~0ULL - WindowOffset) {
+      return CR_INVALID_PARAMETER;
+    }
+    Address = Port->DbiBase + WindowOffset;
+  } else {
+    /* SM8450 exposes a one-megabyte CPU-side CFG aperture.  The BDF is
+     * carried by iATU region 0, so only the 4 KiB function offset is added
+     * to ConfigBase. */
+    WindowOffset = Register;
+    if (Port->ConfigSize < sizeof (UINT32) ||
+        WindowOffset > Port->ConfigSize - Width ||
+        (WindowOffset & ~3ULL) > Port->ConfigSize - sizeof (UINT32)) {
+      return CR_INVALID_PARAMETER;
+    }
+    if (Port->ConfigBase > ~0ULL - WindowOffset) {
+      return CR_INVALID_PARAMETER;
+    }
+    Address = Port->ConfigBase + WindowOffset;
+  }
+
+  CrLockAcquire (&Context->ConfigLock);
+  if (!RootPort) {
+    /* Do not issue a CFG TLP while the link is down.  Apart from avoiding a
+     * spurious SError this matches the DWC host driver's last-line check. */
+    if (!PcieIsLinkUp (Context, PortIndex)) {
+      CrLockRelease (&Context->ConfigLock);
+      return CR_NOT_FOUND;
+    }
+
+    BusDev = PCIE_ATU_BUS (Bus) | PCIE_ATU_DEV (Device) |
+             PCIE_ATU_FUNC (Function);
+    /* The PCI configuration target is a 32-bit BDF address.  Guard the
+     * addition before programming iATU so a larger-than-ECAM target window
+     * cannot wrap at 0xffffffff for the last bus/device/function. */
+    if (Port->ConfigSize == 0 ||
+        Port->ConfigSize - 1U > (UINT64)MAX_UINT32 - BusDev) {
+      CrLockRelease (&Context->ConfigLock);
+      return CR_INVALID_PARAMETER;
+    }
+    AtuType = (Bus == (UINT8)(Port->Target->BusStart + 1U))
+                  ? PCIE_ATU_TYPE_CFG0
+                  : PCIE_ATU_TYPE_CFG1;
+    Status = ProgramAtuRegion (
+        Context, Port, 0, AtuType, Port->ConfigBase, BusDev,
+        Port->ConfigSize, (UINT32)PCIE_ATU_CFG_SHIFT_MODE);
+    if (CR_ERROR (Status)) {
+      CrLockRelease (&Context->ConfigLock);
+      return Status;
+    }
+  }
+
+  Shift = (UINT32)(Address & 3U) * 8U;
+  Mask = (Width == 4) ? MAX_UINT32 : ((1U << (Width * 8U)) - 1U) << Shift;
+  Raw  = PcieRead32 (Context, Address & ~3ULL);
+  if (Write) {
+    Raw = (Raw & ~Mask) | ((*Value << Shift) & Mask);
+    PcieWrite32 (Context, Address & ~3ULL, Raw);
+    MemoryFence ();
+  } else {
+    *Value = (Raw & Mask) >> Shift;
+  }
+  CrLockRelease (&Context->ConfigLock);
+  return CR_SUCCESS;
+}
+
+STATIC BOOLEAN
+PortResourcesOwned(IN CONST PciePortRuntime *Port)
+{
+  return Port != NULL &&
+         (Port->GpiosConfigured || Port->SuppliesEnabled ||
+          Port->PowerEnabled || Port->ControllerClocksEnabled ||
+          Port->ControllerResetsManaged || Port->PhyClocksEnabled ||
+          Port->PhyResetsManaged || Port->InterconnectEnabled ||
+          Port->IommuAttached);
+}
+
+STATIC CR_STATUS
 ReleasePortResources(
     IN PcieDeviceContext *Context, IN OUT PciePortRuntime *Port)
 {
+  CR_STATUS Status;
+  CR_STATUS FirstError;
+
+  FirstError = CR_SUCCESS;
+
+  /* Fence the endpoint before revoking its stream translation.  The SMMU
+   * protocol requires BlockSegment() to run after the endpoint has stopped
+   * issuing DMA; clearing LTSSM and asserting PERST provide that independent
+   * fence while controller resources are still available. */
   if (Port->ControllerClocksEnabled) {
     PcieRmw32(
         Context, Port->ParfBase + PCIE_PARF_LTSSM,
         (UINT32)PCIE_PARF_LTSSM_ENABLE, 0);
   }
   if (Port->GpiosConfigured) {
-    ReleaseGpios(Context, Port->Target);
-    Port->GpiosConfigured = FALSE;
+    Status = SetPerst (Context, Port->Target, TRUE);
+    if (CR_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  /* Retaining IommuAttached on failure lets a caller retry instead of falsely
+   * treating a still-owned stream as shut down. */
+  if (Port->IommuAttached) {
+    Status = Context->Io.SetIommu(
+        Context->Io.Context, Port->Target, FALSE);
+    if (CR_ERROR (Status)) {
+      return Status;
+    }
+    Port->IommuAttached = FALSE;
+  }
+
+  if (Port->GpiosConfigured) {
+    Status = ReleaseGpios (Context, Port->Target);
+    if (CR_ERROR (Status)) {
+      FirstError = Status;
+    } else {
+      Port->GpiosConfigured = FALSE;
+    }
   }
   if (Port->ControllerResetsManaged) {
-    (VOID)SetResetRange(
+    Status = SetResetRange(
         Context, Port->Target->ResetOffset, Port->Target->ResetCount, TRUE);
-    Port->ControllerResetsManaged = FALSE;
+    if (CR_ERROR (Status)) {
+      FirstError = Status;
+    } else {
+      Port->ControllerResetsManaged = FALSE;
+    }
   }
   if (Port->PhyResetsManaged) {
-    (VOID)SetResetRange(
+    Status = SetResetRange(
         Context, Port->Phy->ResetOffset, Port->Phy->ResetCount, TRUE);
-    Port->PhyResetsManaged = FALSE;
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->PhyResetsManaged = FALSE;
+    }
   }
   if (Port->PhyClocksEnabled) {
-    (VOID)SetClockRange(
+    Status = SetClockRange(
         Context, Port->Phy->ClockOffset, Port->Phy->ClockCount, FALSE);
-    Port->PhyClocksEnabled = FALSE;
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->PhyClocksEnabled = FALSE;
+    }
   }
   if (Port->ControllerClocksEnabled) {
-    (VOID)SetClockRange(
+    Status = SetClockRange(
         Context, Port->Target->ClockOffset, Port->Target->ClockCount, FALSE);
-    Port->ControllerClocksEnabled = FALSE;
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->ControllerClocksEnabled = FALSE;
+    }
+  }
+  if (Port->InterconnectEnabled) {
+    Status = Context->Io.SetInterconnect(
+        Context->Io.Context, Port->Target, FALSE);
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->InterconnectEnabled = FALSE;
+    }
   }
   if (Port->PowerEnabled) {
-    (VOID)Context->Io.SetPowerDomain(
+    Status = Context->Io.SetPowerDomain(
         Context->Io.Context, Port->Target, FALSE);
-    Port->PowerEnabled = FALSE;
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->PowerEnabled = FALSE;
+    }
   }
+  if (Port->SuppliesEnabled) {
+    Status = SetSupplyRange(
+        Context, Port->Target->SupplyOffset, Port->Target->SupplyCount, FALSE);
+    if (CR_ERROR (Status)) {
+      if (!CR_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+    } else {
+      Port->SuppliesEnabled = FALSE;
+    }
+  }
+  return FirstError;
 }
 
 CR_STATUS
@@ -1075,6 +1375,7 @@ PcieLibInit(
   cr_memset(&mPcieContext, 0, sizeof(mPcieContext));
   mPcieContext.Target = Target;
   mPcieContext.Io = *Io;
+  CrLockInit(&mPcieContext.ConfigLock);
   for (Index = 0; Index < Target->ControllerCount; Index++) {
     CONST PcieTargetController *Controller = &Target->Controllers[Index];
     CONST PcieTargetRegion *Region;
@@ -1085,10 +1386,20 @@ PcieLibInit(
     Region = FindRegion(Target, Controller, "parf");
     Port->ParfBase = Region->Base;
     Region = FindRegion(Target, Controller, "dbi");
+    if (Region == NULL) {
+      return CR_INVALID_PARAMETER;
+    }
     Port->DbiBase = Region->Base;
+    Port->DbiSize = Region->Size;
     Region = FindRegion(Target, Controller, "atu");
+    if (Region == NULL) {
+      return CR_INVALID_PARAMETER;
+    }
     Port->AtuBase = Region->Base;
     Region = FindRegion(Target, Controller, "config");
+    if (Region == NULL) {
+      return CR_INVALID_PARAMETER;
+    }
     Port->ConfigBase = Region->Base;
     Port->ConfigSize = Region->Size;
     Port->State = PCIE_PORT_OFF;
@@ -1115,6 +1426,10 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
       Port->State == PCIE_PORT_READY_NO_LINK) {
     return CR_SUCCESS;
   }
+  if ((Context->ResourceMask & BIT (PortIndex)) != 0) {
+    /* A previous attempt retained resources after a failed revoke. */
+    return CR_BUSY;
+  }
   Port->State = PCIE_PORT_INITIALIZING;
 
   /* A callback can fail after configuring an earlier GPIO.  Mark the group
@@ -1124,20 +1439,44 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   if (CR_ERROR(Status)) {
     goto Error;
   }
+  Port->SuppliesEnabled = TRUE;
+  Status = SetSupplyRange(
+      Context, Port->Target->SupplyOffset, Port->Target->SupplyCount, TRUE);
+  if (CR_ERROR(Status)) {
+    goto Error;
+  }
   if (Port->Target->PowerDomainId != NULL) {
+    Port->PowerEnabled = TRUE;
     Status = Context->Io.SetPowerDomain(
         Context->Io.Context, Port->Target, TRUE);
     if (CR_ERROR(Status)) {
       goto Error;
     }
-    Port->PowerEnabled = TRUE;
   }
+  Port->InterconnectEnabled = TRUE;
+  Status = Context->Io.SetInterconnect(
+      Context->Io.Context, Port->Target, TRUE);
+  if (CR_ERROR(Status)) {
+    goto Error;
+  }
+
+  /* The SMMU owns DMA isolation.  Attach every target stream while PERST is
+   * asserted and before any controller clock can make the root complex issue
+   * transactions. */
+  if (Port->Target->IommuMapCount != 0) {
+    Port->IommuAttached = TRUE;
+    Status = Context->Io.SetIommu(
+        Context->Io.Context, Port->Target, TRUE);
+    if (CR_ERROR(Status)) {
+      goto Error;
+    }
+  }
+  Port->ControllerClocksEnabled = TRUE;
   Status = SetClockRange(
       Context, Port->Target->ClockOffset, Port->Target->ClockCount, TRUE);
   if (CR_ERROR(Status)) {
     goto Error;
   }
-  Port->ControllerClocksEnabled = TRUE;
 
   Port->ControllerResetsManaged = TRUE;
   Status = SetResetRange(
@@ -1180,6 +1519,7 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
 
   Port->State = PCIE_PORT_READY_NO_LINK;
   Context->InitializedMask |= (UINT32)BIT(PortIndex);
+  Context->ResourceMask |= (UINT32)BIT(PortIndex);
   for (Elapsed = 0; Elapsed < PCIE_LINK_TIMEOUT_US;
        Elapsed += PCIE_LINK_POLL_DELAY_US) {
     if (PcieIsLinkUp(Context, PortIndex)) {
@@ -1194,9 +1534,23 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   return CR_SUCCESS;
 
 Error:
-  Port->LastStatus = Status;
-  Port->State = PCIE_PORT_FAILED;
-  ReleasePortResources(Context, Port);
+  {
+    CR_STATUS ReleaseStatus;
+
+    Port->LastStatus = Status;
+    Port->State = PCIE_PORT_FAILED;
+    ReleaseStatus = ReleasePortResources (Context, Port);
+    if (CR_ERROR (ReleaseStatus)) {
+      /* Keep ownership visible to the host shutdown path. */
+      Context->ResourceMask |= (UINT32)BIT (PortIndex);
+      Port->LastStatus = ReleaseStatus;
+      log_err(
+          "PCIe: port %u initialization cleanup failed, Status=0x%X",
+          PortIndex, ReleaseStatus);
+      return ReleaseStatus;
+    }
+  }
+  Context->ResourceMask &= ~(UINT32)BIT (PortIndex);
   Context->InitializedMask &= ~(UINT32)BIT(PortIndex);
   Context->LinkMask &= ~(UINT32)BIT(PortIndex);
   log_err("PCIe: port %u initialization failed, Status=0x%X", PortIndex,
@@ -1237,13 +1591,25 @@ CR_STATUS
 PcieShutdownPort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
 {
   PciePortRuntime *Port;
+  CR_STATUS        Status;
 
   if (Context == NULL || !Context->Initialized ||
       PortIndex >= Context->Target->ControllerCount) {
     return CR_INVALID_PARAMETER;
   }
   Port = &Context->Ports[PortIndex];
-  ReleasePortResources(Context, Port);
+  Status = ReleasePortResources (Context, Port);
+  if (CR_ERROR (Status)) {
+    /* Keep the initialized bit and all resource ownership flags intact so a
+     * later controlled shutdown can retry the failed SMMU/fabric operation. */
+    Port->State      = PCIE_PORT_FAILED;
+    Port->LastStatus = Status;
+    if (PortResourcesOwned (Port)) {
+      Context->ResourceMask |= (UINT32)BIT (PortIndex);
+    }
+    return Status;
+  }
+  Context->ResourceMask &= ~(UINT32)BIT (PortIndex);
   Context->InitializedMask &= ~(UINT32)BIT(PortIndex);
   Context->LinkMask &= ~(UINT32)BIT(PortIndex);
   Port->State = PCIE_PORT_OFF;

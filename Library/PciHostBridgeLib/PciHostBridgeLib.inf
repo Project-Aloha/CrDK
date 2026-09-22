@@ -1,0 +1,40 @@
+## @file
+#  Crane PCI host bridge library.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CranePciHostBridgeLib
+  FILE_GUID                      = 1f6c8f2b-6f3f-4ef1-bafc-04c4db11d6e6
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PciHostBridgeLib
+
+[Sources]
+  PciHostBridgeLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  ClockLib
+  DevicePathLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  PcieLib
+  CrTargetLib
+
+[Protocols]
+  gEfiClockCrProtocolGuid       ## CONSUMES
+  gEfiGpioCrProtocolGuid        ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid        ## CONSUMES
+  gEfiSmmuCrProtocolGuid        ## CONSUMES

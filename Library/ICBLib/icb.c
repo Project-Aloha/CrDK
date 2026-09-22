@@ -1,5 +1,5 @@
 /** @file
- *  OS-independent Qualcomm RPMh interconnect voter.
+ *  OS-independent Qualcomm RPMh ICB voter.
  *
  *  The aggregation and BCM command encoding follow Linux icc-rpmh and
  *  bcm-voter. Platform-specific code supplies generated topology plus CmdDB
@@ -15,7 +15,7 @@
 #include <oskal/cr_string.h>
 
 #ifdef _KERNEL_MODE
-#include "interconnect.tmh"
+#include "icb.tmh"
 #endif
 
 #define INTERCONNECT_BCM_AUX_SIZE       8
@@ -164,7 +164,7 @@ InitializeBcms(IN OUT InterconnectDeviceContext *Context)
         Context->Io.CmdDbContext, Target->Name, &Runtime->Address);
     if (CR_ERROR(Status) || Runtime->Address == 0) {
       log_err(
-          "Interconnect: CmdDB address missing for " CR_LOG_CHAR8_STR_FMT,
+          "ICB: CmdDB address missing for " CR_LOG_CHAR8_STR_FMT,
           Target->Name);
       return CR_NOT_FOUND;
     }
@@ -174,7 +174,7 @@ InitializeBcms(IN OUT InterconnectDeviceContext *Context)
         Context->Io.CmdDbContext, Target->Name, Aux, &AuxLength);
     if (CR_ERROR(Status) || AuxLength < sizeof(Aux)) {
       log_err(
-          "Interconnect: CmdDB aux data missing for " CR_LOG_CHAR8_STR_FMT,
+          "ICB: CmdDB aux data missing for " CR_LOG_CHAR8_STR_FMT,
           Target->Name);
       return CR_NOT_FOUND;
     }
@@ -184,7 +184,7 @@ InitializeBcms(IN OUT InterconnectDeviceContext *Context)
     Runtime->Vcd = Aux[6];
     if (Runtime->Unit == 0 || Runtime->Width == 0) {
       log_err(
-          "Interconnect: invalid CmdDB aux data for " CR_LOG_CHAR8_STR_FMT,
+          "ICB: invalid CmdDB aux data for " CR_LOG_CHAR8_STR_FMT,
           Target->Name);
       return CR_DEVICE_ERROR;
     }
@@ -437,6 +437,20 @@ CommitVotes(IN OUT InterconnectDeviceContext *Context)
 }
 
 STATIC VOID
+RollbackVotesAfterFailure(IN OUT InterconnectDeviceContext *Context)
+{
+  CR_STATUS Status;
+
+  /* A VCD batch can commit before a later batch reports an error.  Recompute
+   * dirty state from the restored paths and push the old votes back so the
+   * RPMh state cannot remain ahead of the caller-visible state. */
+  Status = CommitVotes(Context);
+  if (CR_ERROR(Status)) {
+    log_err("ICB: vote rollback retry failed, Status=0x%X", Status);
+  }
+}
+
+STATIC VOID
 BestEffortClearVotes(IN OUT InterconnectDeviceContext *Context)
 {
   UINT16 Index;
@@ -451,7 +465,7 @@ BestEffortClearVotes(IN OUT InterconnectDeviceContext *Context)
   }
   Status = CommitVotes(Context);
   if (CR_ERROR(Status)) {
-    log_err("Interconnect: BCM vote rollback failed, Status=0x%X", Status);
+    log_err("ICB: BCM vote rollback failed, Status=0x%X", Status);
   }
 }
 
@@ -725,6 +739,7 @@ InterconnectSetBandwidth(
     Runtime->AverageBandwidth = PreviousAverage;
     Runtime->PeakBandwidth = PreviousPeak;
     RecalculateVotes(Context);
+    RollbackVotesAfterFailure(Context);
   }
   CrLockRelease(&Context->Lock);
   return Status;
@@ -762,6 +777,7 @@ InterconnectReleasePath(
       /* A failed release must not invalidate the caller's handle. */
       *Runtime = Saved;
       RecalculateVotes(Context);
+      RollbackVotesAfterFailure(Context);
     }
   }
   CrLockRelease(&Context->Lock);

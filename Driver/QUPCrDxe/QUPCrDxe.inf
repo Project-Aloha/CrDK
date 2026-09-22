@@ -1,0 +1,28 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = QUPCrDxe
+  FILE_GUID                      = 6f0b1c73-3a8e-4f71-b1c5-4f5d0db0d9b2
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = QupCrEntryPoint
+
+[Sources]
+  QUPCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  CrTargetLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiClockCrProtocolGuid        ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## CONSUMES
+  gEfiQupCrProtocolGuid          ## PRODUCES
+
+[Depex]
+  gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid

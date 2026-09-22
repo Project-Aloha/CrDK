@@ -24,6 +24,7 @@
   IoLib
   OskInterruptLib
   CrTargetLib
+  SynchronizationLib
 
 [Sources.common]
   rpmh.c

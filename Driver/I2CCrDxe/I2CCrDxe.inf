@@ -1,0 +1,28 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = I2CCrDxe
+  FILE_GUID                      = 8d8d4e53-6a0f-4f4f-9d29-6f2c5d0db7a1
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = I2CCrEntryPoint
+
+[Sources]
+  I2CCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiQupCrProtocolGuid         ## CONSUMES
+  gEfiGpiCrProtocolGuid         ## CONSUMES
+  gEfiI2cMasterProtocolGuid     ## CONSUMES
+  gEfiI2cCrProtocolGuid         ## PRODUCES
+
+[Depex]
+  gEfiQupCrProtocolGuid AND gEfiGpiCrProtocolGuid AND gEfiI2cMasterProtocolGuid

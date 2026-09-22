@@ -36,7 +36,7 @@ STATIC inline VOID CrLockRelease(IN OUT CR_LOCK *Lock) {
 
 typedef SPIN_LOCK CR_LOCK;
 
-STATIC inline VOID CrLockInit(IN OUT CR_LOCK *Lock) { *Lock = 0; }
+STATIC inline VOID CrLockInit(IN OUT CR_LOCK *Lock) { InitializeSpinLock(Lock); }
 
 STATIC inline VOID CrLockAcquire(IN OUT CR_LOCK *Lock) {
   AcquireSpinLock(Lock);

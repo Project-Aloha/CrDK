@@ -24,12 +24,14 @@
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
+  QcomPkg/QcomPkg.dec
   AndromedaPkg/AndromedaPkg.dec
 
 [LibraryClasses]
   BaseLib
   DebugLib
   ClockLib
+  CrTargetLib
   MemoryAllocationLib
   IoLib
   BaseMemoryLib

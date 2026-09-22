@@ -47,7 +47,7 @@ CrAtomicOr32(IN OUT volatile UINT32 *Value, IN UINT32 Mask)
   OldValue = CrAtomicLoad32(Value);
   do {
     Observed = InterlockedCompareExchange32(
-        Value, OldValue | Mask, OldValue);
+        Value, OldValue, OldValue | Mask);
     if (Observed == OldValue) {
       return OldValue;
     }
@@ -64,7 +64,7 @@ CrAtomicAnd32(IN OUT volatile UINT32 *Value, IN UINT32 Mask)
   OldValue = CrAtomicLoad32(Value);
   do {
     Observed = InterlockedCompareExchange32(
-        Value, OldValue & Mask, OldValue);
+        Value, OldValue, OldValue & Mask);
     if (Observed == OldValue) {
       return OldValue;
     }

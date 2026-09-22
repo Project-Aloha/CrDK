@@ -29,10 +29,12 @@ GetClockNode(
     IN OUT ClockControllerType *ControllerType, IN OUT UINT32 *ClockId,
     OUT ClockNode **TargetClockNode)
 {
-  if ((ClockContext == NULL) && (ControllerType == NULL) && (ClockId == NULL)) {
+  if (ClockContext == NULL || TargetClockNode == NULL ||
+      (ClockName == NULL && (ControllerType == NULL || ClockId == NULL))) {
     log_err("Invalid Parameter provided.");
     return CR_INVALID_PARAMETER;
   }
+  *TargetClockNode = NULL;
 
   // Locate by ControllerType and ClockId if ClockName is not provided
   if (!ClockName) {
@@ -51,7 +53,8 @@ GetClockNode(
       ClockController *Controller = &ClockContext->ClockControllers[i];
       for (UINTN j = 0; j < Controller->ClkCount; j++) {
         ClockNode *ClkNode = Controller->Clks[j];
-        if (cr_strcmp(ClkNode->Name, ClockName) == 0) {
+        if (ClkNode != NULL && ClkNode->Name != NULL &&
+            cr_strcmp(ClkNode->Name, ClockName) == 0) {
           *TargetClockNode = ClkNode;
           if (ControllerType)
             *ControllerType = (ClockControllerType)i;
@@ -68,6 +71,35 @@ GetClockNode(
     return CR_NOT_FOUND;
   }
   return CR_SUCCESS;
+}
+
+CR_STATUS
+GetGdscNode(
+    IN ClockDriverContext *ClockContext, IN CONST CHAR8 *GdscName,
+    OUT ClockNode **TargetGdscNode)
+{
+  UINTN ControllerIndex;
+  UINTN GdscIndex;
+
+  if (ClockContext == NULL || GdscName == NULL || TargetGdscNode == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+  *TargetGdscNode = NULL;
+  for (ControllerIndex = 0;
+       ControllerIndex < ClockContext->ClockControllerCount;
+       ControllerIndex++) {
+    ClockController *Controller =
+        &ClockContext->ClockControllers[ControllerIndex];
+    for (GdscIndex = 0; GdscIndex < Controller->GdscCount; GdscIndex++) {
+      ClockNode *Gdsc = Controller->Gdscs[GdscIndex];
+      if (Gdsc != NULL && Gdsc->Name != NULL &&
+          cr_strcmp(Gdsc->Name, GdscName) == 0) {
+        *TargetGdscNode = Gdsc;
+        return CR_SUCCESS;
+      }
+    }
+  }
+  return CR_NOT_FOUND;
 }
 
 CR_STATUS
@@ -224,6 +256,57 @@ ClockEnable(
     return CR_INVALID_PARAMETER;
   }
 
+  if (TargetClockNode->Type == CLOCK_NODE_TYPE_PHY_MUX) {
+    UINT32 Value;
+
+    if (TargetClockNode->MuxRegister == 0 ||
+        TargetClockNode->MuxMask == 0 ||
+        TargetClockNode->ParentController == NULL ||
+        TargetClockNode->ParentController->Address == 0) {
+      return CR_INVALID_PARAMETER;
+    }
+    Value = Enable ? TargetClockNode->MuxPhyValue
+                   : TargetClockNode->MuxRefValue;
+    CrMmioUpdateBits32(
+        TargetClockNode->ParentController->Address +
+          TargetClockNode->MuxRegister,
+        TargetClockNode->MuxMask,
+        Value);
+    MemoryFence();
+    return CR_SUCCESS;
+  }
+
+  if (TargetClockNode->Type == CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
+    if (Enable) {
+      /* RCG2 clocks are rate-selected by the command/config register.  The
+       * branch consumer may be enabled before this source entry, so make the
+       * source selection explicit instead of relying on reset defaults. */
+      if (TargetClockNode->ParentController == NULL) {
+        return CR_INVALID_PARAMETER;
+      }
+      CrMmioUpdateBits32(
+          TargetClockNode->ParentController->Address +
+            TargetClockNode->CmdRegister +
+            CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET,
+          CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK,
+          0);
+      return ClockRcg2SetRate(
+          ClockContext, TargetClockNode, RateHz,
+          CLOCK_RCG2_POLICY_CEIL);
+    }
+
+    /* Linux's clk_rcg2 gate uses ROOT_OFF; retain the last rate so a later
+     * enable only has to clear the gate and revalidate the configuration. */
+    CrMmioUpdateBits32(
+        TargetClockNode->ParentController->Address +
+          TargetClockNode->CmdRegister +
+          CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET,
+        CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK,
+        CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK);
+    MemoryFence();
+    return CR_SUCCESS;
+  }
+
   if ((TargetClockNode->EnableRegister == 0) &&
       TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
     log_err("Clock " CR_LOG_CHAR8_STR_FMT " does not support enable/disable.", TargetClockNode->Name);
@@ -235,8 +318,10 @@ ClockEnable(
     if (ParentNode != NULL) {
       Status = ClockEnable(ClockContext, ParentNode, RateHz, Enable);
     }
-    else
-      log_info("Reach root clock node. " CR_LOG_CHAR8_STR_FMT, ParentNode->Name);
+    else {
+      log_info("Reached root clock node for " CR_LOG_CHAR8_STR_FMT,
+               TargetClockNode->Name);
+    }
   }
 
   if (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
@@ -333,11 +418,6 @@ ClockEnable(
         } /* Halt check for different Branch types*/
       } /* Timeout for loop */
     } /* Halt check block */
-  }
-  else if (TargetClockNode->Type == CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
-    // For RCG2 clocks, enabling is done via SetRate function
-    // ClockRcg2SetRate(
-    //     ClockContext, TargetClockNode, RateHz, CLOCK_RCG2_POLICY_CEIL);
   }
   else {
     log_err("Unsupported clock node type %u", TargetClockNode->Type);

@@ -14,6 +14,21 @@
 extern EFI_GUID                       gEfiClockCrProtocolGuid;
 typedef struct _EFI_CLOCK_CR_PROTOCOL EFI_CLOCK_CR_PROTOCOL;
 
+typedef EFI_STATUS(EFIAPI *EFI_CLOCK_CR_SET_CLOCK)(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN UINT64 RateHz, IN BOOLEAN Enable);
+
+typedef EFI_STATUS(EFIAPI *EFI_CLOCK_CR_SET_GDSC)(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN BOOLEAN Enable);
+
+typedef EFI_STATUS(EFIAPI *EFI_CLOCK_CR_SET_RESET)(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN BOOLEAN Assert);
+
 typedef struct _EFI_CLOCK_CR_PROTOCOL {
-  UINT64 Revision;
+  UINT64                  Revision;
+  EFI_CLOCK_CR_SET_CLOCK  SetClock;
+  EFI_CLOCK_CR_SET_GDSC   SetGdsc;
+  EFI_CLOCK_CR_SET_RESET  SetReset;
 } EFI_CLOCK_CR_PROTOCOL;
