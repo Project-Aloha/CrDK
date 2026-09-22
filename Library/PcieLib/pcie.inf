@@ -1,0 +1,26 @@
+## @file
+#  Portable Qualcomm PCIe cold-initialization library.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CranePcieLib
+  FILE_GUID                      = 6e3c1b54-0bd5-4d0e-a94d-493ae8e46b2c
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PcieLib
+
+[Sources]
+  pcie.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  CrTargetLib
+  SynchronizationLib

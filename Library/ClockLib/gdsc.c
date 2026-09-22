@@ -205,3 +205,12 @@ ClockGdscEnable(IN ClockDriverContext *Context, IN ClockNode *Gdsc)
 
   return CR_SUCCESS;
 }
+
+CR_STATUS
+ClockGdscDisable(IN ClockDriverContext *Context, IN ClockNode *Gdsc)
+{
+  if (Context == NULL || Gdsc == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+  return ClockGdscToggleEnable(Context, Gdsc, FALSE, TRUE);
+}

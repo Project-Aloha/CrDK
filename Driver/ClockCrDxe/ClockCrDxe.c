@@ -7,10 +7,13 @@
 #include <Uefi.h>
 
 #include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Library/clock.h>
+#include <Library/CrTargetClockLib.h>
 #include <oskal/cr_debug.h>
+#include <oskal/cr_string.h>
 
 #include <Protocol/EFIClockCrProtocol.h>
 #include <Protocol/EFIRpmhCrProtocol.h>
@@ -18,8 +21,77 @@
 STATIC ClockDriverContext   *mClockContext   = NULL;
 STATIC EFI_RPMH_CR_PROTOCOL *mRpmhCrProtocol = NULL;
 
+STATIC EFI_STATUS
+EFIAPI
+ProtocolSetClock(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN UINT64 RateHz, IN BOOLEAN Enable)
+{
+  ClockNode *Node;
+  CR_STATUS Status;
+
+  (VOID)This;
+  if (mClockContext == NULL || Controller == NULL || Id == NULL) {
+    return EFI_NOT_READY;
+  }
+  /* The current target has one GCC owner.  Keep the controller argument in
+   * the protocol so another target can route it to a different clock owner. */
+  if (AsciiStrCmp(Controller, "gcc") != 0) {
+    return EFI_UNSUPPORTED;
+  }
+  Node = NULL;
+  Status = GetClockNode(mClockContext, Id, NULL, NULL, &Node);
+  if (CR_ERROR(Status) || Node == NULL) {
+    return EFI_NOT_FOUND;
+  }
+  Status = ClockEnable(mClockContext, Node, RateHz, Enable);
+  return CR_ERROR(Status) ? EFI_DEVICE_ERROR : EFI_SUCCESS;
+}
+
+STATIC EFI_STATUS
+EFIAPI
+ProtocolSetGdsc(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN BOOLEAN Enable)
+{
+  ClockNode *Node;
+  CR_STATUS Status;
+
+  (VOID)This;
+  if (mClockContext == NULL || Controller == NULL || Id == NULL) {
+    return EFI_NOT_READY;
+  }
+  if (AsciiStrCmp(Controller, "gcc") != 0) {
+    return EFI_UNSUPPORTED;
+  }
+  Node = NULL;
+  Status = GetGdscNode(mClockContext, Id, &Node);
+  if (CR_ERROR(Status) || Node == NULL) {
+    return EFI_NOT_FOUND;
+  }
+  Status = Enable ? ClockGdscEnable(mClockContext, Node)
+                  : ClockGdscDisable(mClockContext, Node);
+  return CR_ERROR(Status) ? EFI_DEVICE_ERROR : EFI_SUCCESS;
+}
+
+STATIC EFI_STATUS
+EFIAPI
+ProtocolSetReset(
+    IN EFI_CLOCK_CR_PROTOCOL *This, IN CONST CHAR8 *Controller,
+    IN CONST CHAR8 *Id, IN BOOLEAN Assert)
+{
+  CR_STATUS Status;
+
+  (VOID)This;
+  Status = CrTargetClockReset(Controller, Id, Assert);
+  return CR_ERROR(Status) ? EFI_DEVICE_ERROR : EFI_SUCCESS;
+}
+
 EFI_CLOCK_CR_PROTOCOL gClockCrProtocol = {
     .Revision = EFI_CLOCK_CR_PROTOCOL_REVISION,
+    .SetClock = ProtocolSetClock,
+    .SetGdsc  = ProtocolSetGdsc,
+    .SetReset = ProtocolSetReset,
 };
 
 CR_STATUS
@@ -113,7 +185,8 @@ ClockEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   }
 #endif
 
-  // Deinit, otherwise bsp clockdxe will scream while mapping memory.
-  ClockDeinit();
+  /* Keep the owner mapped while consumers use the protocol.  The previous
+   * implementation unmapped GCC immediately after installing an empty
+   * protocol, which made a later cold PCIe operation unsafe. */
   return EFI_SUCCESS;
 }

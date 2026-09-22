@@ -1,0 +1,26 @@
+## @file
+#  Crane PCI Segment Library backed by the cold-initialized PCIe host context.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CranePciSegmentLib
+  FILE_GUID                      = 7bc218bf-d85e-423e-a1e3-96b2fd5dfb4f
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PciSegmentLib
+
+[Sources]
+  PciSegmentLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  PciHostBridgeLib

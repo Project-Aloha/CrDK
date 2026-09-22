@@ -1,0 +1,44 @@
+## @file
+#  Crane SMMUv2/MMU-500 IOMMU protocol adapter.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SmmuCrDxe
+  FILE_GUID                      = 67b8dbd5-a4a3-4ab8-a3ce-27139be5f4e1
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = SmmuCrDxeEntryPoint
+
+[Sources]
+  SmmuCrDxe.c
+
+[Packages]
+  MdeModulePkg/MdeModulePkg.dec
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  SmmuLib
+  CrTargetLib
+
+[Protocols]
+  gEdkiiIoMmuProtocolGuid       ## PRODUCES
+  gEfiSmmuCrProtocolGuid        ## PRODUCES
+
+[Guids]
+  gEfiEventExitBootServicesGuid ## CONSUMES ## Event
+
+[Depex]
+  TRUE

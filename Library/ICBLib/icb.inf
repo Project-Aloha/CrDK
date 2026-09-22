@@ -1,0 +1,26 @@
+## @file
+#  Portable Qualcomm RPMh ICB voter.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ICBLib
+  FILE_GUID                      = 7d42e6b1-8b21-4a5e-9c37-0f6d2a8e4519
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = ICBLib
+
+[Sources]
+  icb.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  CrTargetLib
+  SynchronizationLib
