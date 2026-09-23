@@ -24,6 +24,18 @@ with tempfile.TemporaryDirectory(prefix="crane-smmu-test-") as tmp:
     subprocess.run([str(exe)], check=True)
     subprocess.run([
         args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1",
+        "-Wall", "-Wextra", "-Werror", "-DMDEPKG_NDEBUG",
+        "-fsanitize=address,undefined", "-ffunction-sections",
+        "-fdata-sections", "-Wl,--gc-sections",
+        "-I" + str(crane / "Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include/X64"),
+        "-I" + str(args.edk2 / "MdeModulePkg/Include"),
+        str(crane / "Tests/SmmuCrDxeTest.c"), "-o", str(exe),
+    ], check=True)
+    subprocess.run([str(exe)], check=True)
+    subprocess.run([
+        args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1",
         "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
         "-I" + str(crane / "Include"),
         "-I" + str(args.edk2 / "MdePkg/Include"),

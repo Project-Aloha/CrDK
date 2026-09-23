@@ -1,0 +1,39 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrTargetSm8450Lib
+  FILE_GUID                      = baea3ef8-b384-40e4-88af-3c7e4c3a549b
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CrTargetLib
+
+[Sources]
+  CrTarget.c
+  CrRpmhTarget.c
+  CrClockTarget.c
+  CrClockDebugTarget.c
+  CrDebugUartTarget.c
+  CrGpioTarget.c
+  CrPdcTarget.c
+  CrTrngTarget.c
+  CrPcieTarget.c
+  CrInterconnectTarget.c
+  CrSmmuTarget.c
+  CrQupTarget.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  TimerLib
+  MemoryMapHelperLib
+  PcdLib
+
+[Pcd]
+  gAndromedaPkgTokenSpaceGuid.PcdUartSerialBase
+  gCranePkgTokenSpaceGuid.PcdLt9611GpioHigh
+  gCranePkgTokenSpaceGuid.PcdLt9611GpioInt

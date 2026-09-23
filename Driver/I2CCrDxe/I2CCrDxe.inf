@@ -14,15 +14,20 @@
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  BaseMemoryLib
   MemoryAllocationLib
+  SynchronizationLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
+  gEfiI2cMasterProtocolGuid     ## CONSUMES (optional PI backend)
+  gQcomI2CProtocolGuid          ## CONSUMES (MU I2CDxe)
   gEfiQupCrProtocolGuid         ## CONSUMES
   gEfiGpiCrProtocolGuid         ## CONSUMES
-  gEfiI2cMasterProtocolGuid     ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## CONSUMES
   gEfiI2cCrProtocolGuid         ## PRODUCES
 
 [Depex]
-  gEfiQupCrProtocolGuid AND gEfiGpiCrProtocolGuid AND gEfiI2cMasterProtocolGuid
+  ( gQcomI2CProtocolGuid OR gEfiI2cMasterProtocolGuid ) AND gEfiQupCrProtocolGuid AND
+  gEfiGpiCrProtocolGuid AND gEfiInterconnectCrProtocolGuid

@@ -66,6 +66,8 @@
 
 #define PCIE_CAP_ID_EXPRESS                   0x10U
 #define PCIE_CAP_NEXT_MASK                    0xFCU
+#define PCIE_EXP_LINK_CAPABILITIES            0x0CU
+#define PCIE_EXP_LINK_CONTROL2                0x30U
 #define PCIE_EXP_LINK_STATUS                  0x12U
 #define PCIE_EXP_SLOT_CAPABILITIES            0x14U
 #define PCIE_EXP_LINK_ACTIVE                  BIT(13)
@@ -80,7 +82,6 @@
 #define PCIE_ATU_LOWER_TARGET                 0x014
 #define PCIE_ATU_UPPER_TARGET                 0x018
 #define PCIE_ATU_ENABLE                       BIT(31)
-#define PCIE_ATU_CFG_SHIFT_MODE               BIT(28)
 #define PCIE_ATU_TYPE_MEMORY                  0x00U
 #define PCIE_ATU_TYPE_IO                      0x02U
 #define PCIE_ATU_TYPE_CFG0                    0x04U
@@ -394,7 +395,7 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
     UINT16 PerstCount;
     UINT8 RangeTypes;
 
-    if (Controller->Label == NULL || Controller->Compatible == NULL ||
+    if (Controller->MaxLinkSpeed > 4 || Controller->Label == NULL || Controller->Compatible == NULL ||
         Controller->BusStart > Controller->BusEnd ||
         Controller->RangeCount == 0 || Controller->GpioCount == 0 ||
         Controller->PhyIndex >= Target->PhyCount ||
@@ -492,80 +493,89 @@ ValidateTarget(IN CONST PcieTargetContext *Target, IN CONST PcieIoOps *Io)
   return CR_SUCCESS;
 }
 
+/* PIPE is supplied by the QMP PLL. Its mux/gate must stay off until the
+ * PHY register tables have been programmed, as in qmp_pcie_power_on(). */
+STATIC BOOLEAN
+IsPipeClock(IN CONST PcieTargetClock *Clock)
+{
+  return cr_strcmp(Clock->Name, "pipe") == 0 ||
+         cr_strcmp(Clock->Name, "pipe_mux") == 0 ||
+         cr_strcmp(Clock->Name, "phy_pipe") == 0;
+}
+
 STATIC CR_STATUS
 SetClockRange(
-    IN PcieDeviceContext *Context, IN UINT16 Offset, IN UINT16 Count,
-    IN BOOLEAN Enable)
+    IN PcieDeviceContext *Context, IN OUT PciePortRuntime *Port,
+    IN UINT16 Offset, IN UINT16 Count, IN BOOLEAN Enable,
+    IN BOOLEAN PipePhase)
 {
   UINT16 Index;
+  UINT16 Resource;
   CR_STATUS Status;
-  CR_STATUS FirstError;
-
-  if (!Enable) {
-    FirstError = CR_SUCCESS;
-    for (Index = Count; Index > 0; Index--) {
-      Status = Context->Io.SetClock(
-          Context->Io.Context, &Context->Target->Clocks[Offset + Index - 1],
-          FALSE);
-      if (CR_ERROR (Status) && !CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
-    }
-    return FirstError;
-  }
+  CR_STATUS FirstError = CR_SUCCESS;
 
   for (Index = 0; Index < Count; Index++) {
-    Status = Context->Io.SetClock(
-        Context->Io.Context, &Context->Target->Clocks[Offset + Index], TRUE);
-    if (CR_ERROR(Status)) {
-      while (Index > 0) {
-        Index--;
-        (VOID)Context->Io.SetClock(
-            Context->Io.Context, &Context->Target->Clocks[Offset + Index],
-            FALSE);
+    Resource = Enable ? Offset + Index : Offset + Count - Index - 1U;
+    if (Enable) {
+      if (IsPipeClock(&Context->Target->Clocks[Resource]) != PipePhase ||
+          (Port->ClockOwnedMask & (1ULL << Resource)) != 0) {
+        continue;
       }
-      return Status;
+      /* The owner retains a failed write for the one common rollback path. */
+      Port->ClockOwnedMask |= 1ULL << Resource;
+    } else if ((Port->ClockOwnedMask & (1ULL << Resource)) == 0) {
+      continue;
+    }
+    Status = Context->Io.SetClock(
+        Context->Io.Context, &Context->Target->Clocks[Resource], Enable);
+    if (CR_ERROR(Status)) {
+      if (Enable) {
+        return Status;
+      }
+      if (!CR_ERROR(FirstError)) {
+        FirstError = Status;
+      }
+    } else if (!Enable) {
+      Port->ClockOwnedMask &= ~(1ULL << Resource);
     }
   }
-  return CR_SUCCESS;
+  return FirstError;
 }
 
 STATIC CR_STATUS
 SetSupplyRange(
-    IN PcieDeviceContext *Context, IN UINT16 Offset, IN UINT16 Count,
-    IN BOOLEAN Enable)
+    IN PcieDeviceContext *Context, IN OUT PciePortRuntime *Port,
+    IN UINT16 Offset, IN UINT16 Count, IN BOOLEAN Enable)
 {
   UINT16 Index;
+  UINT16 Resource;
   CR_STATUS Status;
-  CR_STATUS FirstError;
-
-  if (!Enable) {
-    FirstError = CR_SUCCESS;
-    for (Index = Count; Index > 0; Index--) {
-      Status = Context->Io.SetSupply(
-          Context->Io.Context,
-          &Context->Target->Supplies[Offset + Index - 1U], FALSE);
-      if (CR_ERROR (Status) && !CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
-    }
-    return FirstError;
-  }
+  CR_STATUS FirstError = CR_SUCCESS;
 
   for (Index = 0; Index < Count; Index++) {
-    Status = Context->Io.SetSupply(
-        Context->Io.Context, &Context->Target->Supplies[Offset + Index], TRUE);
-    if (CR_ERROR(Status)) {
-      while (Index > 0) {
-        Index--;
-        (VOID)Context->Io.SetSupply(
-            Context->Io.Context, &Context->Target->Supplies[Offset + Index],
-            FALSE);
+    Resource = Enable ? Offset + Index : Offset + Count - Index - 1U;
+    if (Enable) {
+      if ((Port->SupplyOwnedMask & (1ULL << Resource)) != 0) {
+        continue;
       }
-      return Status;
+      Port->SupplyOwnedMask |= 1ULL << Resource;
+    } else if ((Port->SupplyOwnedMask & (1ULL << Resource)) == 0) {
+      continue;
+    }
+    Status = Context->Io.SetSupply(
+        Context->Io.Context, &Context->Target->Supplies[Resource], Enable);
+    if (CR_ERROR(Status)) {
+      if (Enable) {
+        return Status;
+      }
+      if (!CR_ERROR(FirstError)) {
+        FirstError = Status;
+      }
+    } else if (!Enable) {
+      Port->SupplyOwnedMask &= ~(1ULL << Resource);
     }
   }
-  return CR_SUCCESS;
+  return FirstError;
 }
 
 STATIC CR_STATUS
@@ -755,7 +765,7 @@ InitializePhy(
 
   Port->PhyClocksEnabled = TRUE;
   Status = SetClockRange(
-      Context, Phy->ClockOffset, Phy->ClockCount, TRUE);
+      Context, Port, Phy->ClockOffset, Phy->ClockCount, TRUE, FALSE);
   if (CR_ERROR(Status)) {
     return Status;
   }
@@ -768,6 +778,17 @@ InitializePhy(
     return Status;
   }
   Status = ProgramPhyTable(Context, Phy, PCIE_PHY_PHASE_RC);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
+  Status = SetClockRange(
+      Context, Port, Port->Target->ClockOffset, Port->Target->ClockCount,
+      TRUE, TRUE);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
+  Status = SetClockRange(
+      Context, Port, Phy->ClockOffset, Phy->ClockCount, TRUE, TRUE);
   if (CR_ERROR(Status)) {
     return Status;
   }
@@ -897,6 +918,14 @@ ConfigureRootPort(IN PcieDeviceContext *Context, IN PciePortRuntime *Port)
   while (Capability >= 0x40U && Guard++ < 48U) {
     UINT8 Id = PcieRead8(Context, Port->DbiBase + Capability);
     if (Id == PCIE_CAP_ID_EXPRESS) {
+      if (Port->Target->MaxLinkSpeed != 0) {
+        PcieRmw32(
+            Context, Port->DbiBase + Capability + PCIE_EXP_LINK_CAPABILITIES,
+            0xFU, Port->Target->MaxLinkSpeed);
+        PcieRmw32(
+            Context, Port->DbiBase + Capability + PCIE_EXP_LINK_CONTROL2,
+            0xFU, Port->Target->MaxLinkSpeed);
+      }
       PcieRmw32(
           Context,
           Port->DbiBase + Capability + PCIE_EXP_SLOT_CAPABILITIES, 0,
@@ -960,7 +989,7 @@ ConfigureAtu(IN PcieDeviceContext *Context, IN PciePortRuntime *Port)
 
   Status = ProgramAtuRegion(
       Context, Port, 0, PCIE_ATU_TYPE_CFG0, Port->ConfigBase, 0,
-      Port->ConfigSize, (UINT32)PCIE_ATU_CFG_SHIFT_MODE);
+      Port->ConfigSize, 0);
   if (CR_ERROR(Status)) {
     return Status;
   }
@@ -1115,9 +1144,6 @@ PcieConfigAccess(
   PciePortRuntime *Port;
   UINT64           Address;
   UINT64           WindowOffset;
-  UINT32           Raw;
-  UINT32           Mask;
-  UINT32           Shift;
   UINT32           BusDev;
   UINT32           AtuType;
   BOOLEAN          RootPort;
@@ -1140,6 +1166,12 @@ PcieConfigAccess(
   }
   if (Bus < Port->Target->BusStart || Bus > Port->Target->BusEnd) {
     return CR_INVALID_PARAMETER;
+  }
+  if ((Width == 1 && (Write ? Context->Io.Write8 == NULL :
+                             Context->Io.Read8 == NULL)) ||
+      (Width == 2 && (Write ? Context->Io.Write16 == NULL :
+                             Context->Io.Read16 == NULL))) {
+    return CR_UNSUPPORTED;
   }
 
   /* The DesignWare own-conf path exposes only function 0 of the root port.
@@ -1203,22 +1235,29 @@ PcieConfigAccess(
                   : PCIE_ATU_TYPE_CFG1;
     Status = ProgramAtuRegion (
         Context, Port, 0, AtuType, Port->ConfigBase, BusDev,
-        Port->ConfigSize, (UINT32)PCIE_ATU_CFG_SHIFT_MODE);
+        /* BDF is in the target register, not ECAM address bits. */
+        Port->ConfigSize, 0);
     if (CR_ERROR (Status)) {
       CrLockRelease (&Context->ConfigLock);
       return Status;
     }
   }
 
-  Shift = (UINT32)(Address & 3U) * 8U;
-  Mask = (Width == 4) ? MAX_UINT32 : ((1U << (Width * 8U)) - 1U) << Shift;
-  Raw  = PcieRead32 (Context, Address & ~3ULL);
   if (Write) {
-    Raw = (Raw & ~Mask) | ((*Value << Shift) & Mask);
-    PcieWrite32 (Context, Address & ~3ULL, Raw);
+    if (Width == 1) {
+      Context->Io.Write8 (Context->Io.Context, Address, (UINT8)*Value);
+    } else if (Width == 2) {
+      Context->Io.Write16 (Context->Io.Context, Address, (UINT16)*Value);
+    } else {
+      PcieWrite32 (Context, Address, *Value);
+    }
     MemoryFence ();
+  } else if (Width == 1) {
+    *Value = Context->Io.Read8 (Context->Io.Context, Address);
+  } else if (Width == 2) {
+    *Value = Context->Io.Read16 (Context->Io.Context, Address);
   } else {
-    *Value = (Raw & Mask) >> Shift;
+    *Value = PcieRead32 (Context, Address);
   }
   CrLockRelease (&Context->ConfigLock);
   return CR_SUCCESS;
@@ -1228,7 +1267,8 @@ STATIC BOOLEAN
 PortResourcesOwned(IN CONST PciePortRuntime *Port)
 {
   return Port != NULL &&
-         (Port->GpiosConfigured || Port->SuppliesEnabled ||
+         (Port->ClockOwnedMask != 0 || Port->SupplyOwnedMask != 0 ||
+          Port->GpiosConfigured || Port->SuppliesEnabled ||
           Port->PowerEnabled || Port->ControllerClocksEnabled ||
           Port->ControllerResetsManaged || Port->PhyClocksEnabled ||
           Port->PhyResetsManaged || Port->InterconnectEnabled ||
@@ -1240,15 +1280,12 @@ ReleasePortResources(
     IN PcieDeviceContext *Context, IN OUT PciePortRuntime *Port)
 {
   CR_STATUS Status;
-  CR_STATUS FirstError;
-
-  FirstError = CR_SUCCESS;
 
   /* Fence the endpoint before revoking its stream translation.  The SMMU
    * protocol requires BlockSegment() to run after the endpoint has stopped
    * issuing DMA; clearing LTSSM and asserting PERST provide that independent
    * fence while controller resources are still available. */
-  if (Port->ControllerClocksEnabled) {
+  if (Port->ControllerConfigured) {
     PcieRmw32(
         Context, Port->ParfBase + PCIE_PARF_LTSSM,
         (UINT32)PCIE_PARF_LTSSM_ENABLE, 0);
@@ -1274,7 +1311,7 @@ ReleasePortResources(
   if (Port->GpiosConfigured) {
     Status = ReleaseGpios (Context, Port->Target);
     if (CR_ERROR (Status)) {
-      FirstError = Status;
+      return Status;
     } else {
       Port->GpiosConfigured = FALSE;
     }
@@ -1283,7 +1320,7 @@ ReleasePortResources(
     Status = SetResetRange(
         Context, Port->Target->ResetOffset, Port->Target->ResetCount, TRUE);
     if (CR_ERROR (Status)) {
-      FirstError = Status;
+      return Status;
     } else {
       Port->ControllerResetsManaged = FALSE;
     }
@@ -1292,42 +1329,36 @@ ReleasePortResources(
     Status = SetResetRange(
         Context, Port->Phy->ResetOffset, Port->Phy->ResetCount, TRUE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->PhyResetsManaged = FALSE;
     }
   }
   if (Port->PhyClocksEnabled) {
     Status = SetClockRange(
-        Context, Port->Phy->ClockOffset, Port->Phy->ClockCount, FALSE);
+        Context, Port, Port->Phy->ClockOffset, Port->Phy->ClockCount, FALSE, FALSE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->PhyClocksEnabled = FALSE;
     }
   }
   if (Port->ControllerClocksEnabled) {
+    Port->ControllerConfigured = FALSE;
     Status = SetClockRange(
-        Context, Port->Target->ClockOffset, Port->Target->ClockCount, FALSE);
+        Context, Port, Port->Target->ClockOffset, Port->Target->ClockCount, FALSE, FALSE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->ControllerClocksEnabled = FALSE;
+      Port->ControllerConfigured = FALSE;
     }
   }
   if (Port->InterconnectEnabled) {
     Status = Context->Io.SetInterconnect(
         Context->Io.Context, Port->Target, FALSE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->InterconnectEnabled = FALSE;
     }
@@ -1336,25 +1367,21 @@ ReleasePortResources(
     Status = Context->Io.SetPowerDomain(
         Context->Io.Context, Port->Target, FALSE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->PowerEnabled = FALSE;
     }
   }
   if (Port->SuppliesEnabled) {
     Status = SetSupplyRange(
-        Context, Port->Target->SupplyOffset, Port->Target->SupplyCount, FALSE);
+        Context, Port, Port->Target->SupplyOffset, Port->Target->SupplyCount, FALSE);
     if (CR_ERROR (Status)) {
-      if (!CR_ERROR (FirstError)) {
-        FirstError = Status;
-      }
+      return Status;
     } else {
       Port->SuppliesEnabled = FALSE;
     }
   }
-  return FirstError;
+  return CR_SUCCESS;
 }
 
 CR_STATUS
@@ -1366,6 +1393,10 @@ PcieLibInit(
   CR_STATUS Status;
 
   if (Context == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+  if (Target == NULL || Target->ClockCount > PCIE_MAX_RESOURCES ||
+      Target->SupplyCount > PCIE_MAX_RESOURCES) {
     return CR_INVALID_PARAMETER;
   }
   Status = ValidateTarget(Target, Io);
@@ -1441,7 +1472,7 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   }
   Port->SuppliesEnabled = TRUE;
   Status = SetSupplyRange(
-      Context, Port->Target->SupplyOffset, Port->Target->SupplyCount, TRUE);
+      Context, Port, Port->Target->SupplyOffset, Port->Target->SupplyCount, TRUE);
   if (CR_ERROR(Status)) {
     goto Error;
   }
@@ -1473,7 +1504,7 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   }
   Port->ControllerClocksEnabled = TRUE;
   Status = SetClockRange(
-      Context, Port->Target->ClockOffset, Port->Target->ClockCount, TRUE);
+      Context, Port, Port->Target->ClockOffset, Port->Target->ClockCount, TRUE, FALSE);
   if (CR_ERROR(Status)) {
     goto Error;
   }
@@ -1492,6 +1523,7 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
   }
   Context->Io.DelayUs(Context->Io.Context, PCIE_CONTROLLER_RESET_DELAY_US);
 
+  Port->ControllerConfigured = TRUE;
   ConfigureParf(Context, Port);
   Status = InitializePhy(Context, Port);
   if (CR_ERROR(Status)) {

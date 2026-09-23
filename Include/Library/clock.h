@@ -7,6 +7,7 @@
 
 #include <oskal/common.h>
 #include <oskal/cr_debug.h>
+#include <oskal/cr_lock.h>
 #include <oskal/cr_memory.h>
 #include <oskal/cr_status.h>
 #include <oskal/cr_time.h>
@@ -15,7 +16,8 @@
 #define CLOCK_NODE_BRANCH_HALT 0
 #define CLOCK_NODE_BRANCH_HALT_ENABLE 1
 #define CLOCK_NODE_BRANCH_HALT_DELAY 2
-#define CLOCK_NODE_BRANCH_HALT_BYPASS 3
+#define CLOCK_NODE_BRANCH_HALT_SKIP 3
+#define CLOCK_NODE_BRANCH_HALT_BYPASS CLOCK_NODE_BRANCH_HALT_SKIP
 #define CLOCK_NODE_BRANCH_HALT_POLL 4
 
 #define CLOCK_NODE_HALT_WAIT_TIMEOUT_US 200
@@ -39,7 +41,7 @@
 
 #define CLOCK_NODE_RCG_CMD_REGISTER_CMD_UPDATE_MSK BIT(0)
 #define CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK BIT(31)
-#define CLOCK_NODE_RCG_CMD_REGISTER_CMD_ENABLE_MSK BIT(1)
+#define CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK BIT(1)
 
 #define CLOCK_NODE_GDSC_PWR_STS_ON BIT(0)
 #define CLOCK_NODE_GDSC_PWR_STS_OFF BIT(1)
@@ -122,6 +124,11 @@ typedef struct _ClockNode {
   ClockController *ParentController;
   UINT16           ParentCount;
   ClockNode      **Parents;
+  /* Runtime ownership state.  The first claimant records the pre-existing
+     control bit so the final release does not disable firmware-owned state. */
+  UINT32           ReferenceCount;
+  BOOLEAN          RestoreControlEnabled;
+  UINT64           ActiveRateHz;
   union {
     struct {
       /* Branch(2) info */
@@ -169,6 +176,8 @@ typedef struct _ClockNode {
 typedef struct _ClockDriverContext {
   UINTN            ClockControllerCount;
   ClockController *ClockControllers;
+  CR_LOCK          Lock;
+  BOOLEAN          LockInitialized;
 } ClockDriverContext;
 
 /* Debugcc Structures */
@@ -200,8 +209,8 @@ typedef struct {
   DebugccController **ClockControllers;
 } DebugccDriverContext;
 
-CR_STATUS ClockLibInit(OUT ClockDriverContext **ClockContext);
-CR_STATUS ClockDeinit(VOID);
+CR_STATUS ClockLibInit(IN OUT ClockDriverContext **ClockContext);
+CR_STATUS ClockDeinit(IN OUT ClockDriverContext *ClockContext);
 
 CR_STATUS ClockEnable(
     IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode,
@@ -221,6 +230,13 @@ BOOLEAN ClockRcg2CheckEnable(
 
 CR_STATUS ClockGdscEnable(IN ClockDriverContext *Context, IN ClockNode *Gdsc);
 CR_STATUS ClockGdscDisable(IN ClockDriverContext *Context, IN ClockNode *Gdsc);
-VOID      DebugccDumpAllClocksFreq(VOID);
+VOID
+DebugccDumpAllClocksFreq(
+    IN ClockDriverContext *ClockContext,
+    IN DebugccDriverContext *DebugccContext);
 CR_STATUS
-DebugccMeasureClockRate(IN CONST CHAR8 *ClockName, OUT UINT64 *FrequencyHz);
+DebugccMeasureClockRate(
+    IN ClockDriverContext *ClockContext,
+    IN DebugccDriverContext *DebugccContext,
+    IN CONST CHAR8 *ClockName,
+    OUT UINT64 *FrequencyHz);

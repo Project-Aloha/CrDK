@@ -14,15 +14,20 @@
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  BaseMemoryLib
   MemoryAllocationLib
+  SynchronizationLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
+  gEfiSpiHcProtocolGuid         ## CONSUMES (optional PI backend)
+  gQcomSPIProtocolGuid          ## CONSUMES (MU SPIDxe)
   gEfiQupCrProtocolGuid         ## CONSUMES
   gEfiGpiCrProtocolGuid         ## CONSUMES
-  gEfiSpiHcProtocolGuid         ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## CONSUMES
   gEfiSpiCrProtocolGuid         ## PRODUCES
 
 [Depex]
-  gEfiQupCrProtocolGuid AND gEfiGpiCrProtocolGuid AND gEfiSpiHcProtocolGuid
+  ( gQcomSPIProtocolGuid OR gEfiSpiHcProtocolGuid ) AND gEfiQupCrProtocolGuid AND
+  gEfiGpiCrProtocolGuid AND gEfiInterconnectCrProtocolGuid

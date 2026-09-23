@@ -1,0 +1,33 @@
+## @file
+#  Crane target-data publication driver.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrDALDxe
+  FILE_GUID                      = d0e5ec9e-140c-4b01-9678-8e295fe116d1
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = CrDalDxeEntryPoint
+
+[Sources]
+  CrDALDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  CrDalRegistryLib
+  CrTargetLib
+  DebugLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiCrDalProtocolGuid          ## PRODUCES
+
+[Depex]
+  TRUE

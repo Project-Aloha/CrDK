@@ -23,7 +23,6 @@
   DebugLib
   IoLib
   MemoryMapHelperLib
-  CrTargetLib
   OskInterruptLib
 
 [Sources.common]

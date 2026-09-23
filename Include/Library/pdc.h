@@ -28,7 +28,7 @@ typedef struct {
 } PdcDeviceContext;
 
 CR_STATUS
-PdcLibInit(OUT PdcDeviceContext **CtxOut);
+PdcLibInit(IN OUT PdcDeviceContext **CtxOut);
 
 CR_STATUS PdcGicSetType(IN PdcDeviceContext *Ctx, UINT16 PdcPinNumber,
                         CR_INTERRUPT_TRIGGER_TYPE Type,

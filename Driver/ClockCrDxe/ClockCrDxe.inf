@@ -24,24 +24,19 @@
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  QcomPkg/QcomPkg.dec
   AndromedaPkg/AndromedaPkg.dec
 
 [LibraryClasses]
-  BaseLib
   DebugLib
-  ClockLib
-  CrTargetLib
-  MemoryAllocationLib
-  IoLib
-  BaseMemoryLib
+  CrDalLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
-  OskMemmapLib
+  UefiLib
 
 [Protocols]
-  gEfiClockCrProtocolGuid   # PRODUCER
-  gEfiRpmhCrProtocolGuid    # CONSUMER
+  gEfiCrDalProtocolGuid     ## CONSUMES
+  gEfiClockProtocolGuid     ## CONSUMES
+  gEfiClockCrProtocolGuid   ## PRODUCES
 
 [Depex]
-  gEfiRpmhCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiClockProtocolGuid

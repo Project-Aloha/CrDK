@@ -5,7 +5,6 @@
  */
 
 #include "debug_uart_internal.h"
-#include <Library/CrTargetDebugUartLib.h>
 
 VOID MsmGeniSerialIsr(VOID *Params)
 {
@@ -228,17 +227,13 @@ typedef enum {
 #define DEBUG_UART_GENI_FW_REVISION_RO 0x68
 
 CR_STATUS
-CrDebugUartLibInit(OUT CrDebugUartContext **OutDebugUartContext)
+CrDebugUartLibInit(IN OUT CrDebugUartContext *DebugUartContext)
 {
-  CR_STATUS           Status           = CR_SUCCESS;
-  CrDebugUartContext *DebugUartContext = CrTargetGetDebugUartContext();
+  CR_STATUS Status = CR_SUCCESS;
   if (DebugUartContext == NULL) {
     log_err("No Debug Uart Context provided!");
     return CR_DEVICE_ERROR;
   }
-
-  if (OutDebugUartContext != NULL)
-    *OutDebugUartContext = DebugUartContext;
 
   // Verify se proto
   if (GET_FIELD(

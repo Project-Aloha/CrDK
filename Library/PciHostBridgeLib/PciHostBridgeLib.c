@@ -13,6 +13,7 @@
 #include <IndustryStandard/Acpi.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -72,6 +73,7 @@ STATIC BOOLEAN                  mPcieAdaptersInitialized;
 typedef struct {
   CONST CHAR8  *Id;
   UINT16        Count;
+  BOOLEAN       Ready;
 } CRANE_PCIE_RESOURCE_REF;
 
 typedef struct {
@@ -84,6 +86,7 @@ typedef struct {
   CRANE_PCIE_RESOURCE_REF     ClockRefs[CRANE_PCIE_RESOURCE_REFS];
   INTERCONNECT_PATH_HANDLE    MemPaths[PCIE_MAX_CONTROLLERS];
   INTERCONNECT_PATH_HANDLE    CpuPaths[PCIE_MAX_CONTROLLERS];
+  BOOLEAN                     InterconnectReady[PCIE_MAX_CONTROLLERS];
   BOOLEAN                     IommuAttached[PCIE_MAX_CONTROLLERS];
 } CRANE_PCIE_RESOURCE_CONTEXT;
 
@@ -163,7 +166,9 @@ CranePcieSetSupply (
       return CR_OUT_OF_RESOURCES;
     }
     Ref->Count++;
-    return CR_SUCCESS;
+    /* The caller records even a failed acquisition for rollback. Give it a
+       reference, but never let it use another port's incomplete vote. */
+    return Ref->Ready ? CR_SUCCESS : CR_BUSY;
   }
   if (!Enable) {
     if (Ref->Count == 0) {
@@ -173,6 +178,12 @@ CranePcieSetSupply (
     if (Ref->Count != 0) {
       return CR_SUCCESS;
     }
+    Ref->Ready = FALSE;
+  } else {
+    /* Voltage and mode acquire NPA votes too. Rollback must release them
+       even when the sequence fails before the enable request. */
+    Ref->Count = 1;
+    Ref->Ready = FALSE;
   }
 
   if (Enable && (Supply->VoltageMv != 0)) {
@@ -183,6 +194,19 @@ CranePcieSetSupply (
                                   mPcieResources.Rpmh,
                                   Supply->Id,
                                   Supply->VoltageMv
+                                  );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+  if (Enable && (Supply->Mode != 0)) {
+    if (mPcieResources.Rpmh->RpmhSetVregMode == NULL) {
+      return CR_UNSUPPORTED;
+    }
+    Status = mPcieResources.Rpmh->RpmhSetVregMode (
+                                  mPcieResources.Rpmh,
+                                  Supply->Id,
+                                  Supply->Mode
                                   );
     if (EFI_ERROR (Status)) {
       return Status;
@@ -201,6 +225,7 @@ CranePcieSetSupply (
   }
   if (Enable) {
     Ref->Count = 1;
+    Ref->Ready = TRUE;
   }
   return CR_SUCCESS;
 }
@@ -236,7 +261,7 @@ CranePcieSetClock (
       return CR_OUT_OF_RESOURCES;
     }
     Ref->Count++;
-    return CR_SUCCESS;
+    return Ref->Ready ? CR_SUCCESS : CR_BUSY;
   }
   if (!Enable) {
     if (Ref->Count == 0) {
@@ -246,9 +271,14 @@ CranePcieSetClock (
     if (Ref->Count != 0) {
       return CR_SUCCESS;
     }
+    Ref->Ready = FALSE;
   }
 
   Status = CR_SUCCESS;
+  if (Enable) {
+    Ref->Count = 1;
+    Ref->Ready = FALSE;
+  }
   if (Clock->Provider == PCIE_CLOCK_PROVIDER_GCC) {
     Status = mPcieResources.ClockProtocol->SetClock (
                mPcieResources.ClockProtocol, Clock->Controller, Clock->Id,
@@ -262,6 +292,7 @@ CranePcieSetClock (
   }
   if (Enable) {
     Ref->Count = 1;
+    Ref->Ready = TRUE;
   }
   return CR_SUCCESS;
 }
@@ -457,6 +488,7 @@ CranePcieSetInterconnect (
   INTERCONNECT_PATH_HANDLE        MemPath;
   INTERCONNECT_PATH_HANDLE        CpuPath;
   EFI_STATUS                      EfiStatus;
+  EFI_STATUS                      ReleaseStatus;
   UINTN                           Index;
 
   (VOID)Context;
@@ -487,6 +519,7 @@ CranePcieSetInterconnect (
 
   if (!Enable) {
     CR_STATUS FirstError = CR_SUCCESS;
+    mPcieResources.InterconnectReady[Index] = FALSE;
     if (mPcieResources.CpuPaths[Index] != 0) {
       EfiStatus = Interconnect->ReleasePath(
           Interconnect, mPcieResources.CpuPaths[Index]);
@@ -512,7 +545,9 @@ CranePcieSetInterconnect (
 
   if (mPcieResources.MemPaths[Index] != 0 ||
       mPcieResources.CpuPaths[Index] != 0) {
-    return CR_SUCCESS;
+    /* Only a complete pair is ready.  A failed rollback can retain one
+     * handle; the caller must finish teardown before enabling again. */
+    return mPcieResources.InterconnectReady[Index] ? CR_SUCCESS : CR_BUSY;
   }
 
   MemPath = 0;
@@ -525,7 +560,10 @@ CranePcieSetInterconnect (
   EfiStatus = Interconnect->SetBandwidth(
       Interconnect, MemPath, Target->MemAverage, Target->MemPeak);
   if (EFI_ERROR(EfiStatus)) {
-    (VOID)Interconnect->ReleasePath(Interconnect, MemPath);
+    ReleaseStatus = Interconnect->ReleasePath(Interconnect, MemPath);
+    if (EFI_ERROR(ReleaseStatus)) {
+      mPcieResources.MemPaths[Index] = MemPath;
+    }
     return CR_DEVICE_ERROR;
   }
 
@@ -534,19 +572,29 @@ CranePcieSetInterconnect (
       Interconnect, Target->Provider, Target->CpuSource,
       Target->CpuDestination, &CpuPath);
   if (EFI_ERROR(EfiStatus) || CpuPath == 0) {
-    (VOID)Interconnect->ReleasePath(Interconnect, MemPath);
+    ReleaseStatus = Interconnect->ReleasePath(Interconnect, MemPath);
+    if (EFI_ERROR(ReleaseStatus)) {
+      mPcieResources.MemPaths[Index] = MemPath;
+    }
     return CR_DEVICE_ERROR;
   }
   EfiStatus = Interconnect->SetBandwidth(
       Interconnect, CpuPath, Target->CpuAverage, Target->CpuPeak);
   if (EFI_ERROR(EfiStatus)) {
-    (VOID)Interconnect->ReleasePath(Interconnect, CpuPath);
-    (VOID)Interconnect->ReleasePath(Interconnect, MemPath);
+    ReleaseStatus = Interconnect->ReleasePath(Interconnect, CpuPath);
+    if (EFI_ERROR(ReleaseStatus)) {
+      mPcieResources.CpuPaths[Index] = CpuPath;
+    }
+    ReleaseStatus = Interconnect->ReleasePath(Interconnect, MemPath);
+    if (EFI_ERROR(ReleaseStatus)) {
+      mPcieResources.MemPaths[Index] = MemPath;
+    }
     return CR_DEVICE_ERROR;
   }
 
   mPcieResources.MemPaths[Index] = MemPath;
   mPcieResources.CpuPaths[Index] = CpuPath;
+  mPcieResources.InterconnectReady[Index] = TRUE;
   return CR_SUCCESS;
 }
 
@@ -760,10 +808,13 @@ BuildRootBridge (
   SetEmptyAperture (&Bridge->PMemAbove4G);
 
   Bridge->Segment              = Controller->Domain;
-  Bridge->DmaAbove4G           = FALSE;
+  Bridge->DmaAbove4G           = Controller->DmaAbove4G;
   Bridge->NoExtendedConfigSpace = FALSE;
-  Bridge->ResourceAssigned     = TRUE;
-  Bridge->AllocationAttributes = 0;
+  /* Cold initialization configures RC windows, not endpoint BARs. MU must
+     expose resource allocation so PciBusDxe can enumerate and assign them.
+     The target has common outbound memory windows for both BAR classes. */
+  Bridge->ResourceAssigned     = FALSE;
+  Bridge->AllocationAttributes = EFI_PCI_HOST_BRIDGE_COMBINE_MEM_PMEM;
   Bridge->Supports = EFI_PCI_ATTRIBUTE_ISA_IO |
                      EFI_PCI_ATTRIBUTE_VGA_PALETTE_IO |
                      EFI_PCI_ATTRIBUTE_VGA_MEMORY |
@@ -772,7 +823,8 @@ BuildRootBridge (
                      EFI_PCI_ATTRIBUTE_IDE_SECONDARY_IO |
                      EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE |
                      EFI_PCI_ATTRIBUTE_MEMORY_CACHED |
-                     EFI_PCI_ATTRIBUTE_DUAL_ADDRESS_CYCLE;
+                     (Controller->DmaAbove4G ?
+                      EFI_PCI_ATTRIBUTE_DUAL_ADDRESS_CYCLE : 0);
   Bridge->Attributes = 0;
   Bridge->Bus.Base    = Controller->BusStart;
   Bridge->Bus.Limit   = Controller->BusEnd;
@@ -805,8 +857,7 @@ BuildRootBridge (
   }
 
   if (HasMem64) {
-    Bridge->DmaAbove4G           = TRUE;
-    Bridge->AllocationAttributes = EFI_PCI_HOST_BRIDGE_MEM64_DECODE;
+    Bridge->AllocationAttributes |= EFI_PCI_HOST_BRIDGE_MEM64_DECODE;
   }
   Bridge->DevicePath = CreateRootBridgeDevicePath (Controller->Domain);
   if (Bridge->DevicePath == NULL) {
@@ -840,7 +891,7 @@ CranePcieHostInitialize (
     return mPcieInitStatus;
   }
 
-  mPcieTarget = CrTargetGetPcieContext ();
+  mPcieTarget = CrDalGetPcieContext ();
   if (mPcieTarget == NULL || mPcieTarget->Controllers == NULL ||
       mPcieTarget->ControllerCount == 0 ||
       mPcieTarget->ControllerCount > 32) {
@@ -862,12 +913,12 @@ CranePcieHostInitialize (
   }
 
   ZeroMem (&mPcieIo, sizeof (mPcieIo));
-  Status = CrTargetGetPcieIo (&mPcieIo);
-  if (CR_ERROR (Status)) {
+  Status = CrDalGetPcieIo (&mPcieIo);
+  if (EFI_ERROR (Status)) {
     mPcieInitStatus = Status;
     return mPcieInitStatus;
   }
-  /* CrTargetGetPcieIo supplies MMIO/delay primitives; the adapter then
+  /* CrDAL supplies MMIO/delay primitives; the adapter then
    * replaces its resource callbacks with the owning EFI drivers. */
   Status = InitializeResourceAdapters ();
   if (EFI_ERROR (Status)) {

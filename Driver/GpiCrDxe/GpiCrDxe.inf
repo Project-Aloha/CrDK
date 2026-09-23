@@ -14,13 +14,15 @@
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
-  CrTargetLib
+  CrDalLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
+  gEfiCrDalProtocolGuid ## CONSUMES
+  gQcomGpiInitProtocolGuid ## CONSUMES (MU GpiDxe)
   gEfiQupCrProtocolGuid ## CONSUMES
   gEfiGpiCrProtocolGuid ## PRODUCES
 
 [Depex]
-  gEfiQupCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gQcomGpiInitProtocolGuid AND gEfiQupCrProtocolGuid

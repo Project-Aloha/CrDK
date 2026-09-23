@@ -8,7 +8,7 @@
 
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
-#include <Library/MemoryMapHelperLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/cmddb.h>
@@ -83,18 +83,19 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
   EFI_STATUS Status = EFI_SUCCESS;
 
-  // Get AOP CMD DB address from memory map
-  ARM_MEMORY_REGION_DESCRIPTOR_EX CmdDBMemoryRegion = {0};
-  Status = LocateMemoryMapAreaByName("AOP CMD DB", &CmdDBMemoryRegion);
-  if (EFI_ERROR(Status)) {
-    DEBUG(
-        (EFI_D_ERROR,
-         "CmdDBEntryPoint: LocateMemoryMapAreaByName returned %r\n", Status));
-    return Status;
+  CONST CR_DAL_CMD_DB_CONFIG *Config = CrDalGetCmdDbConfig ();
+  if (Config == NULL) {
+    return EFI_NOT_FOUND;
+  }
+  if ((Config->BaseAddress == 0) ||
+      (Config->BaseAddress > MAX_UINTN) ||
+      (Config->Size < sizeof (CmdDbHeader)) ||
+      (Config->Size - 1 > MAX_UINTN - Config->BaseAddress)) {
+    return EFI_COMPROMISED_DATA;
   }
 
   // Validate AOP CMD DB region
-  gCmdDbHeader = (CmdDbHeader *)(UINTN)CmdDBMemoryRegion.Address;
+  gCmdDbHeader = (CmdDbHeader *)(UINTN)Config->BaseAddress;
   if (!ValidateCmdDBHeader(gCmdDbHeader)) {
     DEBUG((EFI_D_ERROR, "CmdDBEntryPoint: Invalid CmdDB Header\n"));
     gCmdDbHeader = NULL;

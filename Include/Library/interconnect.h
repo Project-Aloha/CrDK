@@ -77,6 +77,7 @@ typedef struct {
 CR_STATUS
 InterconnectLibInit(
     IN OUT InterconnectDeviceContext **Context,
+    IN CONST InterconnectTargetContext *Target,
     IN CONST InterconnectIoOps *Io);
 
 /** Release all path votes and make the context available for reinitialization. */
@@ -90,7 +91,10 @@ InterconnectAcquirePath(
     IN UINT32 SourceId, IN UINT32 DestinationId,
     OUT INTERCONNECT_PATH_HANDLE *Path);
 
-/** Set bytes/second average and peak requirements for a path. */
+/**
+ * Set average and peak requirements in Linux interconnect units (kB/s).
+ * One kB/s is exactly 1000 bytes/second.
+ */
 CR_STATUS
 InterconnectSetBandwidth(
     IN InterconnectDeviceContext *Context,

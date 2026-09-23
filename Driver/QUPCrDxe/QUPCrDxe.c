@@ -11,10 +11,10 @@
 #include <Uefi.h>
 
 #include <Library/BaseLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
 
-#include <Library/CrTargetQupLib.h>
 #include <Protocol/EFIClockCrProtocol.h>
 #include <Protocol/EFIInterconnectCrProtocol.h>
 #include <Protocol/EFIQupCrProtocol.h>
@@ -77,7 +77,7 @@ QupCrEntryPoint (
   EFI_STATUS Status;
 
   (VOID)SystemTable;
-  mQupContext = CrTargetGetQupContext ();
+  mQupContext = CrDalGetQupContext ();
   if ((mQupContext == NULL) || (mQupContext->Qup == NULL) ||
       (mQupContext->QupCount == 0)) {
     return EFI_NOT_FOUND;

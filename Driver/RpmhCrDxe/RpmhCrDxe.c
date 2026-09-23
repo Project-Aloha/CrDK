@@ -1,228 +1,624 @@
 /** @file
- *   Copyright (c) 2025-2026. Project Aloha Authors. All rights reserved.
- *   Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
- *   SPDX-License-Identifier: MIT
+ *  Crane PMIC rail adapter for the OEM Qualcomm NPA/PRM stack.
+ *
+ *  Copyright (c) 2025-2026. Project Aloha Authors. All rights reserved.
+ *  Copyright (c) 2025-2026. Kancy Joe. All rights reserved.
+ *  SPDX-License-Identifier: MIT
  */
 
 #include <Uefi.h>
 
-#include <Library/BaseLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiLib.h>
 #include <oskal/cr_debug.h>
 
-#include <Library/rpmh.h>
-
-#include <Protocol/EFICmdDBCrProtocol.h>
+#include <Protocol/EFINpa.h>
 #include <Protocol/EFIRpmhCrProtocol.h>
 
-STATIC RpmhDeviceContext   *mRpmhContext   = NULL;
-STATIC EFI_CMD_DB_PROTOCOL *mCmdDbProtocol = NULL;
+#define RPMH_CR_RESOURCE_NAME_MAX  64U
+#define RPMH_CR_VOLTAGE_SUFFIX     "/mV"
+#define RPMH_CR_MODE_SUFFIX        "/mode"
+#define RPMH_CR_ENABLE_SUFFIX      "/en"
 
-EFI_STATUS
-EFIAPI
-ProtocolRpmhWrite(
-    IN EFI_RPMH_CR_PROTOCOL *This, IN RpmhTcsCmd *TcsCmd, IN UINT32 NumCmds)
+typedef struct {
+  CONST CHAR8       *Name;
+  CHAR8              VoltageResource[RPMH_CR_RESOURCE_NAME_MAX];
+  CHAR8              ModeResource[RPMH_CR_RESOURCE_NAME_MAX];
+  CHAR8              EnableResource[RPMH_CR_RESOURCE_NAME_MAX];
+  npa_client_handle  VoltageClient;
+  npa_client_handle  ModeClient;
+  npa_client_handle  EnableClient;
+  BOOLEAN            VoltageRequested;
+  BOOLEAN            ModeRequested;
+  BOOLEAN            EnableRequested;
+  UINTN              ReferenceCount;
+} RPMH_CR_RAIL;
+
+STATIC EFI_NPA_PROTOCOL  *mNpa;
+STATIC RPMH_CR_RAIL       mRails[PCIE_MAX_RESOURCES];
+STATIC UINTN              mRailCount;
+STATIC EFI_LOCK           mRailLock;
+
+STATIC CONST CHAR8  mVoltageClientName[] = "CraneRpmhVoltage";
+STATIC CONST CHAR8  mModeClientName[]    = "CraneRpmhMode";
+STATIC CONST CHAR8  mEnableClientName[]  = "CraneRpmhEnable";
+
+STATIC
+BOOLEAN
+AsciiStringsEqual (
+  IN CONST CHAR8  *Left,
+  IN CONST CHAR8  *Right
+  )
 {
-  EFI_STATUS Status;
-  if (mRpmhContext == NULL) {
-    log_err("ProtocolRpmhWrite: Failed to get Rpmh Context");
-    return EFI_NOT_FOUND;
+  if ((Left == NULL) || (Right == NULL)) {
+    return FALSE;
   }
-  Status = RpmhWrite(mRpmhContext, TcsCmd, NumCmds);
-  if (CR_ERROR(Status)) {
-    log_err("ProtocolRpmhWrite: RpmhWrite failed with status 0x%X", Status);
-    return EFI_DEVICE_ERROR;
+
+  while ((*Left != '\0') && (*Left == *Right)) {
+    Left++;
+    Right++;
   }
+
+  return *Left == *Right;
+}
+
+STATIC
+EFI_STATUS
+BuildResourceName (
+  OUT CHAR8       *Destination,
+  IN UINTN         DestinationSize,
+  IN CONST CHAR8  *RailName,
+  IN CONST CHAR8  *Suffix
+  )
+{
+  STATIC CONST CHAR8  Prefix[] = "/pm/";
+  UINTN               Index;
+  UINTN               Length;
+
+  if ((Destination == NULL) || (DestinationSize == 0) ||
+      (RailName == NULL) || (*RailName == '\0') || (Suffix == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Length = 0;
+  for (Index = 0; Prefix[Index] != '\0'; Index++) {
+    if (Length + 1 >= DestinationSize) {
+      return EFI_BAD_BUFFER_SIZE;
+    }
+
+    Destination[Length++] = Prefix[Index];
+  }
+
+  for (Index = 0; RailName[Index] != '\0'; Index++) {
+    if (RailName[Index] == '/') {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    if (Length + 1 >= DestinationSize) {
+      return EFI_BAD_BUFFER_SIZE;
+    }
+
+    Destination[Length++] = RailName[Index];
+  }
+
+  for (Index = 0; Suffix[Index] != '\0'; Index++) {
+    if (Length + 1 >= DestinationSize) {
+      return EFI_BAD_BUFFER_SIZE;
+    }
+
+    Destination[Length++] = Suffix[Index];
+  }
+
+  Destination[Length] = '\0';
   return EFI_SUCCESS;
 }
 
-EFI_STATUS
-EFIAPI
-ProtocolRpmhEnableVreg(
-    IN EFI_RPMH_CR_PROTOCOL *This, IN CONST CHAR8 *Name, IN BOOLEAN Enable)
+STATIC
+RPMH_CR_RAIL *
+FindRail (
+  IN CONST CHAR8  *Name
+  )
 {
-  EFI_STATUS Status;
-  UINT32     Address = 0;
+  UINTN  Index;
 
-  if (mRpmhContext == NULL || mCmdDbProtocol == NULL || Name == NULL) {
-    log_err(CR_LOG_CHAR8_STR_FMT ": Invalid Parameters", __FUNCTION__);
-    return EFI_NOT_FOUND;
+  for (Index = 0; Index < mRailCount; Index++) {
+    if (AsciiStringsEqual (mRails[Index].Name, Name)) {
+      return &mRails[Index];
+    }
   }
 
-  // Get vreg address from cmd db
-  Status =
-      mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
-  if (EFI_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
-        "Status=0x%X",
-        __FUNCTION__, Name, Status);
+  return NULL;
+}
+
+STATIC
+EFI_STATUS
+InitializeRailDescriptions (
+  IN CONST PcieTargetContext  *Target
+  )
+{
+  CONST PcieTargetSupply  *Supply;
+  RPMH_CR_RAIL            *Rail;
+  EFI_STATUS               Status;
+  UINTN                    Index;
+
+  mRailCount = 0;
+  if ((Target == NULL) || (Target->SupplyCount == 0) ||
+      (Target->Supplies == NULL) || (Target->SupplyCount > PCIE_MAX_RESOURCES)) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  for (Index = 0; Index < Target->SupplyCount; Index++) {
+    Supply = &Target->Supplies[Index];
+    if ((Supply->Controller == NULL) ||
+        !AsciiStringsEqual (Supply->Controller, "rpmh")) {
+      continue;
+    }
+
+    if ((Supply->Id == NULL) || (*Supply->Id == '\0')) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    if (FindRail (Supply->Id) != NULL) {
+      continue;
+    }
+
+    if (mRailCount >= PCIE_MAX_RESOURCES) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    Rail       = &mRails[mRailCount];
+    Rail->Name = Supply->Id;
+    Status     = BuildResourceName (
+                   Rail->VoltageResource,
+                   sizeof (Rail->VoltageResource),
+                   Rail->Name,
+                   RPMH_CR_VOLTAGE_SUFFIX
+                   );
+    if (!EFI_ERROR (Status)) {
+      Status = BuildResourceName (
+                 Rail->ModeResource,
+                 sizeof (Rail->ModeResource),
+                 Rail->Name,
+                 RPMH_CR_MODE_SUFFIX
+                 );
+    }
+
+    if (!EFI_ERROR (Status)) {
+      Status = BuildResourceName (
+                 Rail->EnableResource,
+                 sizeof (Rail->EnableResource),
+                 Rail->Name,
+                 RPMH_CR_ENABLE_SUFFIX
+                 );
+    }
+
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    mRailCount++;
+  }
+
+  return (mRailCount == 0) ? EFI_NOT_FOUND : EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+ValidateNpaProtocol (
+  IN CONST EFI_NPA_PROTOCOL  *Npa
+  )
+{
+  if ((Npa == NULL) ||
+      ((Npa->Revision >> 16) !=
+       (EFI_NPA_PROTOCOL_VER_WITH_DEINIT_SUPPORT >> 16)) ||
+      (Npa->Revision < EFI_NPA_PROTOCOL_VER_WITH_DEINIT_SUPPORT) ||
+      (Npa->CreateSyncClientEx == NULL) || (Npa->ScalarRequest == NULL) ||
+      (Npa->DestroyClient == NULL)) {
+    return EFI_INCOMPATIBLE_VERSION;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+CreateClient (
+  IN CONST CHAR8        *ResourceName,
+  IN CONST CHAR8        *ClientName,
+  OUT npa_client_handle *Client
+  )
+{
+  EFI_STATUS  Status;
+
+  *Client = NULL;
+  Status  = mNpa->CreateSyncClientEx (
+                    ResourceName,
+                    ClientName,
+                    NPA_CLIENT_REQUIRED,
+                    0,
+                    NULL,
+                    Client
+                    );
+  if (EFI_ERROR (Status)) {
     return Status;
   }
-  Status = RpmhEnableVreg(mRpmhContext, Address, Enable);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT ": RpmhEnableVreg failed with status 0x%X",
-        __FUNCTION__, Status);
-    return EFI_DEVICE_ERROR;
+
+  return (*Client == NULL) ? EFI_NOT_FOUND : EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+CreateRailClients (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  UINTN       Index;
+
+  for (Index = 0; Index < mRailCount; Index++) {
+    Status = CreateClient (
+               mRails[Index].VoltageResource,
+               mVoltageClientName,
+               &mRails[Index].VoltageClient
+               );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    Status = CreateClient (
+               mRails[Index].ModeResource,
+               mModeClientName,
+               &mRails[Index].ModeClient
+               );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    Status = CreateClient (
+               mRails[Index].EnableResource,
+               mEnableClientName,
+               &mRails[Index].EnableClient
+               );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
   }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+DestroyClient (
+  IN OUT npa_client_handle  *Client
+  )
+{
+  EFI_STATUS  Status;
+
+  if (*Client == NULL) {
+    return EFI_SUCCESS;
+  }
+
+  Status = mNpa->DestroyClient (*Client);
+  if (!EFI_ERROR (Status)) {
+    *Client = NULL;
+  }
+
+  return Status;
+}
+
+STATIC
+EFI_STATUS
+DestroyRailClients (
+  VOID
+  )
+{
+  EFI_STATUS  FirstError;
+  EFI_STATUS  Status;
+  UINTN       Index;
+
+  FirstError = EFI_SUCCESS;
+  for (Index = mRailCount; Index > 0; Index--) {
+    Status = DestroyClient (&mRails[Index - 1].EnableClient);
+    if (EFI_ERROR (Status) && !EFI_ERROR (FirstError)) {
+      FirstError = Status;
+    }
+
+    Status = DestroyClient (&mRails[Index - 1].ModeClient);
+    if (EFI_ERROR (Status) && !EFI_ERROR (FirstError)) {
+      FirstError = Status;
+    }
+
+    Status = DestroyClient (&mRails[Index - 1].VoltageClient);
+    if (EFI_ERROR (Status) && !EFI_ERROR (FirstError)) {
+      FirstError = Status;
+    }
+  }
+
+  return FirstError;
+}
+
+STATIC
+EFI_STATUS
+IssueVote (
+  IN npa_client_handle  Client,
+  IN UINT32             State,
+  IN OUT BOOLEAN       *Requested
+  )
+{
+  EFI_STATUS  Status;
+
+  if ((mNpa == NULL) || (Client == NULL) || (Requested == NULL)) {
+    return EFI_NOT_READY;
+  }
+
+  if (State != 0) {
+    /* A failed wrapper call may follow a hardware side effect.  Retain
+       ownership until an explicit zero vote succeeds. */
+    *Requested = TRUE;
+  }
+
+  Status = mNpa->ScalarRequest (Client, State);
+  if (!EFI_ERROR (Status) && (State == 0)) {
+    *Requested = FALSE;
+  }
+
+  return Status;
+}
+
+STATIC
+EFI_STATUS
+ReleaseRail (
+  IN OUT RPMH_CR_RAIL  *Rail
+  )
+{
+  EFI_STATUS  Status;
+
+  if (Rail->ReferenceCount > 1) {
+    Rail->ReferenceCount--;
+    return EFI_SUCCESS;
+  }
+
+  if (Rail->ReferenceCount == 1) {
+    Rail->ReferenceCount = 0;
+  }
+
+  if (Rail->EnableRequested) {
+    Status = IssueVote (Rail->EnableClient, 0, &Rail->EnableRequested);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  if (Rail->ModeRequested) {
+    Status = IssueVote (Rail->ModeClient, 0, &Rail->ModeRequested);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  if (Rail->VoltageRequested) {
+    return IssueVote (Rail->VoltageClient, 0, &Rail->VoltageRequested);
+  }
+
   return EFI_SUCCESS;
 }
 
 EFI_STATUS
 EFIAPI
-ProtocolRpmhSetVregVoltage(
-    IN EFI_RPMH_CR_PROTOCOL *This, IN CONST CHAR8 *Name,
-    IN CONST UINT32 VoltageMv)
+ProtocolRpmhWrite (
+  IN EFI_RPMH_CR_PROTOCOL  *This,
+  IN RpmhTcsCmd            *TcsCmd,
+  IN UINT32                 NumCmds
+  )
 {
-  EFI_STATUS Status;
-  UINT32     Address = 0;
-
-  if (mRpmhContext == NULL || mCmdDbProtocol == NULL || Name == NULL) {
-    log_err(CR_LOG_CHAR8_STR_FMT ": Invalid Parameters", __FUNCTION__);
-    return EFI_NOT_FOUND;
-  }
-  // Get vreg address from cmd db
-  Status =
-      mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
-  if (EFI_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
-        "Status=0x%X",
-        __FUNCTION__, Name, Status);
-    return Status;
-  }
-
-  Status = RpmhSetVregVoltage(mRpmhContext, Address, VoltageMv);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT ": RpmhSetVregVoltage failed with status "
-                             "0x%X",
-        __FUNCTION__, Status);
-    return EFI_DEVICE_ERROR;
-  }
-  return EFI_SUCCESS;
+  (VOID)This;
+  (VOID)TcsCmd;
+  (VOID)NumCmds;
+  return EFI_UNSUPPORTED;
 }
 
 EFI_STATUS
 EFIAPI
-ProtocolRpmhSetVregMode(
-    IN EFI_RPMH_CR_PROTOCOL *This, IN CONST CHAR8 *Name, IN CONST UINT8 Mode)
+ProtocolRpmhEnableVreg (
+  IN EFI_RPMH_CR_PROTOCOL  *This,
+  IN CONST CHAR8           *Name,
+  IN BOOLEAN                Enable
+  )
 {
-  EFI_STATUS Status;
-  UINT32     Address = 0;
+  RPMH_CR_RAIL  *Rail;
+  EFI_STATUS     Status;
 
-  if (mRpmhContext == NULL || mCmdDbProtocol == NULL || Name == NULL) {
-    log_err(CR_LOG_CHAR8_STR_FMT ": Invalid Parameters", __FUNCTION__);
+  (VOID)This;
+  if (Name == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  EfiAcquireLock (&mRailLock);
+  Rail = FindRail (Name);
+  if (Rail == NULL) {
+    Status = EFI_NOT_FOUND;
+    goto Exit;
+  }
+
+  if (!Enable) {
+    Status = ReleaseRail (Rail);
+    goto Exit;
+  }
+
+  if (Rail->ReferenceCount == MAX_UINTN) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Exit;
+  }
+
+  if (Rail->ReferenceCount != 0) {
+    Rail->ReferenceCount++;
+    Status = EFI_SUCCESS;
+    goto Exit;
+  }
+
+  Status = IssueVote (Rail->EnableClient, 1, &Rail->EnableRequested);
+  if (!EFI_ERROR (Status)) {
+    Rail->ReferenceCount = 1;
+  }
+
+Exit:
+  EfiReleaseLock (&mRailLock);
+  return Status;
+}
+
+EFI_STATUS
+EFIAPI
+ProtocolRpmhSetVregVoltage (
+  IN EFI_RPMH_CR_PROTOCOL  *This,
+  IN CONST CHAR8           *Name,
+  IN CONST UINT32           VoltageMv
+  )
+{
+  RPMH_CR_RAIL  *Rail;
+  EFI_STATUS     Status;
+
+  (VOID)This;
+  if (Name == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if ((VoltageMv == 0) || (VoltageMv > 0xFFFFU)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  EfiAcquireLock (&mRailLock);
+  Rail = FindRail (Name);
+  if (Rail == NULL) {
+    EfiReleaseLock (&mRailLock);
     return EFI_NOT_FOUND;
   }
 
-  // Get vreg address from cmd db
-  Status =
-      mCmdDbProtocol->GetEntryAddressByName(mCmdDbProtocol, Name, &Address);
-  if (EFI_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": GetCmdDBEntryAddressByName failed for " CR_LOG_CHAR8_STR_FMT ", "
-        "Status=0x%X",
-        __FUNCTION__, Name, Status);
-    return Status;
-  }
-
-  Status = RpmhSetVregMode(mRpmhContext, Address, Mode);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT ": RpmhSetVregMode failed with status 0x%X",
-        __FUNCTION__, Status);
-    return EFI_DEVICE_ERROR;
-  }
-  return EFI_SUCCESS;
+  Status = IssueVote (
+             Rail->VoltageClient,
+             VoltageMv,
+             &Rail->VoltageRequested
+             );
+  EfiReleaseLock (&mRailLock);
+  return Status;
 }
 
-EFI_RPMH_CR_PROTOCOL gRpmhCrProtocol = {
-    .Revision           = EFI_RPMH_CR_PROTOCOL_REVISION,
-    .RpmhWrite          = ProtocolRpmhWrite,
-    .RpmhEnableVreg     = ProtocolRpmhEnableVreg,
-    .RpmhSetVregVoltage = ProtocolRpmhSetVregVoltage,
-    .RpmhSetVregMode    = ProtocolRpmhSetVregMode,
+EFI_STATUS
+EFIAPI
+ProtocolRpmhSetVregMode (
+  IN EFI_RPMH_CR_PROTOCOL  *This,
+  IN CONST CHAR8           *Name,
+  IN CONST UINT8            Mode
+  )
+{
+  RPMH_CR_RAIL  *Rail;
+  EFI_STATUS     Status;
+
+  (VOID)This;
+  if (Name == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if ((Mode != 2) && (Mode != 3) && (Mode != 4) &&
+      (Mode != 6) && (Mode != 7)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  EfiAcquireLock (&mRailLock);
+  Rail = FindRail (Name);
+  if (Rail == NULL) {
+    EfiReleaseLock (&mRailLock);
+    return EFI_NOT_FOUND;
+  }
+
+  Status = IssueVote (Rail->ModeClient, Mode, &Rail->ModeRequested);
+  EfiReleaseLock (&mRailLock);
+  return Status;
+}
+
+EFI_RPMH_CR_PROTOCOL  gRpmhCrProtocol = {
+  .Revision           = EFI_RPMH_CR_PROTOCOL_REVISION,
+  .RpmhWrite          = ProtocolRpmhWrite,
+  .RpmhEnableVreg     = ProtocolRpmhEnableVreg,
+  .RpmhSetVregVoltage = ProtocolRpmhSetVregVoltage,
+  .RpmhSetVregMode    = ProtocolRpmhSetVregMode,
 };
 
 EFI_STATUS
-RpmhEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+RpmhEntryPoint (
+  IN EFI_HANDLE         ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
+  )
 {
-  EFI_STATUS Status = EFI_SUCCESS;
+  CONST PcieTargetContext  *Target;
+  EFI_STATUS                CleanupStatus;
+  EFI_STATUS                Status;
 
-  // Locate Cmd DB protocol
-  Status = gBS->LocateProtocol(
-      &gEfiCmdDBCrProtocolGuid, NULL, (VOID **)&mCmdDbProtocol);
-  if (EFI_ERROR(Status)) {
-    log_err("Failed to locate Cmd DB Protocol, Status=0x%X", Status);
+  (VOID)SystemTable;
+  if ((gBS == NULL) || (gBS->LocateProtocol == NULL) ||
+      (gBS->InstallMultipleProtocolInterfaces == NULL)) {
+    return EFI_NOT_READY;
+  }
+
+  Target = CrDalGetPcieContext ();
+  if (Target == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  Status = InitializeRailDescriptions (Target);
+  if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  if (CR_ERROR(RpmhLibInit(&mRpmhContext)) || (mRpmhContext == NULL)) {
-    log_err("RpmhLibInit failed");
-    return EFI_DEVICE_ERROR;
-  }
-
-  // Install protocol
-  Status = gBS->InstallMultipleProtocolInterfaces(
-      &ImageHandle, &gEfiRpmhCrProtocolGuid, &gRpmhCrProtocol, NULL);
-  if (EFI_ERROR(Status)) {
-    log_err("Failed to install RPMH CR Protocol, Status=0x%X", Status);
+  Status = gBS->LocateProtocol (
+                  &gEfiNpaProtocolGuid,
+                  NULL,
+                  (VOID **)&mNpa
+                  );
+  if (EFI_ERROR (Status)) {
+    mNpa = NULL;
     return Status;
   }
 
-// test cases (for hdk sm8450)
-#if 1
-  {
-    // Get vreg address from cmd db
-    CONST CHAR8 *VregName  = "ldoc3"; // for hdk sm8450
-    UINT32       VoltageMv = 3300;
-
-    // Locate our protocol
-    EFI_RPMH_CR_PROTOCOL *RpmhCrProtocol = NULL;
-    Status                               = gBS->LocateProtocol(
-        &gEfiRpmhCrProtocolGuid, NULL, (VOID **)&RpmhCrProtocol);
-    if (EFI_ERROR(Status)) {
-      log_err("Failed to locate Rpmh Cr Protocol, Status=0x%X", Status);
-      return Status;
-    }
-
-    // Enable vreg
-    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, VregName, TRUE);
-    if (EFI_ERROR(Status)) {
-      log_err("RpmhEnableVreg failed, Status=0x%X", Status);
-      return Status;
-    }
-    log_info("Vreg " CR_LOG_CHAR8_STR_FMT " enabled", VregName);
-    // Wait 5s for observation
-    cr_sleep(5 * 1000 * 1000);
-    // Disable vreg
-    Status = RpmhCrProtocol->RpmhEnableVreg(RpmhCrProtocol, VregName, FALSE);
-    if (EFI_ERROR(Status)) {
-      log_err("RpmhEnableVreg failed, Status=0x%X", Status);
-      return Status;
-    }
-    log_info("Vreg " CR_LOG_CHAR8_STR_FMT " disabled", VregName);
-    // Wait 5s for observation
-    cr_sleep(5 * 1000 * 1000);
-
-    // Set vreg voltage to 3.3v
-    Status = RpmhCrProtocol->RpmhSetVregVoltage(
-        RpmhCrProtocol, VregName, VoltageMv); // in mV
-    if (EFI_ERROR(Status)) {
-      log_err("RpmhSetVregVoltage failed, Status=0x%X", Status);
-      return Status;
-    }
-    log_info(
-        "Vreg " CR_LOG_CHAR8_STR_FMT " voltage set to %u mV", VregName,
-        VoltageMv);
-    // Wait 5s for observation
-    cr_sleep(5 * 1000 * 1000);
+  Status = ValidateNpaProtocol (mNpa);
+  if (EFI_ERROR (Status)) {
+    mNpa = NULL;
+    return Status;
   }
-#endif
+
+  EfiInitializeLock (&mRailLock, TPL_NOTIFY);
+  Status = CreateRailClients ();
+  if (EFI_ERROR (Status)) {
+    goto Error;
+  }
+
+  Status = gBS->InstallMultipleProtocolInterfaces (
+                  &ImageHandle,
+                  &gEfiRpmhCrProtocolGuid,
+                  &gRpmhCrProtocol,
+                  NULL
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Error;
+  }
+
   return EFI_SUCCESS;
+
+Error:
+  CleanupStatus = DestroyRailClients ();
+  if (EFI_ERROR (CleanupStatus)) {
+    /* NPA retains the immutable resource/client-name pointers.  If an OEM
+       destroy callback fails, keep this image resident rather than leave an
+       NPA client referring to unloaded storage. */
+    log_err (
+      "NPA client cleanup failed; retaining RPMh adapter image: 0x%lx",
+      CleanupStatus
+      );
+    return EFI_SUCCESS;
+  }
+
+  mNpa       = NULL;
+  mRailCount = 0;
+  return Status;
 }

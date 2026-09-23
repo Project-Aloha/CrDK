@@ -23,7 +23,6 @@
   ArmLib
   DebugLib
   IoLib
-  CrTargetLib
   OskInterruptLib
   PdcLib
 

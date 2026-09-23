@@ -1,5 +1,5 @@
 /** @file
- *  Portable target-data ABI for Qualcomm RPMh interconnect descriptions.
+ *  Target-data ABI for portable RPMh graphs and native Qualcomm ICB routes.
  *
  *  SPDX-License-Identifier: MIT
  */
@@ -36,6 +36,16 @@ typedef struct {
   UINT16       BcmCount;
 } InterconnectTargetProvider;
 
+/** Map a Crane endpoint pair to Qualcomm's native /icb/arbiter IDs. */
+typedef struct {
+  CONST CHAR8 *ProviderCompatible;
+  UINT32       SourceId;
+  UINT32       DestinationId;
+  UINT32       MasterId;
+  UINT32       SlaveId;
+  CONST CHAR8 *ClientName;
+} InterconnectTargetNativeRoute;
+
 typedef struct {
   CONST InterconnectTargetNode     *Nodes;
   UINT16                            NodeCount;
@@ -51,6 +61,8 @@ typedef struct {
   UINT16                            ProviderCount;
   CONST UINT16                     *ProviderBcms;
   UINT16                            ProviderBcmCount;
+  CONST InterconnectTargetNativeRoute *NativeRoutes;
+  UINT16                            NativeRouteCount;
 } InterconnectTargetContext;
 
 InterconnectTargetContext *

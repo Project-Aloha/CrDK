@@ -166,7 +166,8 @@ main(void) {
   UINT64 OldPeak;
   CONST InterconnectTargetContext *Target;
 
-  assert(InterconnectLibInit(&Context, &Io) == CR_SUCCESS);
+  assert(InterconnectLibInit(&Context, CrTargetGetInterconnectContext(), &Io) ==
+         CR_SUCCESS);
   assert(Context != NULL && Context->Initialized);
   Target = Context->Target;
   assert(Target->ProviderCount == 1);
@@ -225,7 +226,8 @@ main(void) {
   Mock.FailNext = FALSE;
   Mock.FailCall = 0;
   Io.MaxRpmhCommands = 1;
-  assert(InterconnectLibInit(&Context, &Io) == CR_SUCCESS);
+  assert(InterconnectLibInit(&Context, CrTargetGetInterconnectContext(), &Io) ==
+         CR_SUCCESS);
   assert(InterconnectAcquirePath(Context, "qcom,sm8450-pcie", 0x1000, 0x1100,
                                  &MemPath) == CR_SUCCESS);
   {

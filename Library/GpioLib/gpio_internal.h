@@ -10,8 +10,6 @@
 #include <oskal/cr_status.h>
 #include <oskal/cr_time.h>
 #include <oskal/cr_types.h>
-#include <Library/CrTargetGpioLib.h>
-
 #include <oskal/cr_interrupt.h>
 
 CR_STATUS

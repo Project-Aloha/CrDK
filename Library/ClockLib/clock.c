@@ -11,7 +11,8 @@ BOOLEAN ClockRcg2CheckEnable(
     IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode)
 {
   if (ClockContext == NULL || TargetClockNode == NULL ||
-      TargetClockNode->Type != CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
+      TargetClockNode->Type != CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2 ||
+      TargetClockNode->ParentController == NULL) {
     log_err("Invalid ClockNode provided for RCG2 CheckEnable.");
     return FALSE;
   }
@@ -106,6 +107,12 @@ CR_STATUS
 ClockRcg2UpdateConfig(
     IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode)
 {
+  if (ClockContext == NULL || TargetClockNode == NULL ||
+      TargetClockNode->Type != CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2 ||
+      TargetClockNode->ParentController == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+
   // Write update bit in cmd rcg update bit
   CrMmioUpdateBits32(
       TargetClockNode->ParentController->Address +
@@ -137,7 +144,8 @@ ClockRcg2SetRate(
 {
   ClockRcgFreqTable *TargetFreq = NULL;
   if (ClockContext == NULL || TargetClockNode == NULL ||
-      TargetClockNode->Type != CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
+      TargetClockNode->Type != CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2 ||
+      TargetClockNode->ParentController == NULL) {
     log_err("Invalid ClockNode provided for RCG2 SetRate.");
     return CR_INVALID_PARAMETER;
   }
@@ -244,17 +252,78 @@ ClockRcg2SetRate(
   return ClockRcg2UpdateConfig(ClockContext, TargetClockNode);
 }
 
-CR_STATUS
-ClockEnable(
+STATIC BOOLEAN
+ClockControlIsEnabled(
+    IN ClockNode *TargetClockNode)
+{
+  UINTN  Address;
+  UINT32 Value;
+
+  if ((TargetClockNode == NULL) ||
+      (TargetClockNode->ParentController == NULL)) {
+    return FALSE;
+  }
+  if (TargetClockNode->Type == CLOCK_NODE_TYPE_PHY_MUX) {
+    Address = TargetClockNode->ParentController->Address +
+              TargetClockNode->MuxRegister;
+    Value = CrMmioRead32(Address) & TargetClockNode->MuxMask;
+    return Value == (TargetClockNode->MuxPhyValue &
+                     TargetClockNode->MuxMask);
+  }
+  if (TargetClockNode->Type == CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
+    Address = TargetClockNode->ParentController->Address +
+              TargetClockNode->CmdRegister +
+              CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET;
+    return (CrMmioRead32(Address) &
+            CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK) != 0;
+  }
+  if ((TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH) ||
+      (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2)) {
+    Address = TargetClockNode->ParentController->Address +
+              TargetClockNode->EnableRegister;
+    return (CrMmioRead32(Address) & TargetClockNode->EnableMsk) != 0;
+  }
+  return FALSE;
+}
+
+STATIC CR_STATUS
+ClockEnableInternal(
     IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode,
     IN UINT64 RateHz, IN BOOLEAN Enable)
 {
-  CR_STATUS Status = CR_SUCCESS;
+  CR_STATUS Status;
+  BOOLEAN   HardwareEnable;
+  UINTN     Index;
+  UINTN     ParentsAcquired;
 
   if ((ClockContext == NULL) || (TargetClockNode == NULL) || (Enable > 1)) {
     log_err("Invalid Parameter provided.");
     return CR_INVALID_PARAMETER;
   }
+  if (Enable) {
+    if (TargetClockNode->ReferenceCount == MAX_UINT32) {
+      return CR_OUT_OF_RESOURCES;
+    }
+    if (TargetClockNode->ReferenceCount != 0) {
+      if (TargetClockNode->ActiveRateHz != RateHz) {
+        return CR_BUSY;
+      }
+      ++TargetClockNode->ReferenceCount;
+      return CR_SUCCESS;
+    }
+    TargetClockNode->RestoreControlEnabled =
+        ClockControlIsEnabled(TargetClockNode);
+  } else {
+    if (TargetClockNode->ReferenceCount == 0) {
+      return CR_SUCCESS;
+    }
+    if (TargetClockNode->ReferenceCount > 1) {
+      --TargetClockNode->ReferenceCount;
+      return CR_SUCCESS;
+    }
+  }
+  HardwareEnable = Enable || TargetClockNode->RestoreControlEnabled;
+  ParentsAcquired = 0;
 
   if (TargetClockNode->Type == CLOCK_NODE_TYPE_PHY_MUX) {
     UINT32 Value;
@@ -265,179 +334,253 @@ ClockEnable(
         TargetClockNode->ParentController->Address == 0) {
       return CR_INVALID_PARAMETER;
     }
-    Value = Enable ? TargetClockNode->MuxPhyValue
-                   : TargetClockNode->MuxRefValue;
+    Value = HardwareEnable ? TargetClockNode->MuxPhyValue
+                           : TargetClockNode->MuxRefValue;
     CrMmioUpdateBits32(
         TargetClockNode->ParentController->Address +
           TargetClockNode->MuxRegister,
         TargetClockNode->MuxMask,
         Value);
     MemoryFence();
+    TargetClockNode->ReferenceCount = Enable ? 1U : 0U;
+    TargetClockNode->ActiveRateHz = Enable ? RateHz : 0;
+    if (!Enable) {
+      TargetClockNode->RestoreControlEnabled = FALSE;
+    }
     return CR_SUCCESS;
   }
 
   if (TargetClockNode->Type == CLOCK_NODE_TYPE_ROOT_CLOCK_GENERATOR_2) {
-    if (Enable) {
-      /* RCG2 clocks are rate-selected by the command/config register.  The
-       * branch consumer may be enabled before this source entry, so make the
-       * source selection explicit instead of relying on reset defaults. */
-      if (TargetClockNode->ParentController == NULL) {
-        return CR_INVALID_PARAMETER;
-      }
+    UINTN CommandAddress;
+
+    if (TargetClockNode->ParentController == NULL) {
+      return CR_INVALID_PARAMETER;
+    }
+    CommandAddress = TargetClockNode->ParentController->Address +
+                     TargetClockNode->CmdRegister +
+                     CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET;
+    if (!Enable) {
       CrMmioUpdateBits32(
-          TargetClockNode->ParentController->Address +
-            TargetClockNode->CmdRegister +
-            CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET,
-          CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK,
-          0);
-      return ClockRcg2SetRate(
+          CommandAddress, CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK,
+          TargetClockNode->RestoreControlEnabled ?
+            CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK : 0);
+      MemoryFence();
+      TargetClockNode->ReferenceCount = 0;
+      TargetClockNode->ActiveRateHz = 0;
+      TargetClockNode->RestoreControlEnabled = FALSE;
+      return CR_SUCCESS;
+    }
+    if (HardwareEnable) {
+      /* ROOT_OFF is a read-only status bit.  Linux forces the root on through
+         ROOT_EN before changing its configuration. */
+      CrMmioUpdateBits32(
+          CommandAddress, CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK,
+          CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK);
+      for (Index = 0; Index < CLOCK_RCG2_UPDATE_TIMEOUT_US; ++Index) {
+        if (ClockRcg2CheckEnable(ClockContext, TargetClockNode)) {
+          break;
+        }
+        MicroSecondDelay(1);
+      }
+      if (Index == CLOCK_RCG2_UPDATE_TIMEOUT_US) {
+        CrMmioUpdateBits32(
+            CommandAddress, CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK,
+            TargetClockNode->RestoreControlEnabled ?
+              CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK : 0);
+        return CR_TIMEOUT;
+      }
+      Status = ClockRcg2SetRate(
           ClockContext, TargetClockNode, RateHz,
           CLOCK_RCG2_POLICY_CEIL);
-    }
-
-    /* Linux's clk_rcg2 gate uses ROOT_OFF; retain the last rate so a later
-     * enable only has to clear the gate and revalidate the configuration. */
-    CrMmioUpdateBits32(
-        TargetClockNode->ParentController->Address +
-          TargetClockNode->CmdRegister +
-          CLOCK_NODE_RCG_CMD_REGISTER_CMD_REG_OFFSET,
-        CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK,
-        CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_OFF_MSK);
-    MemoryFence();
-    return CR_SUCCESS;
-  }
-
-  if ((TargetClockNode->EnableRegister == 0) &&
-      TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
-    log_err("Clock " CR_LOG_CHAR8_STR_FMT " does not support enable/disable.", TargetClockNode->Name);
-  }
-
-  // Enable all parents first
-  for (UINTN i = 0; i < TargetClockNode->ParentCount; i++) {
-    ClockNode *ParentNode = TargetClockNode->Parents[i];
-    if (ParentNode != NULL) {
-      Status = ClockEnable(ClockContext, ParentNode, RateHz, Enable);
-    }
-    else {
-      log_info("Reached root clock node for " CR_LOG_CHAR8_STR_FMT,
-               TargetClockNode->Name);
+      if (CR_ERROR(Status)) {
+        CrMmioUpdateBits32(
+            CommandAddress, CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK,
+            TargetClockNode->RestoreControlEnabled ?
+              CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK : 0);
+      } else {
+        TargetClockNode->ReferenceCount = 1;
+        TargetClockNode->ActiveRateHz = RateHz;
+      }
+      return Status;
     }
   }
 
-  if (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
-    // Enable target clock
-    CrMmioUpdateBits32(
-        TargetClockNode->ParentController->Address +
-            TargetClockNode->EnableRegister,
-        TargetClockNode->EnableMsk, Enable ? TargetClockNode->EnableMsk : 0);
-    log_info("Clock " CR_LOG_CHAR8_STR_FMT " enabled.", TargetClockNode->Name);
-    // Check halt flags and wait for clock to be enabled
-    if ((TargetClockNode->HaltCheckFlag & CLOCK_NODE_BRANCH_HALT_BYPASS))
-      return CR_SUCCESS;
-
-    // Check if in hwcg(Hardware Clock Gating) mode
-    if (TargetClockNode->HwcgRegister &&
-        TO_BOOL(
-            CrMmioRead32(
-                TargetClockNode->ParentController->Address +
-                TargetClockNode->HwcgRegister) &
-            TargetClockNode->HwcgMsk)) {
-      log_info(
-          "Clock " CR_LOG_CHAR8_STR_FMT " is in hwcg mode, skip halt check.", TargetClockNode->Name);
-      return CR_SUCCESS;
-    }
-
-    // Delay 10us when delay flag is set
-    if ((TargetClockNode->HaltCheckFlag & CLOCK_NODE_BRANCH_HALT_DELAY) ||
-        ((TargetClockNode->HaltCheckFlag & CLOCK_NODE_BRANCH_VOTED) &&
-         !(Enable))) {
-      cr_sleep(10);
-      return CR_SUCCESS;
-    }
-
-    // If halt flag is set, poll until clock is enabled or timeout.
-    // timeout is 200us in reference code
-    if ((Enable &&
-         (TargetClockNode->HaltCheckFlag & CLOCK_NODE_BRANCH_VOTED)) ||
-        (TargetClockNode->HaltCheckFlag == !!TargetClockNode->HaltCheckFlag)) {
-
-      UINT32  HaltRegVal     = 0;
-      BOOLEAN OffBitInverted = (Enable ^ !!(TargetClockNode->HaltCheckFlag &
-                                            CLOCK_NODE_BRANCH_HALT_ENABLE))
-                                   ? CLOCK_NODE_HALT_REG_CBCR_CLK_OFF_MSK
-                                   : 0;
-      BOOLEAN IsOff          = FALSE;
-
-      for (UINT32 i = 0; i < CLOCK_NODE_HALT_WAIT_TIMEOUT_US; i++) {
-        // Check HALT status for branch clocks
-        HaltRegVal = CrMmioRead32(
-            TargetClockNode->ParentController->Address +
-            TargetClockNode->HaltRegister);
-
-        if (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
-          IsOff =
-              (OffBitInverted ==
-               (HaltRegVal & CLOCK_NODE_HALT_REG_CBCR_CLK_OFF_MSK));
-
-          if (IsOff) {
-            log_info(
-                "Clock " CR_LOG_CHAR8_STR_FMT " is now " CR_LOG_CHAR8_STR_FMT ".", TargetClockNode->Name,
-                Enable ? "enabled" : "disabled");
-            break;
-          }
-
-          // Enabling check
-          if (Enable) {
-            HaltRegVal &=
-                (CLOCK_NODE_HALT_REG_CBCR_NOC_FSM_STATUS_MSK |
-                 CLOCK_NODE_HALT_REG_CBCR_CLK_OFF_MSK);
-            if (((GET_FIELD(
-                     HaltRegVal,
-                     CLOCK_NODE_HALT_REG_CBCR_NOC_FSM_STATUS_MSK)) ==
-                 CLOCK_NODE_HALT_REG_CBCR_NOC_FSM_STATUS_ON)) {
-              break;
-            }
-          }
-        }
-        else if (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH) {
-          OffBitInverted =
-              TargetClockNode->HaltCheckFlag & CLOCK_NODE_BRANCH_HALT_ENABLE;
-
-          IsOff = OffBitInverted ? !(HaltRegVal & TargetClockNode->HaltMsk)
-                                 : !!(HaltRegVal & TargetClockNode->HaltMsk);
-          if (IsOff == !Enable) {
-            log_info(
-                "Clock " CR_LOG_CHAR8_STR_FMT " is now " CR_LOG_CHAR8_STR_FMT ".", TargetClockNode->Name,
-                Enable ? "enabled" : "disabled");
-            break;
-          }
-        }
-        else {
-          log_err("Unsupported clock node type %u", TargetClockNode->Type);
-          return CR_UNSUPPORTED;
-        } /* Halt check for different Branch types*/
-      } /* Timeout for loop */
-    } /* Halt check block */
-  }
-  else {
+  if ((TargetClockNode->Type != CLOCK_NODE_TYPE_BRANCH) &&
+      (TargetClockNode->Type != CLOCK_NODE_TYPE_BRANCH_2)) {
     log_err("Unsupported clock node type %u", TargetClockNode->Type);
     return CR_UNSUPPORTED;
   }
-  return Status;
+  if ((TargetClockNode->EnableRegister == 0) ||
+      (TargetClockNode->EnableMsk == 0) ||
+      (TargetClockNode->ParentController == NULL)) {
+    log_err("Clock " CR_LOG_CHAR8_STR_FMT " does not support enable/disable.", TargetClockNode->Name);
+    return CR_UNSUPPORTED;
+  }
+  if ((TargetClockNode->ParentCount != 0) &&
+      (TargetClockNode->Parents == NULL)) {
+    return CR_INVALID_PARAMETER;
+  }
+
+  /* Cold enable follows the dependency graph from source to leaf. */
+  if (Enable) {
+    for (Index = 0; Index < TargetClockNode->ParentCount; ++Index) {
+      if (TargetClockNode->Parents[Index] == NULL) {
+        return CR_INVALID_PARAMETER;
+      }
+      Status = ClockEnableInternal(
+          ClockContext, TargetClockNode->Parents[Index], RateHz, TRUE);
+      if (CR_ERROR(Status)) {
+        while (ParentsAcquired != 0) {
+          --ParentsAcquired;
+          (VOID)ClockEnableInternal(
+              ClockContext, TargetClockNode->Parents[ParentsAcquired],
+              RateHz, FALSE);
+        }
+        return Status;
+      }
+      ++ParentsAcquired;
+    }
+  }
+
+  CrMmioUpdateBits32(
+      TargetClockNode->ParentController->Address +
+          TargetClockNode->EnableRegister,
+      TargetClockNode->EnableMsk,
+      HardwareEnable ? TargetClockNode->EnableMsk : 0);
+  log_info(
+      "Clock " CR_LOG_CHAR8_STR_FMT " " CR_LOG_CHAR8_STR_FMT ".",
+      TargetClockNode->Name, HardwareEnable ? "enabled" : "disabled");
+
+  {
+    UINT8 HaltCheck;
+
+    HaltCheck = TargetClockNode->HaltCheckFlag &
+                (UINT8)~CLOCK_NODE_BRANCH_VOTED;
+    if (HaltCheck == CLOCK_NODE_BRANCH_HALT_SKIP) {
+      Status = CR_SUCCESS;
+    } else if ((TargetClockNode->HwcgRegister != 0) &&
+               ((CrMmioRead32(
+                     TargetClockNode->ParentController->Address +
+                     TargetClockNode->HwcgRegister) &
+                 TargetClockNode->HwcgMsk) != 0)) {
+      Status = CR_SUCCESS;
+    } else if ((HaltCheck == CLOCK_NODE_BRANCH_HALT_DELAY) ||
+               (!HardwareEnable && ((TargetClockNode->HaltCheckFlag &
+                                     CLOCK_NODE_BRANCH_VOTED) != 0))) {
+      cr_sleep(10);
+      Status = CR_SUCCESS;
+    } else if ((HaltCheck == CLOCK_NODE_BRANCH_HALT) ||
+               (HaltCheck == CLOCK_NODE_BRANCH_HALT_ENABLE) ||
+               (HaltCheck == CLOCK_NODE_BRANCH_HALT_POLL)) {
+      Status = CR_TIMEOUT;
+      for (Index = 0; Index < CLOCK_NODE_HALT_WAIT_TIMEOUT_US; ++Index) {
+        UINT32  HaltRegVal;
+        BOOLEAN Halted;
+
+        HaltRegVal = CrMmioRead32(
+            TargetClockNode->ParentController->Address +
+            TargetClockNode->HaltRegister);
+        if (TargetClockNode->Type == CLOCK_NODE_TYPE_BRANCH_2) {
+          if (HardwareEnable &&
+              (GET_FIELD(
+                   HaltRegVal,
+                   CLOCK_NODE_HALT_REG_CBCR_NOC_FSM_STATUS_MSK) ==
+               CLOCK_NODE_HALT_REG_CBCR_NOC_FSM_STATUS_ON)) {
+            Status = CR_SUCCESS;
+            break;
+          }
+          Halted =
+              ((HaltRegVal & CLOCK_NODE_HALT_REG_CBCR_CLK_OFF_MSK) != 0);
+        } else {
+          Halted = ((HaltRegVal & TargetClockNode->HaltMsk) != 0);
+        }
+        if (HaltCheck == CLOCK_NODE_BRANCH_HALT_ENABLE) {
+          Halted = !Halted;
+        }
+        if (Halted == !HardwareEnable) {
+          Status = CR_SUCCESS;
+          break;
+        }
+        MicroSecondDelay(1);
+      }
+      if (CR_ERROR(Status)) {
+        log_err(
+            "Clock " CR_LOG_CHAR8_STR_FMT " status did not become " CR_LOG_CHAR8_STR_FMT,
+            TargetClockNode->Name,
+            HardwareEnable ? "enabled" : "disabled");
+      }
+    } else {
+      Status = CR_UNSUPPORTED;
+    }
+  }
+
+  if (CR_ERROR(Status)) {
+    if (Enable) {
+      CrMmioUpdateBits32(
+          TargetClockNode->ParentController->Address +
+              TargetClockNode->EnableRegister,
+          TargetClockNode->EnableMsk,
+          TargetClockNode->RestoreControlEnabled ?
+            TargetClockNode->EnableMsk : 0);
+      while (ParentsAcquired != 0) {
+        --ParentsAcquired;
+        (VOID)ClockEnableInternal(
+            ClockContext, TargetClockNode->Parents[ParentsAcquired],
+            RateHz, FALSE);
+      }
+    }
+    return Status;
+  }
+
+  if (!Enable) {
+    /* A leaf must stop using its source before that source is disabled. */
+    for (Index = TargetClockNode->ParentCount; Index != 0; --Index) {
+      if (TargetClockNode->Parents[Index - 1] == NULL) {
+        return CR_INVALID_PARAMETER;
+      }
+      Status = ClockEnableInternal(
+          ClockContext, TargetClockNode->Parents[Index - 1], RateHz, FALSE);
+      if (CR_ERROR(Status)) {
+        return Status;
+      }
+    }
+    TargetClockNode->ReferenceCount = 0;
+    TargetClockNode->RestoreControlEnabled = FALSE;
+    TargetClockNode->ActiveRateHz = 0;
+  } else {
+    TargetClockNode->ReferenceCount = 1;
+    TargetClockNode->ActiveRateHz = RateHz;
+  }
+  return CR_SUCCESS;
 }
 
-CR_STATUS ClockLibInit(OUT ClockDriverContext **ClockContext)
+CR_STATUS
+ClockEnable(
+    IN ClockDriverContext *ClockContext, IN ClockNode *TargetClockNode,
+    IN UINT64 RateHz, IN BOOLEAN Enable)
 {
   CR_STATUS Status;
 
-  if (ClockContext == NULL)
+  if ((ClockContext == NULL) || !ClockContext->LockInitialized) {
+    return CR_INVALID_PARAMETER;
+  }
+  CrLockAcquire(&ClockContext->Lock);
+  Status = ClockEnableInternal(
+      ClockContext, TargetClockNode, RateHz, Enable);
+  CrLockRelease(&ClockContext->Lock);
+  return Status;
+}
+
+CR_STATUS ClockLibInit(IN OUT ClockDriverContext **ClockContext)
+{
+  CR_STATUS Status = CR_SUCCESS;
+
+  if (ClockContext == NULL || *ClockContext == NULL)
     return CR_INVALID_PARAMETER;
 
-  // Get Target Info
-  *ClockContext = CrTargetGetClockContext();
-  if (*ClockContext == NULL) {
-    log_err("CrTargetGetClockContext failed.");
-    return CR_NOT_FOUND;
+  if (!(*ClockContext)->LockInitialized) {
+    CrLockInit(&(*ClockContext)->Lock);
+    (*ClockContext)->LockInitialized = TRUE;
   }
 
   // Map regions
@@ -453,24 +596,19 @@ CR_STATUS ClockLibInit(OUT ClockDriverContext **ClockContext)
     Controller->MemMapped = TRUE;
   }
 
-  // Call target clock init function
-  Status = CrTargetClockInit(*ClockContext);
-  if (CR_ERROR(Status)) {
-    log_err("CrTargetClockInit failed: %r", Status);
-  }
-
-  return Status;
+  /* Existing GCD mappings can reject AddMemorySpace.  Preserve the target's
+   * prior behavior: the clock owner performs its platform initialization
+   * after this best-effort mapping pass. */
+  return CR_SUCCESS;
 }
 
 CR_STATUS
-ClockDeinit(VOID)
+ClockDeinit(IN OUT ClockDriverContext *ClockContext)
 {
-  ClockDriverContext *ClockContext = CrTargetGetClockContext();
-  CR_STATUS           Status       = CR_SUCCESS;
+  CR_STATUS Status = CR_SUCCESS;
 
   if (ClockContext == NULL) {
-    log_err("CrTargetGetClockContext failed.");
-    return CR_NOT_FOUND;
+    return CR_INVALID_PARAMETER;
   }
 
   // Unmap regions

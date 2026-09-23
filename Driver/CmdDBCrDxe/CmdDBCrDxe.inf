@@ -30,6 +30,7 @@
   BaseLib
   DebugLib
   CmdDBLib
+  CrDalLib
   MemoryAllocationLib
   BaseMemoryLib
   UefiBootServicesTableLib

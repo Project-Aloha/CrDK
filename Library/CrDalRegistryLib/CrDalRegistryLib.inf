@@ -1,0 +1,20 @@
+## @file
+#  Crane device manifest validation and lookup library.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrDalRegistryLib
+  FILE_GUID                      = 57cea863-fc26-4c52-ad20-36ec0c709363
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CrDalRegistryLib
+
+[Sources]
+  CrDalRegistryLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

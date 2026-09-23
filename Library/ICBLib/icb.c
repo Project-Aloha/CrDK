@@ -8,7 +8,6 @@
  *  SPDX-License-Identifier: MIT
  */
 
-#include <Library/CrTargetInterconnectLib.h>
 #include <Library/interconnect.h>
 #include <oskal/common.h>
 #include <oskal/cr_debug.h>
@@ -560,11 +559,12 @@ BuildPath(
 CR_STATUS
 InterconnectLibInit(
     IN OUT InterconnectDeviceContext **Context,
+    IN CONST InterconnectTargetContext *Target,
     IN CONST InterconnectIoOps *Io)
 {
   CR_STATUS Status;
 
-  if (Context == NULL || Io == NULL || Io->GetAddress == NULL ||
+  if (Context == NULL || Target == NULL || Io == NULL || Io->GetAddress == NULL ||
       Io->GetAuxData == NULL || Io->WriteRpmh == NULL) {
     return CR_INVALID_PARAMETER;
   }
@@ -579,7 +579,7 @@ InterconnectLibInit(
   }
 
   cr_memset(*Context, 0, sizeof(**Context));
-  (*Context)->Target = CrTargetGetInterconnectContext();
+  (*Context)->Target = Target;
   (*Context)->Io = *Io;
   Status = ValidateTarget((*Context)->Target);
   if (CR_ERROR(Status)) {

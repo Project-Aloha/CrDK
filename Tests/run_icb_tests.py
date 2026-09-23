@@ -24,8 +24,18 @@ with tempfile.TemporaryDirectory(prefix="crane-interconnect-test-") as tmp:
         "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
         *includes,
         str(crane / "Library/ICBLib/icb.c"),
-        str(root / "Silicon/QC/Sm8450/QcomPkg/Library/CrTargetLib/CrInterconnectTarget.c"),
+        str(crane / "Target/Sm8450/CrInterconnectTarget.c"),
         str(crane / "Tests/ICBLibTest.c"),
+        "-o", str(exe),
+    ], check=True)
+    subprocess.run([str(exe)], check=True)
+    subprocess.run([
+        args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1", "-include", "Uefi.h",
+        "-Wall", "-Wextra", "-Werror", "-DMDEPKG_NDEBUG",
+        "-fsanitize=address,undefined", "-ffunction-sections", "-fdata-sections",
+        "-Wl,--gc-sections", *includes,
+        str(crane / "Target/Sm8450/CrInterconnectTarget.c"),
+        str(crane / "Tests/ICBCrDxeTest.c"),
         "-o", str(exe),
     ], check=True)
     subprocess.run([str(exe)], check=True)

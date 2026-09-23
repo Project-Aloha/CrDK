@@ -93,6 +93,8 @@ typedef struct {
   CONST CHAR8 *Id;
   UINT32       VoltageMv;
   UINT32       LoadUa;
+  /** PMIC hardware mode; zero keeps the existing mode. */
+  UINT8        Mode;
 } PcieTargetSupply;
 
 typedef struct {
@@ -122,6 +124,7 @@ typedef struct {
   UINT32       MemDestination;
   UINT32       CpuSource;
   UINT32       CpuDestination;
+  /** Linux interconnect kB/s; one unit is exactly 1000 bytes/second. */
   UINT64       MemAverage;
   UINT64       MemPeak;
   UINT64       CpuAverage;
@@ -173,10 +176,14 @@ typedef struct {
   CONST CHAR8 *LinuxConfig;
   CONST CHAR8 *LinuxOps;
   BOOLEAN      Enabled;
+  /** PCIe dual-address-cycle DMA support, independent of MEM64 BAR windows. */
+  BOOLEAN      DmaAbove4G;
   UINT16       Domain;
   UINT8        BusStart;
   UINT8        BusEnd;
   UINT8        Lanes;
+  /** Zero preserves hardware capability; otherwise PCIe generation 1..4. */
+  UINT8        MaxLinkSpeed;
   UINT16       RegionOffset;
   UINT16       RegionCount;
   UINT16       RangeOffset;

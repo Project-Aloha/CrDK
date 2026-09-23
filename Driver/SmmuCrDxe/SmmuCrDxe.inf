@@ -24,6 +24,7 @@
   BaseMemoryLib
   CacheMaintenanceLib
   DebugLib
+  DxeServicesTableLib
   IoLib
   MemoryAllocationLib
   TimerLib
@@ -31,14 +32,16 @@
   UefiDriverEntryPoint
   UefiLib
   SmmuLib
-  CrTargetLib
+  CrDalLib
 
 [Protocols]
+  gEfiCrDalProtocolGuid         ## CONSUMES
   gEdkiiIoMmuProtocolGuid       ## PRODUCES
   gEfiSmmuCrProtocolGuid        ## PRODUCES
+  gEfiPciIoProtocolGuid         ## CONSUMES
 
 [Guids]
   gEfiEventExitBootServicesGuid ## CONSUMES ## Event
 
 [Depex]
-  TRUE
+  gEfiCrDalProtocolGuid

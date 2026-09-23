@@ -5,7 +5,6 @@
  */
 
 #pragma once
-#include <Library/CrTargetRpmhLib.h>
 #include <Library/cmddb.h>
 #include <Library/rpmh.h>
 
@@ -77,8 +76,9 @@ STATIC inline VOID WriteTcsReg(
       Value);
 }
 
-// 1ms max wait(unit us)
-#define RPMH_WRITE_MAX_WAIT_TIME 1 * 1000
+// Bound register acknowledgement and active-vote completion waits to 1 ms.
+#define RPMH_WRITE_MAX_WAIT_TIME 1000U
+#define RPMH_TX_MAX_WAIT_TIME    1000U
 STATIC inline VOID WriteTcsAsync(
     RpmhDeviceContext *RpmhContext, UINT32 Reg, UINT32 TcsIndex, UINT32 Value)
 {

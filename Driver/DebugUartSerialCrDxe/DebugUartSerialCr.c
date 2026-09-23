@@ -2,6 +2,7 @@
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -170,12 +171,18 @@ CR_STATUS
 DriverEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 {
   CR_STATUS Status = CR_SUCCESS;
+  CR_STATUS CleanupStatus;
 
   // Initialize debug uart library
-  Status = CrDebugUartLibInit(&mDebugUartContext);
+  mDebugUartContext = CrDalGetDebugUartContext();
+  if (mDebugUartContext == NULL) {
+    log_err("Failed to get debug UART context from CrDAL\n");
+    return EFI_NOT_FOUND;
+  }
+  Status = CrDebugUartLibInit(mDebugUartContext);
   if (Status != CR_SUCCESS) {
     log_err("Failed to init debug uart library: %d\n", Status);
-    return Status;
+    goto Error;
   }
 
   mDebugUartContext->InputBuffer         = mInputBuf;
@@ -202,8 +209,23 @@ DriverEntryPoint(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
   if (CR_ERROR(Status)) {
     log_err("Failed to install Debug Uart Serial IO protocol: 0x%X", Status);
-    return Status;
+    goto Error;
   }
 
   return CR_SUCCESS;
+
+Error:
+  CleanupStatus = CrUnregisterInterrupt(&mDebugUartContext->InterruptConfig);
+  if (CR_ERROR(CleanupStatus) && CleanupStatus != CR_NOT_FOUND) {
+    log_err("Debug UART IRQ cleanup failed; retaining driver image: 0x%X", CleanupStatus);
+    return EFI_SUCCESS;
+  }
+  mDebugUartContext->InterruptConfig.Handler = NULL;
+  mDebugUartContext->InterruptConfig.Param = NULL;
+  mDebugUartContext->InputBuffer = NULL;
+  mDebugUartContext->InputBufferCapacity = 0;
+  mDebugUartContext->InputBufferSize = 0;
+  mDebugUartContext->InputBufferHead = 0;
+  mDebugUartContext->InputBufferTail = 0;
+  return Status;
 }

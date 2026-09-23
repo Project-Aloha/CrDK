@@ -608,13 +608,9 @@ CR_STATUS GpioLibInit(IN OUT GpioDeviceContext **GpioContext)
   if (GpioContext == NULL)
     return CR_INVALID_PARAMETER;
 
-  // Get Target Info if not provided
   if (*GpioContext == NULL) {
-    *GpioContext = CrTargetGetGpioContext();
-    if (*GpioContext == NULL) {
-      log_err("CrTargetGetGpioContext failed.");
-      return CR_NOT_FOUND;
-    }
+    log_err("GpioLibInit requires a target context.");
+    return CR_NOT_FOUND;
   }
 
   // Calculate each pins base addresses

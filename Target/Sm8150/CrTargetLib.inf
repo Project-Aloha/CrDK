@@ -1,0 +1,22 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrTargetSm8150Lib
+  FILE_GUID                      = 3563a13d-728b-41ee-b85a-f9ebf747bc80
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CrTargetLib
+
+[Sources]
+  CrTarget.c
+  CrDebugUartTarget.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+
+[Pcd]
+  gAndromedaPkgTokenSpaceGuid.PcdUartSerialBase

@@ -1,7 +1,7 @@
 #include <Base.h>
 #include <Library/ArmTrngLib.h>
 #include <Library/BaseMemoryLib.h>
-#include <Library/CrTargetTrngLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/IoLib.h>
 #include <Library/TimerLib.h>
 
@@ -13,7 +13,7 @@ GetTrngConfig (
 {
   CONST CR_TRNG_CONFIG  *Config;
 
-  Config = CrTargetGetTrngConfig ();
+  Config = CrDalGetTrngConfig ();
   if ((Config == NULL) || (Config->BaseAddress == 0) || (Config->MmioSize < sizeof (UINT32)) ||
       (Config->DataOutOffset > (Config->MmioSize - sizeof (UINT32))) ||
       (Config->StatusOffset > (Config->MmioSize - sizeof (UINT32))) ||

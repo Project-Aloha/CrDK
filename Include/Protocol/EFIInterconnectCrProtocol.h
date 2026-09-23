@@ -2,8 +2,8 @@
  *  EFI protocol exposing the platform interconnect path voter.
  *
  *  The protocol deliberately carries paths rather than raw BCM/node writes.
- *  The ICBCrDxe owns CmdDB/RPMh access and consumers only describe
- *  the source, destination, and bandwidth they need.
+ *  ICBCrDxe adapts those paths to the platform's native ICB owner; consumers
+ *  only describe the source, destination, and bandwidth they need.
  *
  *  SPDX-License-Identifier: MIT
  */
@@ -27,6 +27,7 @@ typedef EFI_STATUS(EFIAPI *EFI_INTERCONNECT_CR_ACQUIRE_PATH)(
     IN UINT32                        DestinationId,
     OUT INTERCONNECT_PATH_HANDLE    *Path);
 
+/** Bandwidth values use Linux interconnect kB/s (exactly 1000 bytes/second). */
 typedef EFI_STATUS(EFIAPI *EFI_INTERCONNECT_CR_SET_BANDWIDTH)(
     IN EFI_INTERCONNECT_CR_PROTOCOL *This,
     IN INTERCONNECT_PATH_HANDLE     Path,
