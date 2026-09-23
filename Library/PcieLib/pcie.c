@@ -565,6 +565,10 @@ SetSupplyRange(
     Status = Context->Io.SetSupply(
         Context->Io.Context, &Context->Target->Supplies[Resource], Enable);
     if (CR_ERROR(Status)) {
+      log_err(
+          "PCIe: supply %u (%a) %a failed, Status=0x%X",
+          Resource, Context->Target->Supplies[Resource].Id,
+          Enable ? "enable" : "disable", Status);
       if (Enable) {
         return Status;
       }
@@ -1568,18 +1572,21 @@ PcieInitializePort(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex)
 Error:
   {
     CR_STATUS ReleaseStatus;
+    CR_STATUS OriginalStatus;
 
+    OriginalStatus = Status;
     Port->LastStatus = Status;
     Port->State = PCIE_PORT_FAILED;
     ReleaseStatus = ReleasePortResources (Context, Port);
     if (CR_ERROR (ReleaseStatus)) {
       /* Keep ownership visible to the host shutdown path. */
       Context->ResourceMask |= (UINT32)BIT (PortIndex);
-      Port->LastStatus = ReleaseStatus;
+      /* The cleanup failure must not hide the stage that failed first. */
+      Port->LastStatus = OriginalStatus;
       log_err(
-          "PCIe: port %u initialization cleanup failed, Status=0x%X",
-          PortIndex, ReleaseStatus);
-      return ReleaseStatus;
+          "PCIe: port %u initialization failed, Status=0x%X; cleanup Status=0x%X",
+          PortIndex, OriginalStatus, ReleaseStatus);
+      return OriginalStatus;
     }
   }
   Context->ResourceMask &= ~(UINT32)BIT (PortIndex);

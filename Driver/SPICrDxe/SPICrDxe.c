@@ -26,6 +26,8 @@ typedef struct {
   EFI_HANDLE          AliasHandle;
   EFI_SPI_CR_PROTOCOL Protocol;
   volatile UINT32     Busy;
+  BOOLEAN             QcomOpenAttempted;
+  EFI_STATUS          QcomOpenStatus;
 } SPI_CR_INSTANCE;
 
 STATIC MU_SPI_PROTOCOL *mMuSpi;
@@ -169,8 +171,7 @@ SpiCrMuTransfer (
 
   Instance = SpiCrInstanceFromProtocol (This);
   if ((Instance == NULL) || (Instance->Protocol.Qcom == NULL) ||
-      (Instance->Protocol.QcomHandle == NULL) || (DeviceInfo == NULL) ||
-      (Instance->Protocol.Qcom->Transfer == NULL) ||
+      (DeviceInfo == NULL) || (Instance->Protocol.Qcom->Transfer == NULL) ||
       (WriteBuffer == NULL) || (ReadBuffer == NULL) ||
       (WriteLength == 0) || (WriteLength != ReadLength)) {
     return EFI_INVALID_PARAMETER;
@@ -188,6 +189,34 @@ SpiCrMuTransfer (
   }
   if (InterlockedCompareExchange32 (&Instance->Busy, 0, 1) != 0) {
     return EFI_ALREADY_STARTED;
+  }
+  /* Native SPIDxe performs MMIO during Open().  Defer it until an actual
+     transfer, after the platform's QUP/clock/GPI dependencies are ready;
+     probing every possible instance from EntryPoint can abort the DXE CPU. */
+  if (Instance->Protocol.QcomHandle == NULL) {
+    if (!Instance->QcomOpenAttempted) {
+      VOID         *Handle;
+
+      Handle = NULL;
+      Instance->QcomOpenAttempted = TRUE;
+      MuStatus = Instance->Protocol.Qcom->Open (
+          Instance->Protocol.Instance, &Handle);
+      if ((MuStatus == MU_SPI_SUCCESS) && (Handle != NULL)) {
+        Instance->Protocol.QcomHandle = Handle;
+        Instance->QcomOpenStatus = EFI_SUCCESS;
+      } else if (MuStatus == MU_SPI_SUCCESS) {
+        Instance->QcomOpenStatus = EFI_DEVICE_ERROR;
+      } else {
+        Instance->QcomOpenStatus = MuSpiStatusToEfi (MuStatus);
+      }
+    }
+    if (Instance->Protocol.QcomHandle == NULL) {
+      EFI_STATUS OpenStatus;
+
+      OpenStatus = Instance->QcomOpenStatus;
+      InterlockedCompareExchange32 (&Instance->Busy, 1, 0);
+      return EFI_ERROR (OpenStatus) ? OpenStatus : EFI_NOT_READY;
+    }
   }
   MuStatus = Instance->Protocol.Qcom->Transfer (
       Instance->Protocol.QcomHandle, DeviceInfo, WriteBuffer, WriteLength,
@@ -457,28 +486,28 @@ SpiCrEntryPoint (
     return EFI_NOT_FOUND;
   }
 
-  mInstances = AllocateZeroPool (MU_SPI_INSTANCE_MAX * sizeof (*mInstances));
+  /* The Waipio native SPI configuration enables SPI instance 01 only.  Keep
+     this adapter lazy and publish that configured instance without probing
+     absent or unpowered QUP serial engines. */
+  mInstances = AllocateZeroPool (sizeof (*mInstances));
   if (mInstances == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
   Installed = 0;
   FailureStatus = EFI_NOT_FOUND;
-  for (Index = MU_SPI_INSTANCE_001; Index < MU_SPI_INSTANCE_MAX; ++Index) {
+  for (Index = MU_SPI_INSTANCE_001; Index == MU_SPI_INSTANCE_001; ++Index) {
     VOID          *Handle;
-    MU_SPI_STATUS  MuStatus;
     EFI_HANDLE     AliasHandle;
 
     Handle = NULL;
-    MuStatus = mMuSpi->Open ((MU_SPI_INSTANCE)Index, &Handle);
-    if ((MuStatus != MU_SPI_SUCCESS) || (Handle == NULL)) {
-      continue;
-    }
 
     mInstances[Installed].Protocol.Revision   = EFI_SPI_CR_PROTOCOL_REVISION;
     mInstances[Installed].Protocol.Qcom       = mMuSpi;
     mInstances[Installed].Protocol.Instance   = (MU_SPI_INSTANCE)Index;
     mInstances[Installed].Protocol.QcomHandle = Handle;
+    mInstances[Installed].QcomOpenAttempted = FALSE;
+    mInstances[Installed].QcomOpenStatus = EFI_NOT_READY;
     /* The adapter implements these using one equal-length MU descriptor. */
     mInstances[Installed].Protocol.Attributes =
         HC_SUPPORTS_WRITE_ONLY_OPERATIONS | HC_SUPPORTS_READ_ONLY_OPERATIONS |
@@ -502,7 +531,6 @@ SpiCrEntryPoint (
         &AliasHandle, &gEfiSpiCrProtocolGuid,
         &mInstances[Installed].Protocol, NULL);
     if (EFI_ERROR (Status)) {
-      mMuSpi->Close (Handle);
       FailureStatus = Status;
       continue;
     }

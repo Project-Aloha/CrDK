@@ -92,14 +92,29 @@ static void TestEntry(void) {
   StandardLocateStatus = EFI_NOT_FOUND;
   InstallStatus = EFI_OUT_OF_RESOURCES;
   assert(SpiCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_OUT_OF_RESOURCES);
-  assert(Opens == 20 && Closes == 1 && mInstances == NULL && Allocations == 0);
+  assert(Opens == 0 && Closes == 0 && mInstances == NULL && Allocations == 0);
   InstallStatus = EFI_SUCCESS;
   assert(SpiCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_SUCCESS);
   Protocol = LastInstalled;
   assert(Protocol->Instance == 0 && Protocol->Qcom == &Mu);
   assert(Protocol->MaximumTransferBytes == 0x00ffffff);
-  assert(Opens == 40 && Closes == 1 && Allocations == 1);
-  Close(Protocol->QcomHandle);
+  assert(Opens == 0 && Closes == 0 && Allocations == 1);
+  {
+    MU_SPI_DEVICE_INFO Info = {0};
+    UINT8 Tx[1] = {0};
+    UINT8 Rx[1] = {0};
+
+    Info.DeviceParameters.MaxSlaveFrequencyHz = 5000000;
+    Info.BoardInfo.SlaveNumber = 3;
+    Info.TransferParameters.NumBits = 8;
+    Result = MU_SPI_SUCCESS;
+    ExpectedLength = 1;
+    ExpectedWrite = 0;
+    assert(Protocol->MuTransfer (Protocol, &Info, Tx, sizeof (Tx), Rx,
+                                 sizeof (Rx)) == EFI_SUCCESS);
+    assert(Opens == 1 && Protocol->QcomHandle == (VOID *)0x3333);
+    assert(Protocol->Qcom->Close (Protocol->QcomHandle) == MU_SPI_SUCCESS);
+  }
   FreePool(mInstances); mInstances = NULL;
 }
 int main(void) {

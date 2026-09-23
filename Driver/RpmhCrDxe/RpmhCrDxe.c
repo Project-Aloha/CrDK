@@ -444,6 +444,9 @@ ProtocolRpmhEnableVreg (
 
   if (!Enable) {
     Status = ReleaseRail (Rail);
+    if (EFI_ERROR (Status)) {
+      log_err ("RPMh: release rail %a failed: %r", Name, Status);
+    }
     goto Exit;
   }
 
@@ -459,6 +462,9 @@ ProtocolRpmhEnableVreg (
   }
 
   Status = IssueVote (Rail->EnableClient, 1, &Rail->EnableRequested);
+  if (EFI_ERROR (Status)) {
+    log_err ("RPMh: enable rail %a failed: %r", Name, Status);
+  }
   if (!EFI_ERROR (Status)) {
     Rail->ReferenceCount = 1;
   }
@@ -500,6 +506,10 @@ ProtocolRpmhSetVregVoltage (
              VoltageMv,
              &Rail->VoltageRequested
              );
+  if (EFI_ERROR (Status)) {
+    log_err ("RPMh: voltage rail %a (%u mV) failed: %r",
+             Name, VoltageMv, Status);
+  }
   EfiReleaseLock (&mRailLock);
   return Status;
 }
@@ -533,6 +543,9 @@ ProtocolRpmhSetVregMode (
   }
 
   Status = IssueVote (Rail->ModeClient, Mode, &Rail->ModeRequested);
+  if (EFI_ERROR (Status)) {
+    log_err ("RPMh: mode rail %a (%u) failed: %r", Name, Mode, Status);
+  }
   EfiReleaseLock (&mRailLock);
   return Status;
 }
