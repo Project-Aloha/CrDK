@@ -24,8 +24,9 @@ STATIC EFI_HARDWARE_INTERRUPT2_PROTOCOL *mHwInterrupt2;
 VOID EFIAPI CrInternalInterruptEntry(IN HARDWARE_INTERRUPT_SOURCE Source,
                                      IN EFI_SYSTEM_CONTEXT SystemContext) {
   CR_INTERRUPT_ENTRY *Entry = NULL;
+  (VOID)SystemContext;
   for (UINTN i = 0; i < MAX_INTERRUPT_ENTRIES; i++) {
-    if ((mCrIntTable[i].Source == Source) && Source &&
+    if ((mCrIntTable[i].Source == Source) &&
         (mCrIntTable[i].Handler != NULL)) {
       Entry = &mCrIntTable[i];
       Entry->Handler(Entry->Param);
@@ -39,13 +40,26 @@ VOID EFIAPI CrInternalInterruptEntry(IN HARDWARE_INTERRUPT_SOURCE Source,
 CR_STATUS
 CrInterruptInit(VOID) {
   CR_STATUS Status;
+  if (gBS == NULL || gBS->LocateProtocol == NULL) {
+    return CR_NOT_FOUND;
+  }
   // Locate Hardware Interrupt2 Protocol
+  mHwInterrupt2 = NULL;
   Status = gBS->LocateProtocol(&gHardwareInterrupt2ProtocolGuid, NULL,
                                (VOID **)&mHwInterrupt2);
   if (CR_ERROR(Status)) {
+    mHwInterrupt2 = NULL;
     log_err("HardwareInterrupt2 Protocol not found: %r", Status);
-    CR_ASSERT(FALSE);
     return CR_NOT_FOUND;
+  }
+  if (mHwInterrupt2 == NULL ||
+      mHwInterrupt2->RegisterInterruptSource == NULL ||
+      mHwInterrupt2->EnableInterruptSource == NULL ||
+      mHwInterrupt2->DisableInterruptSource == NULL ||
+      mHwInterrupt2->EndOfInterrupt == NULL ||
+      mHwInterrupt2->SetTriggerType == NULL) {
+    mHwInterrupt2 = NULL;
+    return CR_UNSUPPORTED;
   }
   return CR_SUCCESS;
 }
@@ -69,135 +83,129 @@ CrInterruptTypeTanslate(IN CR_INTERRUPT_TRIGGER_TYPE Type) {
   }
 }
 
-CR_STATUS
-CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
-  EFI_STATUS Status;
-  UINT32 InterruptNumber = InterruptConfig->InterruptNumber;
-  CR_INTERRUPT_HANDLER InterruptHandler = InterruptConfig->Handler;
-  VOID *Param = InterruptConfig->Param;
-  CR_INTERRUPT_TRIGGER_TYPE CrTriggerType = InterruptConfig->TriggerType;
-
-  // Assuming disabling interrupt
-  if (InterruptHandler == NULL) {
-    return CrUnregisterInterrupt(InterruptConfig);
-  }
-
-  // Initialize protocol if not done already
-  if (mHwInterrupt2 == NULL)
-    if (CrInterruptInit() != CR_SUCCESS)
-      return CR_NOT_FOUND;
-
-  // Translate trigger type
-  EFI_HARDWARE_INTERRUPT2_TRIGGER_TYPE TriggerType =
-      CrInterruptTypeTanslate(CrTriggerType);
-  if (TriggerType == 0xFF) {
-    log_err(CR_LOG_CHAR8_STR_FMT ": Invalid trigger type %d", __FUNCTION__,
-            CrTriggerType);
-    return CR_INVALID_PARAMETER;
-  }
-
-  // Find a free entry
-  {
-    UINTN i;
-    for (i = 0; i < MAX_INTERRUPT_ENTRIES; i++) {
-      if (mCrIntTable[i].Handler == NULL) {
-        mCrIntTable[i].Handler = InterruptHandler;
-        mCrIntTable[i].Param = Param;
-        mCrIntTable[i].Source = InterruptNumber;
-        break;
-      }
-    }
-    if (i == MAX_INTERRUPT_ENTRIES) {
-      log_err(CR_LOG_CHAR8_STR_FMT ": No free interrupt entries available",
-              __FUNCTION__);
-      return CR_OUT_OF_RESOURCES;
+STATIC
+CR_INTERRUPT_ENTRY *
+FindInterruptEntry(IN UINT32 InterruptNumber)
+{
+  for (UINTN Index = 0; Index < MAX_INTERRUPT_ENTRIES; Index++) {
+    if (mCrIntTable[Index].Handler != NULL &&
+        mCrIntTable[Index].Source == InterruptNumber) {
+      return &mCrIntTable[Index];
     }
   }
-
-  // Register irq handler
-  Status = mHwInterrupt2->RegisterInterruptSource(
-      mHwInterrupt2, InterruptNumber, CrInternalInterruptEntry);
-  if (CR_ERROR(Status)) {
-    DEBUG((DEBUG_ERROR,
-           CR_LOG_CHAR8_STR_FMT
-           ": Failed to register interrupt handler for interrupt %u: %r\n",
-           __FUNCTION__, InterruptNumber, Status));
-    return Status;
-  }
-
-  // Configure interrupt trigger type
-  Status = mHwInterrupt2->SetTriggerType(mHwInterrupt2, InterruptNumber,
-                                         TriggerType);
-  if (CR_ERROR(Status)) {
-    DEBUG((DEBUG_ERROR,
-           CR_LOG_CHAR8_STR_FMT
-           ": Failed to set trigger type for interrupt %u: %r\n",
-           __FUNCTION__, InterruptNumber, Status));
-    return Status;
-  }
-
-  // Enable the interrupt source
-  Status = mHwInterrupt2->EnableInterruptSource(mHwInterrupt2, InterruptNumber);
-  if (CR_ERROR(Status)) {
-    DEBUG((DEBUG_ERROR,
-           CR_LOG_CHAR8_STR_FMT ": Failed to enable interrupt %u: %r\n",
-           __FUNCTION__, InterruptNumber, Status));
-    return Status;
-  }
-
-  return Status;
+  return NULL;
 }
 
 CR_STATUS
-CrUnregisterInterrupt(IN CR_INTERRUPT_CONFIG *InterruptConfig) {
+CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig)
+{
   EFI_STATUS Status;
-  UINT32 InterruptNumber = InterruptConfig->InterruptNumber;
-  if (mHwInterrupt2 == NULL)
-    if (CrInterruptInit() != CR_SUCCESS)
-      return CR_NOT_FOUND;
+  EFI_STATUS CleanupStatus;
+  CR_INTERRUPT_ENTRY *Entry;
+  EFI_HARDWARE_INTERRUPT2_TRIGGER_TYPE TriggerType;
 
-  // Find the entry
-  {
-    UINTN i;
-    for (i = 0; i < MAX_INTERRUPT_ENTRIES; i++) {
-      if ((mCrIntTable[i].Source == InterruptNumber) && InterruptNumber &&
-          (mCrIntTable[i].Handler != NULL)) {
-        // Clear the entry
-        mCrIntTable[i].Handler = NULL;
-        mCrIntTable[i].Param = NULL;
-        mCrIntTable[i].Source = 0;
-        break;
-      }
-    }
-    if (i == MAX_INTERRUPT_ENTRIES) {
-      log_err(CR_LOG_CHAR8_STR_FMT
-              ": Interrupt entry for interrupt %u not found",
-              __FUNCTION__, InterruptNumber);
-      return CR_NOT_FOUND;
-    }
-    // Move other entries forward to fill the gap
-    // TODO: Interrupt should be disabled when operation here.
-    for (; i < MAX_INTERRUPT_ENTRIES - 1; i++) {
-      if (mCrIntTable[i + 1].Handler != NULL) {
-        mCrIntTable[i] = mCrIntTable[i + 1];
-        // Clear the moved entry
-        mCrIntTable[i + 1].Handler = NULL;
-        mCrIntTable[i + 1].Param = NULL;
-        mCrIntTable[i + 1].Source = 0;
-      } else {
-        break;
-      }
-    }
+  if (InterruptConfig == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+  if (InterruptConfig->Handler == NULL) {
+    return CrUnregisterInterrupt(InterruptConfig);
+  }
+  if (mHwInterrupt2 == NULL && CR_ERROR(CrInterruptInit())) {
+    return CR_NOT_FOUND;
   }
 
-  // Disable the interrupt source
-  Status =
-      mHwInterrupt2->DisableInterruptSource(mHwInterrupt2, InterruptNumber);
+  TriggerType = CrInterruptTypeTanslate(InterruptConfig->TriggerType);
+  if (TriggerType == 0xFF) {
+    return CR_INVALID_PARAMETER;
+  }
+  if (FindInterruptEntry(InterruptConfig->InterruptNumber) != NULL) {
+    return CR_BUSY;
+  }
+
+  Entry = NULL;
+  for (UINTN Index = 0; Index < MAX_INTERRUPT_ENTRIES; Index++) {
+    if (mCrIntTable[Index].Handler == NULL) {
+      Entry = &mCrIntTable[Index];
+      break;
+    }
+  }
+  if (Entry == NULL) {
+    return CR_OUT_OF_RESOURCES;
+  }
+
+  /* MU's RegisterInterruptSource may enable the interrupt immediately, so
+   * publish the dispatch entry before installing the wrapper. */
+  Entry->Handler = InterruptConfig->Handler;
+  Entry->Param = InterruptConfig->Param;
+  Entry->Source = InterruptConfig->InterruptNumber;
+  Status = mHwInterrupt2->RegisterInterruptSource(
+      mHwInterrupt2, InterruptConfig->InterruptNumber, CrInternalInterruptEntry);
+  if (Status == EFI_ALREADY_STARTED) {
+    /* An unrelated driver owns this source.  Never unregister its callback. */
+    Entry->Handler = NULL;
+    Entry->Param = NULL;
+    Entry->Source = 0;
+    return Status;
+  }
   if (CR_ERROR(Status)) {
-    DEBUG((DEBUG_WARN,
-           CR_LOG_CHAR8_STR_FMT ": Failed to disable interrupt %u: %r\n",
-           __FUNCTION__, InterruptNumber, Status));
+    goto Rollback;
   }
 
-  return Status;
+  Status = mHwInterrupt2->SetTriggerType(
+      mHwInterrupt2, InterruptConfig->InterruptNumber, TriggerType);
+  if (CR_ERROR(Status)) {
+    goto Rollback;
+  }
+  Status = mHwInterrupt2->EnableInterruptSource(
+      mHwInterrupt2, InterruptConfig->InterruptNumber);
+  if (!CR_ERROR(Status)) {
+    return CR_SUCCESS;
+  }
+
+Rollback:
+  /* Keep the entry if removal fails.  The owning DXE image must then remain
+   * resident until a later cleanup succeeds; losing the entry would leave a
+   * hardware callback into an image which the dispatcher can unload. */
+  CleanupStatus = CrUnregisterInterrupt(InterruptConfig);
+  return CR_ERROR(CleanupStatus) ? CleanupStatus : Status;
+}
+
+CR_STATUS
+CrUnregisterInterrupt(IN CR_INTERRUPT_CONFIG *InterruptConfig)
+{
+  EFI_STATUS Status;
+  CR_INTERRUPT_ENTRY *Entry;
+
+  if (InterruptConfig == NULL) {
+    return CR_INVALID_PARAMETER;
+  }
+  Entry = FindInterruptEntry(InterruptConfig->InterruptNumber);
+  if (Entry == NULL) {
+    return CR_NOT_FOUND;
+  }
+  if (InterruptConfig->Handler != NULL &&
+      (Entry->Handler != InterruptConfig->Handler ||
+       Entry->Param != InterruptConfig->Param)) {
+    return CR_BUSY;
+  }
+  if (mHwInterrupt2 == NULL && CR_ERROR(CrInterruptInit())) {
+    /* A retained entry still represents a callback ownership obligation. */
+    return CR_DEVICE_ERROR;
+  }
+
+  Status = mHwInterrupt2->DisableInterruptSource(
+      mHwInterrupt2, InterruptConfig->InterruptNumber);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
+  Status = mHwInterrupt2->RegisterInterruptSource(
+      mHwInterrupt2, InterruptConfig->InterruptNumber, NULL);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
+
+  Entry->Handler = NULL;
+  Entry->Param = NULL;
+  Entry->Source = 0;
+  return CR_SUCCESS;
 }

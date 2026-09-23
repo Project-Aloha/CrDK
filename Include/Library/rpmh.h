@@ -30,9 +30,11 @@ typedef struct {
   UINT32 reg_drv_irq_clear;
   UINT32 reg_drv_irq_status;
   UINT32 reg_drv_irq_enable;
+  UINT32 reg_drv_cmd_wait_for_compl;
   UINT32 reg_drv_cmd_msgid;
   UINT32 reg_drv_cmd_addr;
   UINT32 reg_drv_cmd_data;
+  UINT32 reg_drv_cmd_status;
   UINT32 reg_drv_control;
   UINT32 reg_drv_cmd_enable;
 
@@ -63,6 +65,11 @@ typedef struct {
   CR_INTERRUPT_CONFIG InterruptConfig;
   UINT32              NumCmdsPerTcs;
   volatile UINT32     TcsBusy;
+  volatile UINT32     TcsSynchronous;
+  volatile UINT32     TcsRetiring;
+  volatile UINT32     TcsCompleted;
+  volatile UINT32     TcsFailed;
+  CR_STATUS           TcsResult[32];
   RpmhDrvTcsConfig    tcs_config;
   RpmhDrvRegisters   *drv_registers;
   CR_LOCK              Lock;

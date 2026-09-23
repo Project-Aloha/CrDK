@@ -1,5 +1,5 @@
 ## @file
-#  Qualcomm RPMh interconnect owner protocol.
+#  Adapter to the packaged Qualcomm NPA ICB owner.
 #
 #  SPDX-License-Identifier: MIT
 ##
@@ -20,17 +20,19 @@
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  BaseLib
   BaseMemoryLib
+  CrDalLib
   DebugLib
-  ICBLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
-  SynchronizationLib
+  UefiLib
 
 [Protocols]
-  gEfiCmdDBCrProtocolGuid       # CONSUMER
-  gEfiRpmhCrProtocolGuid        # CONSUMER
-  gEfiInterconnectCrProtocolGuid # PRODUCER
+  gEfiCrDalProtocolGuid         ## CONSUMES
+  gEfiNpaProtocolGuid           ## CONSUMES
+  gEfiICBProtocolGuid           ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## PRODUCES
 
 [Depex]
-  gEfiCmdDBCrProtocolGuid AND gEfiRpmhCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiNpaProtocolGuid AND gEfiICBProtocolGuid

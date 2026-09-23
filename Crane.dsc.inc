@@ -3,8 +3,10 @@
   OskInterruptLib|CranePkg/Library/OskInterruptLib/oskinterrupt.inf
   OskMemmapLib|CranePkg/Library/OskMemmapLib/oskmemmap.inf
 
-  # Platform specific data
-  CrTargetLib|QcomPkg/Library/CrTargetLib/CrTargetLib.inf
+  # Only CrDALDxe links the platform data provider. Consumers use CrDalLib.
+  CrTargetLib|$(CR_TARGET_LIB_PATH)
+  CrDalLib|CranePkg/Library/CrDalLib/CrDalLib.inf
+  CrDalRegistryLib|CranePkg/Library/CrDalRegistryLib/CrDalRegistryLib.inf
 
   # Generic libraries that interact with oskal
   CmdDBLib|CranePkg/Library/CmdDBLib/cmddb.inf
@@ -17,9 +19,12 @@
   ICBLib|CranePkg/Library/ICBLib/icb.inf
   SmmuLib|CranePkg/Library/SmmuLib/smmu.inf
   PciHostBridgeLib|CranePkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf
-  PciSegmentLib|CranePkg/Library/PciSegmentLib/PciSegmentLib.inf
+  # General PCI consumers use the sole host driver's RootBridgeIo protocol.
+  # Only PciHostBridgeDxe overrides this with the direct Crane hardware path.
+  PciSegmentLib|MdePkg/Library/UefiPciSegmentLibPciRootBridgeIo/UefiPciSegmentLibPciRootBridgeIo.inf
 
 [Components.common]
+  CranePkg/Driver/CrDALDxe/CrDALDxe.inf
   CranePkg/Driver/CmdDBCrDxe/CmdDBCrDxe.inf
   CranePkg/Driver/RpmhCrDxe/RpmhCrDxe.inf
   CranePkg/Driver/ClockCrDxe/ClockCrDxe.inf

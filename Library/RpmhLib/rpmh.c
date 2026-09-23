@@ -20,11 +20,13 @@ STATIC RpmhDrvRegisters drv_registers_v2p7 = {
     .reg_drv_irq_enable = 0x00,
     .reg_drv_irq_status = 0x04,
     .reg_drv_irq_clear = 0x08,
+    .reg_drv_cmd_wait_for_compl = 0x10,
     .reg_drv_control = 0x14,
     .reg_drv_cmd_enable = 0x1C,
     .reg_drv_cmd_msgid = 0x30,
     .reg_drv_cmd_addr = 0x34,
     .reg_drv_cmd_data = 0x38,
+    .reg_drv_cmd_status = 0x3C,
 
     .reg_rsc_drv_cmd_offset = 0x14,
     .reg_rsc_drv_tcs_offset = 0x2A0,
@@ -37,26 +39,29 @@ STATIC RpmhDrvRegisters drv_registers_v3p0 = {
     .reg_drv_irq_enable = 0x00,
     .reg_drv_irq_status = 0x04,
     .reg_drv_irq_clear = 0x08,
+    .reg_drv_cmd_wait_for_compl = 0x20,
     .reg_drv_control = 0x24,
     .reg_drv_cmd_enable = 0x2C,
     .reg_drv_cmd_msgid = 0x34,
     .reg_drv_cmd_addr = 0x38,
     .reg_drv_cmd_data = 0x3C,
+    .reg_drv_cmd_status = 0x40,
 
     .reg_rsc_drv_cmd_offset = 0x18,
     .reg_rsc_drv_tcs_offset = 0x2A0,
 };
 
-STATIC VOID WriteTcsRegSync(RpmhDeviceContext *RpmhContext, UINT32 Reg,
-                            UINT32 TcsIndex, UINT32 Value) {
+STATIC CR_STATUS WriteTcsRegSync(RpmhDeviceContext *RpmhContext, UINT32 Reg,
+                                 UINT32 TcsIndex, UINT32 Value) {
   WriteTcsReg(RpmhContext, Reg, TcsIndex, Value);
   CR_MEM_BARRIER_DATA_SYN_BARRIAR();
 
   // Wait for write to complete
   for (UINTN i = 0; i < RPMH_WRITE_MAX_WAIT_TIME; i++) {
     UINT32 RegVal = ReadTcsReg(RpmhContext, Reg, TcsIndex);
-    if (RegVal == Value)
-      return;
+    if (RegVal == Value) {
+      return CR_SUCCESS;
+    }
     cr_sleep(1);
   }
 
@@ -64,73 +69,206 @@ STATIC VOID WriteTcsRegSync(RpmhDeviceContext *RpmhContext, UINT32 Reg,
   log_err("Rpmh " CR_LOG_CHAR8_STR_FMT
           " timeout: Reg=0x%X, TcsIndex=%d, Value=0x%X",
           __FUNCTION__, Reg, TcsIndex, Value);
+  return CR_TIMEOUT;
 }
 
 STATIC
-VOID TcsSetTrigger(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
-                   BOOLEAN Trigger) {
+CR_STATUS TcsSetTrigger(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
+                        BOOLEAN Trigger) {
+  CR_STATUS Status;
   UINT32 RegVal;
   RegVal = ReadTcsReg(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
                       TcsIndex);
 
   RegVal = CLR_BITS(RegVal, TCS_AMC_MODE_TRIGGER);
   // Write
-  WriteTcsRegSync(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
-                  TcsIndex, RegVal);
+  Status = WriteTcsRegSync(
+      RpmhContext, RpmhContext->drv_registers->reg_drv_control, TcsIndex,
+      RegVal);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
   RegVal = CLR_BITS(RegVal, TCS_AMC_MODE_ENABLE);
-  WriteTcsRegSync(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
-                  TcsIndex, RegVal);
+  Status = WriteTcsRegSync(
+      RpmhContext, RpmhContext->drv_registers->reg_drv_control, TcsIndex,
+      RegVal);
+  if (CR_ERROR(Status)) {
+    return Status;
+  }
   if (Trigger) {
     RegVal = TCS_AMC_MODE_ENABLE;
-    WriteTcsRegSync(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
-                    TcsIndex, RegVal);
+    Status = WriteTcsRegSync(
+        RpmhContext, RpmhContext->drv_registers->reg_drv_control, TcsIndex,
+        RegVal);
+    if (CR_ERROR(Status)) {
+      return Status;
+    }
     RegVal |= TCS_AMC_MODE_TRIGGER;
-    WriteTcsReg(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
-                TcsIndex, RegVal);
+    WriteTcsAsync(RpmhContext, RpmhContext->drv_registers->reg_drv_control,
+                  TcsIndex, RegVal);
   }
+  return CR_SUCCESS;
+}
+
+STATIC
+CR_STATUS
+RetireCompletedTcs(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex) {
+  UINT32 Bit = (UINT32)BIT(TcsIndex);
+  UINT32 Enabled;
+  UINT32 Command;
+  UINT32 CommandStatus;
+  CR_STATUS Status = CR_SUCCESS;
+
+  if ((CrAtomicLoad32(&RpmhContext->TcsBusy) & Bit) == 0) {
+    CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
+                      RpmhContext->drv_registers->reg_drv_irq_clear,
+                  Bit);
+    return CR_SUCCESS;
+  }
+
+  /* The interrupt and a polling waiter can observe the same completion. */
+  if ((CrAtomicOr32(&RpmhContext->TcsRetiring, Bit) & Bit) != 0) {
+    return CR_BUSY;
+  }
+
+  Enabled = ReadTcsReg(
+      RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_enable, TcsIndex);
+  for (Command = 0; Command < RpmhContext->NumCmdsPerTcs; Command++) {
+    if ((Enabled & BIT(Command)) == 0) {
+      continue;
+    }
+    CommandStatus = ReadTcsCmdReg(
+        RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_status,
+        TcsIndex, Command);
+    if ((CommandStatus & (RPMH_TCS_CMD_STATUS_ISSUED_BIT |
+                          RPMH_TCS_CMD_STATUS_COMPLETED_BIT)) !=
+        (RPMH_TCS_CMD_STATUS_ISSUED_BIT |
+         RPMH_TCS_CMD_STATUS_COMPLETED_BIT)) {
+      Status = CR_DEVICE_ERROR;
+      break;
+    }
+  }
+
+  if (!CR_ERROR(Status)) {
+    Status = TcsSetTrigger(RpmhContext, TcsIndex, FALSE);
+  }
+  if (!CR_ERROR(Status)) {
+    Status = WriteTcsRegSync(
+        RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_enable,
+        TcsIndex, 0);
+  }
+  if (!CR_ERROR(Status)) {
+    Status = WriteTcsRegSync(
+        RpmhContext,
+        RpmhContext->drv_registers->reg_drv_cmd_wait_for_compl,
+        TcsIndex, 0);
+  }
+
+  /* Always acknowledge the level interrupt. A failed TCS remains busy and
+   * cannot be handed to another request. */
+  CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
+                    RpmhContext->drv_registers->reg_drv_irq_clear,
+                Bit);
+  RpmhContext->TcsResult[TcsIndex] = Status;
+  if (CR_ERROR(Status)) {
+    CrAtomicOr32(&RpmhContext->TcsFailed, Bit);
+  } else {
+    CrAtomicOr32(&RpmhContext->TcsCompleted, Bit);
+  }
+  CrAtomicAnd32(&RpmhContext->TcsRetiring, ~Bit);
+
+  /* A synchronous owner acknowledges completion before releasing the TCS,
+   * preventing a new request from erasing its completion state. */
+  if (!CR_ERROR(Status) &&
+      (CrAtomicLoad32(&RpmhContext->TcsSynchronous) & Bit) == 0) {
+    CrAtomicAnd32(&RpmhContext->TcsCompleted, ~Bit);
+    CrAtomicAnd32(&RpmhContext->TcsBusy, ~Bit);
+  }
+  return Status;
+}
+
+STATIC
+VOID
+ServiceTcsCompletions(RpmhDeviceContext *RpmhContext, UINT32 Mask) {
+  UINT32 IrqStatus;
+  UINT32 TcsIndex;
+
+  IrqStatus =
+      CrMmioRead32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
+                   RpmhContext->drv_registers->reg_drv_irq_status);
+  IrqStatus &= RpmhContext->tcs_config.active_tcs.mask & Mask;
+  for (TcsIndex = RpmhContext->tcs_config.active_tcs.offset;
+       TcsIndex < RpmhContext->tcs_config.active_tcs.offset +
+                      RpmhContext->tcs_config.active_tcs.tcs_count;
+       TcsIndex++) {
+    if ((IrqStatus & BIT(TcsIndex)) != 0) {
+      (VOID)RetireCompletedTcs(RpmhContext, TcsIndex);
+    }
+  }
+}
+
+STATIC
+CR_STATUS
+WaitForTcsCompletion(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex) {
+  UINT32 Bit = (UINT32)BIT(TcsIndex);
+  UINT32 Wait;
+  CR_STATUS Status;
+
+  for (Wait = 0; Wait < RPMH_TX_MAX_WAIT_TIME; Wait++) {
+    ServiceTcsCompletions(RpmhContext, Bit);
+    if ((CrAtomicLoad32(&RpmhContext->TcsFailed) & Bit) != 0) {
+      CrAtomicAnd32(&RpmhContext->TcsSynchronous, ~Bit);
+      return RpmhContext->TcsResult[TcsIndex];
+    }
+    if ((CrAtomicLoad32(&RpmhContext->TcsCompleted) & Bit) != 0) {
+      CrAtomicAnd32(&RpmhContext->TcsSynchronous, ~Bit);
+      CrAtomicAnd32(&RpmhContext->TcsCompleted, ~Bit);
+      CrAtomicAnd32(&RpmhContext->TcsBusy, ~Bit);
+      return CR_SUCCESS;
+    }
+    cr_sleep(1);
+  }
+
+  /* Keep a new writer from reusing this TCS while ownership is handed to a
+   * possible late IRQ and its final state is inspected. */
+  CrLockAcquire(&RpmhContext->Lock);
+  CrAtomicAnd32(&RpmhContext->TcsSynchronous, ~Bit);
+  ServiceTcsCompletions(RpmhContext, Bit);
+  if ((CrAtomicLoad32(&RpmhContext->TcsFailed) & Bit) != 0) {
+    Status = RpmhContext->TcsResult[TcsIndex];
+  } else if ((CrAtomicLoad32(&RpmhContext->TcsCompleted) & Bit) != 0) {
+    CrAtomicAnd32(&RpmhContext->TcsCompleted, ~Bit);
+    CrAtomicAnd32(&RpmhContext->TcsBusy, ~Bit);
+    Status = CR_SUCCESS;
+  } else if ((CrAtomicLoad32(&RpmhContext->TcsBusy) & Bit) == 0) {
+    /* An ISR may have retired the TCS and consumed the completion marker
+     * after synchronous ownership was dropped. */
+    Status = CR_SUCCESS;
+  } else {
+    Status = CR_TIMEOUT;
+  }
+  CrLockRelease(&RpmhContext->Lock);
+
+  if (!CR_ERROR(Status)) {
+    return Status;
+  }
+  if (Status != CR_TIMEOUT) {
+    return Status;
+  }
+  log_err("RPMh TCS %u completion timed out", TcsIndex);
+  return CR_TIMEOUT;
 }
 
 // drv tx done/ drv isr
 VOID RpmhDrvTcsTxDoneIsr(VOID *Params) {
-  UINT32 IrqStatus;
   RpmhDeviceContext *RpmhContext = (RpmhDeviceContext *)Params;
 
   if (RpmhContext == NULL || !RpmhContext->Initialized ||
       RpmhContext->drv_registers == NULL) {
     return;
   }
-  // Read irq status
-  IrqStatus =
-      CrMmioRead32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
-                   RpmhContext->drv_registers->reg_drv_irq_status);
-  IrqStatus &= RpmhContext->tcs_config.active_tcs.mask;
-  if (IrqStatus == 0) {
-    return;
-  }
-  log_info("RpmhDrvTcsTxDoneIsr IrqStatus=0x%X", IrqStatus);
-
-  // Check each bit and clear
-  for (UINT32 i = RpmhContext->tcs_config.active_tcs.offset;
-       i < RpmhContext->tcs_config.active_tcs.offset +
-               RpmhContext->tcs_config.active_tcs.tcs_count;
-       i++) {
-    if (IrqStatus & BIT(i)) {
-
-      // Set trigger
-      TcsSetTrigger(RpmhContext, i, FALSE);
-
-      // Enable TCS again
-      WriteTcsReg(RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_enable,
-                  i, 0);
-      // Clear irq
-      CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
-                        RpmhContext->drv_registers->reg_drv_irq_clear,
-                    BIT(i));
-      // Clear busy flag
-      CrAtomicAnd32(&RpmhContext->TcsBusy, ~(UINT32)BIT(i));
-    }
-  }
-  log_info("RpmhDrvTcsTxDoneIsr exit");
+  ServiceTcsCompletions(RpmhContext,
+                        RpmhContext->tcs_config.active_tcs.mask);
 }
 
 // Check if this TCS is busy
@@ -228,14 +366,19 @@ STATIC
 VOID TcsWriteBuffer(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
                     UINT32 CmdId, RpmhTcsCmd *TcsCmd, UINT32 NumCmds) {
   UINT32 CmdIdEnabled = 0;
+  UINT32 CmdWaitForCompletion = 0;
 
   // Write each commands
   for (UINT32 cmd_idx = CmdId; cmd_idx < CmdId + NumCmds; cmd_idx++, TcsCmd++) {
     UINT32 CmdMsgId =
         RPMH_TCS_CMD_MSG_ID_LEN | RPMH_TCS_CMD_MSG_ID_WRITE_FLAG_BIT;
     CmdIdEnabled |= BIT(cmd_idx);
-    if (TcsCmd->response_required || TcsCmd->wait)
-      CmdMsgId |= RPMH_TCS_CMD_MSG_ID_RESPONSE_REQUEST_BIT;
+    /* RpmhWrite is a synchronous API. Request a response for every command so
+     * completion can be verified before a dependent resource is initialized. */
+    CmdMsgId |= RPMH_TCS_CMD_MSG_ID_RESPONSE_REQUEST_BIT;
+    if (TcsCmd->wait) {
+      CmdWaitForCompletion |= BIT(cmd_idx);
+    }
     // Write tcs cmd to hardware
     WriteTcsCmdReg(RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_msgid,
                    TcsIndex, cmd_idx, CmdMsgId);
@@ -245,6 +388,10 @@ VOID TcsWriteBuffer(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
                    TcsIndex, cmd_idx, TcsCmd->data);
   }
 
+  WriteTcsReg(
+      RpmhContext,
+      RpmhContext->drv_registers->reg_drv_cmd_wait_for_compl, TcsIndex,
+      CmdWaitForCompletion);
   // Write to enabled cmd id
   WriteTcsReg(
       RpmhContext, RpmhContext->drv_registers->reg_drv_cmd_enable, TcsIndex,
@@ -256,6 +403,8 @@ VOID TcsWriteBuffer(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
 // Rpmh write
 CR_STATUS
 RpmhWrite(RpmhDeviceContext *RpmhContext, RpmhTcsCmd *TcsCmd, UINT32 NumCmds) {
+  UINT32 Command;
+  UINT32 Bit;
   UINT32 TcsIndex;
   CR_STATUS Status;
 
@@ -265,6 +414,12 @@ RpmhWrite(RpmhDeviceContext *RpmhContext, RpmhTcsCmd *TcsCmd, UINT32 NumCmds) {
       NumCmds > RPMH_MAX_CMDS_EACH_TCS ||
       RpmhContext->tcs_config.active_tcs.tcs_count == 0) {
     return CR_INVALID_PARAMETER;
+  }
+  for (Command = 0; Command < NumCmds; Command++) {
+    if (TcsCmd[Command].wait > 1 ||
+        TcsCmd[Command].response_required > 1) {
+      return CR_INVALID_PARAMETER;
+    }
   }
 
   // Serialize claim and programming so a second writer observes the newly
@@ -280,14 +435,25 @@ RpmhWrite(RpmhDeviceContext *RpmhContext, RpmhTcsCmd *TcsCmd, UINT32 NumCmds) {
             __FUNCTION__, NumCmds, Status);
     return Status;
   }
+  Bit = (UINT32)BIT(TcsIndex);
+  RpmhContext->TcsResult[TcsIndex] = CR_SUCCESS;
+  CrAtomicAnd32(&RpmhContext->TcsCompleted, ~Bit);
+  CrAtomicAnd32(&RpmhContext->TcsFailed, ~Bit);
+  CrAtomicOr32(&RpmhContext->TcsSynchronous, Bit);
 
   // Write buffer
   TcsWriteBuffer(RpmhContext, TcsIndex, 0, TcsCmd, NumCmds);
 
   // Set trigger
-  TcsSetTrigger(RpmhContext, TcsIndex, TRUE);
+  Status = TcsSetTrigger(RpmhContext, TcsIndex, TRUE);
   CrLockRelease(&RpmhContext->Lock);
-  return CR_SUCCESS;
+  if (CR_ERROR(Status)) {
+    RpmhContext->TcsResult[TcsIndex] = Status;
+    CrAtomicOr32(&RpmhContext->TcsFailed, Bit);
+    CrAtomicAnd32(&RpmhContext->TcsSynchronous, ~Bit);
+    return Status;
+  }
+  return WaitForTcsCompletion(RpmhContext, TcsIndex);
 }
 
 CR_STATUS
@@ -306,19 +472,10 @@ RpmhLibInit(IN OUT RpmhDeviceContext **RpmhContextOut) {
     return CR_INVALID_PARAMETER;
   }
 
-  // Check if RpmhContext is already initialized
-  // Notice, only wdf passing initialized context
-  if (*RpmhContextOut == NULL) {
-    // Init driver structure if not initialized
-    RpmhContext = CrTargetGetRpmhContext();
-    if (RpmhContext == NULL) {
-      log_err("RpmhLibInit: Failed to get Rpmh Context");
-      return CR_NOT_FOUND;
-    }
-    *RpmhContextOut = RpmhContext;
-  } else {
-    // Use the provided context from WDF
-    RpmhContext = *RpmhContextOut;
+  RpmhContext = *RpmhContextOut;
+  if (RpmhContext == NULL) {
+    log_err("RpmhLibInit requires a target context");
+    return CR_NOT_FOUND;
   }
 
   if (RpmhContext->Initialized) {
@@ -403,6 +560,10 @@ RpmhLibInit(IN OUT RpmhDeviceContext **RpmhContextOut) {
 
   CrLockInit(&RpmhContext->Lock);
   CrAtomicAnd32(&RpmhContext->TcsBusy, 0);
+  CrAtomicAnd32(&RpmhContext->TcsSynchronous, 0);
+  CrAtomicAnd32(&RpmhContext->TcsRetiring, 0);
+  CrAtomicAnd32(&RpmhContext->TcsCompleted, 0);
+  CrAtomicAnd32(&RpmhContext->TcsFailed, 0);
   CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
                     RpmhContext->drv_registers->reg_drv_irq_enable,
                 0);
@@ -435,20 +596,30 @@ RpmhLibDeinit(IN OUT RpmhDeviceContext *RpmhContext) {
   if (RpmhContext == NULL) {
     return CR_INVALID_PARAMETER;
   }
-  if (!RpmhContext->Initialized) {
-    return CR_SUCCESS;
+  if (RpmhContext->Initialized && RpmhContext->drv_registers != NULL) {
+    CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
+                      RpmhContext->drv_registers->reg_drv_irq_enable,
+                  0);
+    CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
+                      RpmhContext->drv_registers->reg_drv_irq_clear,
+                  RpmhContext->tcs_config.active_tcs.mask);
   }
-
-  CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
-                    RpmhContext->drv_registers->reg_drv_irq_enable,
-                0);
-  CrMmioWrite32(RpmhContext->drv_base_address + RpmhContext->tcs_offset +
-                    RpmhContext->drv_registers->reg_drv_irq_clear,
-                RpmhContext->tcs_config.active_tcs.mask);
-  RpmhContext->Initialized = FALSE;
-  CrAtomicAnd32(&RpmhContext->TcsBusy, 0);
+  /* Registration can fail after installing the interrupt wrapper.  Attempt
+   * cleanup even when initialization did not finish, and retain ownership
+   * metadata until the hardware callback was actually removed. */
   Status = CrUnregisterInterrupt(&RpmhContext->InterruptConfig);
-  return Status;
+  if (CR_ERROR(Status) && Status != CR_NOT_FOUND) {
+    return Status;
+  }
+  RpmhContext->Initialized = FALSE;
+  RpmhContext->InterruptConfig.Handler = NULL;
+  RpmhContext->InterruptConfig.Param = NULL;
+  CrAtomicAnd32(&RpmhContext->TcsBusy, 0);
+  CrAtomicAnd32(&RpmhContext->TcsSynchronous, 0);
+  CrAtomicAnd32(&RpmhContext->TcsRetiring, 0);
+  CrAtomicAnd32(&RpmhContext->TcsCompleted, 0);
+  CrAtomicAnd32(&RpmhContext->TcsFailed, 0);
+  return CR_SUCCESS;
 }
 
 // Retrieve Address from Cmd DB protocol and call this lib function

@@ -6,7 +6,12 @@ This repo is also a UEFI Package and provides uefi drivers.
 ## Integrate with UEFI
 Include `Crane.dsc.inc`, `Crane.fdf.inc` and `Crane.Apriori.inc` at a correct place of your target uefi package. Then rebuild
 your package.  
-A Library named *CrTargetLib* is required for providing silicon-specific information, just like device tree in linux.
+`CrDALDxe` publishes silicon descriptions from the selected `CrTargetLib`
+provider. DXE consumers use `CrDalLib`; portable hardware libraries receive
+their target context from the DXE resource owner. See
+[CrDAL.md](Documentation/CrDAL.md) for the device-data ABI and ownership rules.
+The [Waipio bring-up notes](Documentation/WaipioBringup.md) describe resource
+ordering, MU bus integration, source provenance, and validation limits.
 
 ## Integrate with Windows Driver
 Open the `Properties manager` of your VS project. Then right click a confiuration in the windows and switch

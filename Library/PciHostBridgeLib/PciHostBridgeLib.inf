@@ -23,18 +23,23 @@
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
-  ClockLib
   DevicePathLib
   DebugLib
   IoLib
   MemoryAllocationLib
   UefiBootServicesTableLib
   PcieLib
-  CrTargetLib
+  CrDalLib
 
 [Protocols]
+  gEfiCrDalProtocolGuid         ## CONSUMES
   gEfiClockCrProtocolGuid       ## CONSUMES
   gEfiGpioCrProtocolGuid        ## CONSUMES
   gEfiInterconnectCrProtocolGuid ## CONSUMES
   gEfiRpmhCrProtocolGuid        ## CONSUMES
   gEfiSmmuCrProtocolGuid        ## CONSUMES
+
+[Depex]
+  gEfiCrDalProtocolGuid AND gEfiClockCrProtocolGuid AND
+  gEfiGpioCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND
+  gEfiRpmhCrProtocolGuid AND gEfiSmmuCrProtocolGuid

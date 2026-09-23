@@ -16,7 +16,9 @@
 #include <Guid/EventGroup.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/CacheMaintenanceLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/DebugLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/TimerLib.h>
@@ -24,13 +26,14 @@
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiLib.h>
 #include <Protocol/IoMmu.h>
+#include <Protocol/PciIo.h>
 
-#include <Library/CrTargetSmmuLib.h>
 #include <Library/smmu.h>
 #include <Protocol/EFISmmuCrProtocol.h>
 
 #define CR_SMMU_MAX_DOMAINS       32U
 #define CR_SMMU_MAX_MAPPINGS      128U
+#define CR_SMMU_MAX_DMA_BUFFERS   128U
 #define CR_SMMU_MAPPING_SIGNATURE 0x554D4D53U
 #define CR_SMMU_BDF_UNKNOWN       0xFFFFU
 
@@ -52,19 +55,29 @@ typedef struct {
   EFI_PHYSICAL_ADDRESS      HostAddress;
   EFI_PHYSICAL_ADDRESS      PhysicalBase;
   EFI_PHYSICAL_ADDRESS      IovaBase;
+  EFI_PHYSICAL_ADDRESS      BounceAddress;
   UINTN                     NumberOfBytes;
   UINTN                     Pages;
-  UINT32                    Access;
-  /* SetAttributeById may target one SID while the generic entry point
-     updates every attached SID.  Keep the per-domain state explicit. */
+  UINTN                     BouncePages;
+  BOOLEAN                   DeviceWriteGranted;
+  /* Each PCI function or explicit SID owns its permissions independently. */
   UINT32                    DomainAccess[CR_SMMU_MAX_DOMAINS];
 } CR_SMMU_MAPPING;
+
+typedef struct {
+  BOOLEAN              InUse;
+  BOOLEAN              Busy;
+  EFI_PHYSICAL_ADDRESS Address;
+  UINTN                Pages;
+  UINT64               OriginalAttributes;
+} CR_SMMU_DMA_BUFFER;
 
 typedef struct {
   SmmuDevice                Device;
   CONST CrTargetSmmuContext *Target;
   CR_SMMU_DOMAIN            Domains[CR_SMMU_MAX_DOMAINS];
   CR_SMMU_MAPPING           Mappings[CR_SMMU_MAX_MAPPINGS];
+  CR_SMMU_DMA_BUFFER        DmaBuffers[CR_SMMU_MAX_DMA_BUFFERS];
   UINT8                     IovaBitmap[SMMU_IOVA_SIZE / SMMU_PAGE_SIZE / 8U];
   UINTN                     DomainLimit;
   EFI_LOCK                  Lock;
@@ -274,6 +287,106 @@ AnyMappingInUse (
 
 STATIC
 BOOLEAN
+CommonBufferRangeValidLocked (
+  IN EFI_PHYSICAL_ADDRESS Address,
+  IN UINTN                Pages
+  )
+{
+  EFI_PHYSICAL_ADDRESS Offset;
+  UINTN                Index;
+  UINTN                FirstPage;
+
+  for (Index = 0; Index < ARRAY_SIZE (mSmmu.DmaBuffers); Index++) {
+    if (!mSmmu.DmaBuffers[Index].InUse || mSmmu.DmaBuffers[Index].Busy ||
+        (Address < mSmmu.DmaBuffers[Index].Address)) {
+      continue;
+    }
+    Offset = Address - mSmmu.DmaBuffers[Index].Address;
+    if ((Offset & (SMMU_PAGE_SIZE - 1U)) != 0) {
+      continue;
+    }
+    FirstPage = (UINTN)(Offset / SMMU_PAGE_SIZE);
+    if ((FirstPage <= mSmmu.DmaBuffers[Index].Pages) &&
+        (Pages <= mSmmu.DmaBuffers[Index].Pages - FirstPage)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+VOID
+PrepareMappingForDma (
+  IN CR_SMMU_MAPPING *Map
+  )
+{
+  switch (Map->Operation) {
+    case EdkiiIoMmuOperationBusMasterRead:
+    case EdkiiIoMmuOperationBusMasterRead64:
+      WriteBackDataCacheRange (
+        (VOID *)(UINTN)Map->HostAddress,
+        Map->NumberOfBytes
+        );
+      break;
+
+    case EdkiiIoMmuOperationBusMasterWrite:
+    case EdkiiIoMmuOperationBusMasterWrite64:
+      CopyMem (
+        (VOID *)(UINTN)Map->BounceAddress,
+        (VOID *)(UINTN)Map->HostAddress,
+        Map->NumberOfBytes
+        );
+      WriteBackInvalidateDataCacheRange (
+        (VOID *)(UINTN)Map->BounceAddress,
+        Map->BouncePages * SMMU_PAGE_SIZE
+        );
+      break;
+
+    default:
+      break;
+  }
+}
+
+STATIC
+EFI_STATUS
+CompleteMappingDma (
+  IN OUT CR_SMMU_MAPPING *Map
+  )
+{
+  EFI_STATUS Status;
+
+  if ((Map->Operation != EdkiiIoMmuOperationBusMasterWrite) &&
+      (Map->Operation != EdkiiIoMmuOperationBusMasterWrite64)) {
+    return EFI_SUCCESS;
+  }
+  if ((Map->BounceAddress == 0) || (Map->BouncePages == 0) ||
+      (gBS == NULL) || (gBS->FreePages == NULL)) {
+    return EFI_DEVICE_ERROR;
+  }
+
+  if (Map->DeviceWriteGranted) {
+    InvalidateDataCacheRange (
+      (VOID *)(UINTN)Map->BounceAddress,
+      Map->BouncePages * SMMU_PAGE_SIZE
+      );
+    CopyMem (
+      (VOID *)(UINTN)Map->HostAddress,
+      (VOID *)(UINTN)Map->BounceAddress,
+      Map->NumberOfBytes
+      );
+  }
+
+  Status = gBS->FreePages (Map->BounceAddress, Map->BouncePages);
+  if (!EFI_ERROR (Status)) {
+    Map->BounceAddress = 0;
+    Map->BouncePages   = 0;
+  }
+  return Status;
+}
+
+STATIC
+BOOLEAN
 BitmapIsSet (
   IN UINTN Page
   )
@@ -397,7 +510,7 @@ AllocateDomainTables (
   Address = Maximum;
   Status  = gBS->AllocatePages (
                          AllocateMaxAddress,
-                         EfiBootServicesData,
+                         EfiReservedMemoryType,
                          SMMU_TABLE_PAGES,
                          &Address
                          );
@@ -448,21 +561,22 @@ AttachStreamLocked (
   if (!SidAllowed (Sid)) {
     return EFI_UNSUPPORTED;
   }
-  /* A newly attached SID would otherwise miss mappings already installed on
-     the existing domains.  Cold PCIe attach is required before any DMA map. */
-  if (AnyMappingInUse ()) {
-    return EFI_ACCESS_DENIED;
-  }
   Existing = FindDomainBySid (Sid);
   if (Existing != NULL) {
-    /* A BDF can legitimately emit two calls for one SID during enumeration. */
-    if ((Existing->Segment == Segment) || (Bdf == CR_SMMU_BDF_UNKNOWN) ||
-        (Existing->Bdf == CR_SMMU_BDF_UNKNOWN)) {
+    /* Repeated attachment is idempotent only inside the same PCI segment. */
+    if ((Existing->Segment == Segment) &&
+        ((Existing->Bdf == Bdf) || (Bdf == CR_SMMU_BDF_UNKNOWN) ||
+         (Existing->Bdf == CR_SMMU_BDF_UNKNOWN))) {
       if (Existing->Bdf == CR_SMMU_BDF_UNKNOWN) {
         Existing->Bdf = Bdf;
       }
       return EFI_SUCCESS;
     }
+    return EFI_ACCESS_DENIED;
+  }
+  /* A newly attached SID would otherwise miss mappings already installed on
+     the existing domains.  Cold PCIe attach is required before any DMA map. */
+  if (AnyMappingInUse ()) {
     return EFI_ACCESS_DENIED;
   }
 
@@ -529,7 +643,7 @@ CrSmmuAttach (
   if (!SidAllowed (Sid)) {
     return EFI_UNSUPPORTED;
   }
-  /* HALIOMMU is the owner in this mode.  Its already-installed stream
+  /* The existing standard IOMMU provider owns this mode.  Its stream
      configuration is deliberately left untouched only when the target has
      explicitly documented that ownership hand-off.  Merely finding an
      EDKII_IOMMU_PROTOCOL does not establish that the PCIe SIDs were set up;
@@ -559,6 +673,7 @@ CrSmmuBlockSegment (
   EFI_STATUS      FirstError;
   UINTN           Index;
   CR_SMMU_DOMAIN *Slot;
+  BOOLEAN         Found;
 
   if ((This != &mCrProtocol) || !mSmmu.Initialized ||
       mSmmu.AfterExitBootServices || (mSmmu.Target == NULL) ||
@@ -566,8 +681,8 @@ CrSmmuBlockSegment (
     return EFI_INVALID_PARAMETER;
   }
 
-  /* An existing HALIOMMU owns its stream/context state only when the target
-     explicitly says that it owns the PCIe streams.  Otherwise the domains
+  /* An existing standard IOMMU provider owns its stream/context state only
+     when the target says that it owns the PCIe streams.  Otherwise the domains
      below contain only resources attached by this adapter; SmmuBlock and
      SmmuDetach restore those resources without touching active firmware
      streams or context banks. */
@@ -583,49 +698,60 @@ CrSmmuBlockSegment (
     return EFI_ACCESS_DENIED;
   }
 
-  FirstError = EFI_NOT_FOUND;
+  FirstError = EFI_SUCCESS;
+  Found      = FALSE;
   for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
     Slot = &mSmmu.Domains[Index];
     if (!Slot->InUse || (Slot->Segment != Segment)) {
       continue;
     }
-    FirstError = EFI_SUCCESS;
-    Status     = (EFI_STATUS)SmmuBlock (&Slot->Domain);
+    Found  = TRUE;
+    Status = (EFI_STATUS)SmmuBlock (&Slot->Domain);
     if (!EFI_ERROR (Status)) {
       Status = (EFI_STATUS)SmmuDetach (&Slot->Domain);
     }
     if (EFI_ERROR (Status)) {
-      FirstError = Status;
+      if (!EFI_ERROR (FirstError)) {
+        FirstError = Status;
+      }
       continue;
     }
     FreeDomainTables (Slot);
     ZeroMem (Slot, sizeof (*Slot));
   }
   EfiReleaseLock (&mSmmu.Lock);
-  return FirstError;
+  return Found ? FirstError : EFI_NOT_FOUND;
 }
 
 STATIC
 EFI_STATUS
-SetMappingAttributeAllLocked (
+SetMappingAttributeForPciDeviceLocked (
   IN OUT CR_SMMU_MAPPING *Map,
+  IN     UINT16           Segment,
+  IN     UINT16           Bdf,
   IN     UINT32           Access
   )
 {
   UINT32    Previous[CR_SMMU_MAX_DOMAINS];
+  BOOLEAN   Updated[CR_SMMU_MAX_DOMAINS];
   UINTN     Index;
   EFI_STATUS Status;
-  BOOLEAN   RollbackFailed;
+  BOOLEAN   Found;
 
   if (Map == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
   CopyMem (Previous, Map->DomainAccess, sizeof (Previous));
+  ZeroMem (Updated, sizeof (Updated));
+  Found = FALSE;
   for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
-    if (!mSmmu.Domains[Index].InUse) {
+    if (!mSmmu.Domains[Index].InUse ||
+        (mSmmu.Domains[Index].Segment != Segment) ||
+        (mSmmu.Domains[Index].Bdf != Bdf)) {
       continue;
     }
+    Found  = TRUE;
     Status = (EFI_STATUS)SmmuSetMapping (
                               &mSmmu.Domains[Index].Domain,
                               Map->IovaBase,
@@ -634,46 +760,115 @@ SetMappingAttributeAllLocked (
                               Access
                               );
     if (EFI_ERROR (Status)) {
-      /* A permission update must be all-or-nothing across the SID domains. */
-      RollbackFailed = FALSE;
+      /* Roll back only the matching domains that were changed by this call. */
       for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
-        if (!mSmmu.Domains[Index].InUse) {
+        if (!Updated[Index]) {
           continue;
         }
-        if (EFI_ERROR ((EFI_STATUS)SmmuSetMapping (
-                             &mSmmu.Domains[Index].Domain,
-                             Map->IovaBase,
-                             Map->PhysicalBase,
-                             Map->Pages,
-                             Previous[Index]))) {
-          RollbackFailed = TRUE;
+        if (!EFI_ERROR ((EFI_STATUS)SmmuSetMapping (
+                              &mSmmu.Domains[Index].Domain,
+                              Map->IovaBase,
+                              Map->PhysicalBase,
+                              Map->Pages,
+                              Previous[Index]))) {
+          Map->DomainAccess[Index] = Previous[Index];
         }
       }
-      if (RollbackFailed) {
-        /* Leave no partially writable mapping if a rollback also failed. */
-        for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
-          if (mSmmu.Domains[Index].InUse) {
-            (VOID)SmmuSetMapping (
-                    &mSmmu.Domains[Index].Domain,
-                    Map->IovaBase,
-                    0,
-                    Map->Pages,
-                    0
-                    );
-          }
-          Map->DomainAccess[Index] = 0;
+      for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
+        if ((Map->DomainAccess[Index] & EDKII_IOMMU_ACCESS_WRITE) != 0) {
+          Map->DeviceWriteGranted = TRUE;
+          break;
         }
-        Map->Access = 0;
       }
       return Status;
     }
+    Updated[Index]           = TRUE;
+    Map->DomainAccess[Index] = Access;
   }
-  for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
-    if (mSmmu.Domains[Index].InUse) {
-      Map->DomainAccess[Index] = Access;
-    }
+  if (Found && ((Access & EDKII_IOMMU_ACCESS_WRITE) != 0)) {
+    Map->DeviceWriteGranted = TRUE;
   }
-  Map->Access = Access;
+  return Found ? EFI_SUCCESS : EFI_UNSUPPORTED;
+}
+
+STATIC
+BOOLEAN
+MappingAccessSupported (
+  IN CONST CR_SMMU_MAPPING *Map,
+  IN UINT32                 Access
+  )
+{
+  if (Map == NULL) {
+    return FALSE;
+  }
+
+  switch (Map->Operation) {
+    case EdkiiIoMmuOperationBusMasterRead:
+    case EdkiiIoMmuOperationBusMasterRead64:
+      return (Access & ~EDKII_IOMMU_ACCESS_READ) == 0;
+
+    case EdkiiIoMmuOperationBusMasterWrite:
+    case EdkiiIoMmuOperationBusMasterWrite64:
+      return (Access & ~EDKII_IOMMU_ACCESS_WRITE) == 0;
+
+    case EdkiiIoMmuOperationBusMasterCommonBuffer:
+    case EdkiiIoMmuOperationBusMasterCommonBuffer64:
+      return TRUE;
+
+    default:
+      return FALSE;
+  }
+}
+
+STATIC
+EFI_STATUS
+GetPciLocation (
+  IN  EFI_HANDLE DeviceHandle,
+  OUT UINT16    *Segment,
+  OUT UINT16    *Bdf
+  )
+{
+  EFI_PCI_IO_PROTOCOL *PciIo;
+  EFI_STATUS           Status;
+  UINTN                SegmentNumber;
+  UINTN                BusNumber;
+  UINTN                DeviceNumber;
+  UINTN                FunctionNumber;
+
+  if ((DeviceHandle == NULL) || (Segment == NULL) || (Bdf == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+  if ((gBS == NULL) || (gBS->HandleProtocol == NULL)) {
+    return EFI_NOT_READY;
+  }
+
+  PciIo  = NULL;
+  Status = gBS->HandleProtocol (
+                  DeviceHandle,
+                  &gEfiPciIoProtocolGuid,
+                  (VOID **)&PciIo
+                  );
+  if (EFI_ERROR (Status) || (PciIo == NULL) || (PciIo->GetLocation == NULL)) {
+    return (Status == EFI_INVALID_PARAMETER) ? Status : EFI_UNSUPPORTED;
+  }
+  Status = PciIo->GetLocation (
+                    PciIo,
+                    &SegmentNumber,
+                    &BusNumber,
+                    &DeviceNumber,
+                    &FunctionNumber
+                    );
+  if (EFI_ERROR (Status)) {
+    return EFI_UNSUPPORTED;
+  }
+  if ((SegmentNumber > MAX_UINT16) || (BusNumber > MAX_UINT8) ||
+      (DeviceNumber > 31U) || (FunctionNumber > 7U)) {
+    return EFI_UNSUPPORTED;
+  }
+
+  *Segment = (UINT16)SegmentNumber;
+  *Bdf     = (UINT16)((BusNumber << 8) | (DeviceNumber << 3) |
+                     FunctionNumber);
   return EFI_SUCCESS;
 }
 
@@ -690,12 +885,17 @@ CrSmmuSetAttribute (
   CR_SMMU_MAPPING *Map;
   UINT32           Access;
   EFI_STATUS       Status;
+  UINT16           Segment;
+  UINT16           Bdf;
 
-  (VOID)DeviceHandle;
   if ((This != &mIoMmuProtocol) || !mSmmu.Initialized ||
       mSmmu.AfterExitBootServices ||
       ((IoMmuAccess & ~(EDKII_IOMMU_ACCESS_READ | EDKII_IOMMU_ACCESS_WRITE)) != 0)) {
     return EFI_INVALID_PARAMETER;
+  }
+  Status = GetPciLocation (DeviceHandle, &Segment, &Bdf);
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
 
   EfiAcquireLock (&mSmmu.Lock);
@@ -705,7 +905,11 @@ CrSmmuSetAttribute (
     return EFI_INVALID_PARAMETER;
   }
   Access = (UINT32)IoMmuAccess;
-  Status = SetMappingAttributeAllLocked (Map, Access);
+  if (!MappingAccessSupported (Map, Access)) {
+    EfiReleaseLock (&mSmmu.Lock);
+    return EFI_UNSUPPORTED;
+  }
+  Status = SetMappingAttributeForPciDeviceLocked (Map, Segment, Bdf, Access);
   EfiReleaseLock (&mSmmu.Lock);
   return Status;
 }
@@ -733,7 +937,7 @@ CrSmmuSetAttributeById (
       ((IoMmuAccess & ~(EDKII_IOMMU_ACCESS_READ | EDKII_IOMMU_ACCESS_WRITE)) != 0)) {
     return EFI_INVALID_PARAMETER;
   }
-  if (IommuBase != 0 && IommuBase != mSmmu.Device.Base) {
+  if (IommuBase != mSmmu.Device.Base) {
     return EFI_NOT_FOUND;
   }
   if (DmaId > 0x7FFFU) {
@@ -749,6 +953,10 @@ CrSmmuSetAttributeById (
     return EFI_NOT_FOUND;
   }
   Access = (UINT32)IoMmuAccess;
+  if (!MappingAccessSupported (Map, Access)) {
+    EfiReleaseLock (&mSmmu.Lock);
+    return EFI_UNSUPPORTED;
+  }
   Status = (EFI_STATUS)SmmuSetMapping (
                           &Domain->Domain,
                           Map->IovaBase,
@@ -758,7 +966,9 @@ CrSmmuSetAttributeById (
                           );
   if (!EFI_ERROR (Status)) {
     Map->DomainAccess[DomainIndex] = Access;
-    Map->Access                   = Access;
+    if ((Access & EDKII_IOMMU_ACCESS_WRITE) != 0) {
+      Map->DeviceWriteGranted = TRUE;
+    }
   }
   EfiReleaseLock (&mSmmu.Lock);
   return Status;
@@ -779,6 +989,7 @@ CrSmmuMap (
   EFI_PHYSICAL_ADDRESS Physical;
   EFI_PHYSICAL_ADDRESS AlignedPhysical;
   EFI_PHYSICAL_ADDRESS Iova;
+  EFI_PHYSICAL_ADDRESS Maximum;
   UINTN                Offset;
   UINTN                Total;
   UINTN                Pages;
@@ -786,31 +997,92 @@ CrSmmuMap (
   UINTN                Index;
   CR_SMMU_MAPPING     *Map;
   EFI_STATUS           Status;
+  BOOLEAN              CleanupFailed;
+  BOOLEAN              UseBounce;
 
+  if (DeviceAddress != NULL) {
+    *DeviceAddress = 0;
+  }
+  if (Mapping != NULL) {
+    *Mapping = NULL;
+  }
   if ((This != &mIoMmuProtocol) || !mSmmu.Initialized ||
       mSmmu.ExistingIoMmu ||
-      mSmmu.AfterExitBootServices || (Operation >= EdkiiIoMmuOperationMaximum) ||
+      mSmmu.AfterExitBootServices ||
+      ((UINT32)Operation >= EdkiiIoMmuOperationMaximum) ||
       (HostAddress == NULL) || (NumberOfBytes == NULL) ||
       (*NumberOfBytes == 0) || (DeviceAddress == NULL) || (Mapping == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
   Physical        = (EFI_PHYSICAL_ADDRESS)(UINTN)HostAddress;
-  Offset          = (UINTN)(Physical & (SMMU_PAGE_SIZE - 1U));
-  AlignedPhysical = Physical - Offset;
-  if (*NumberOfBytes > MAX_UINTN - Offset) {
+  if ((UINTN)HostAddress > MAX_UINTN - (*NumberOfBytes - 1U)) {
     return EFI_INVALID_PARAMETER;
   }
-  Total = *NumberOfBytes + Offset;
-  if (Total > MAX_UINTN - (SMMU_PAGE_SIZE - 1U)) {
-    return EFI_INVALID_PARAMETER;
+  UseBounce = (Operation == EdkiiIoMmuOperationBusMasterWrite) ||
+              (Operation == EdkiiIoMmuOperationBusMasterWrite64);
+  if (UseBounce) {
+    Offset = 0;
+    if (*NumberOfBytes > MAX_UINTN - (SMMU_PAGE_SIZE - 1U)) {
+      return EFI_INVALID_PARAMETER;
+    }
+    Pages = (*NumberOfBytes + SMMU_PAGE_SIZE - 1U) / SMMU_PAGE_SIZE;
+    if ((gBS == NULL) || (gBS->AllocatePages == NULL) ||
+        (gBS->FreePages == NULL)) {
+      return EFI_NOT_READY;
+    }
+    if (mSmmu.Device.AddressBits >= 64) {
+      Maximum = MAX_UINT64;
+    } else if (mSmmu.Device.AddressBits == 0) {
+      return EFI_UNSUPPORTED;
+    } else {
+      Maximum = (1ULL << mSmmu.Device.AddressBits) - 1ULL;
+    }
+    AlignedPhysical = Maximum;
+    Status = gBS->AllocatePages (
+                    AllocateMaxAddress,
+                    EfiBootServicesData,
+                    Pages,
+                    &AlignedPhysical
+                    );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+    if ((AlignedPhysical == 0) ||
+        !AddressRangeFitsDevice (AlignedPhysical, Pages)) {
+      (VOID)gBS->FreePages (AlignedPhysical, Pages);
+      return EFI_OUT_OF_RESOURCES;
+    }
+    Physical = AlignedPhysical;
+  } else {
+    Offset          = (UINTN)(Physical & (SMMU_PAGE_SIZE - 1U));
+    AlignedPhysical = Physical - Offset;
+    if (*NumberOfBytes > MAX_UINTN - Offset) {
+      return EFI_INVALID_PARAMETER;
+    }
+    Total = *NumberOfBytes + Offset;
+    if (Total > MAX_UINTN - (SMMU_PAGE_SIZE - 1U)) {
+      return EFI_INVALID_PARAMETER;
+    }
+    Pages = (Total + SMMU_PAGE_SIZE - 1U) / SMMU_PAGE_SIZE;
+    if (!AddressRangeFitsDevice (AlignedPhysical, Pages)) {
+      return EFI_UNSUPPORTED;
+    }
   }
-  Pages = (Total + SMMU_PAGE_SIZE - 1U) / SMMU_PAGE_SIZE;
 
   EfiAcquireLock (&mSmmu.Lock);
   if (!AnyDomainInUse ()) {
     EfiReleaseLock (&mSmmu.Lock);
+    if (UseBounce) {
+      (VOID)gBS->FreePages (AlignedPhysical, Pages);
+    }
     return EFI_NOT_READY;
+  }
+  if (((Operation == EdkiiIoMmuOperationBusMasterCommonBuffer) ||
+       (Operation == EdkiiIoMmuOperationBusMasterCommonBuffer64)) &&
+      !CommonBufferRangeValidLocked (AlignedPhysical, Pages)) {
+    EfiReleaseLock (&mSmmu.Lock);
+    return EFI_UNSUPPORTED;
   }
 
   Map = NULL;
@@ -822,6 +1094,9 @@ CrSmmuMap (
   }
   if (Map == NULL || !FindIovaRange (Pages, &FirstPage)) {
     EfiReleaseLock (&mSmmu.Lock);
+    if (UseBounce) {
+      (VOID)gBS->FreePages (AlignedPhysical, Pages);
+    }
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -835,6 +1110,11 @@ CrSmmuMap (
                         (EFI_PHYSICAL_ADDRESS)FirstPage * SMMU_PAGE_SIZE;
   Map->NumberOfBytes  = *NumberOfBytes;
   Map->Pages          = Pages;
+  if (UseBounce) {
+    Map->HostAddress   = (EFI_PHYSICAL_ADDRESS)(UINTN)HostAddress;
+    Map->BounceAddress = AlignedPhysical;
+    Map->BouncePages   = Pages;
+  }
   Iova                = Map->IovaBase + Offset;
 
   Status = EFI_SUCCESS;
@@ -855,23 +1135,38 @@ CrSmmuMap (
   }
   if (EFI_ERROR (Status)) {
     /* Revoke any domains updated before the failing one. */
+    CleanupFailed = FALSE;
     for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
       if (mSmmu.Domains[Index].InUse) {
-        (VOID)SmmuSetMapping (
-                &mSmmu.Domains[Index].Domain,
-                Map->IovaBase,
-                0,
-                Map->Pages,
-                0
-                );
+        if (CR_ERROR (SmmuSetMapping (
+                        &mSmmu.Domains[Index].Domain,
+                        Map->IovaBase,
+                        0,
+                        Map->Pages,
+                        0
+                        ))) {
+          CleanupFailed = TRUE;
+        }
       }
     }
-    ReleaseIovaRange (Map->IovaBase, Map->Pages);
-    ZeroMem (Map, sizeof (*Map));
+    if (!CleanupFailed) {
+      ReleaseIovaRange (Map->IovaBase, Map->Pages);
+      ZeroMem (Map, sizeof (*Map));
+    } else {
+      DEBUG ((
+        DEBUG_ERROR,
+        "Crane SMMU: retaining failed map at IOVA 0x%Lx\n",
+        Map->IovaBase
+        ));
+    }
     EfiReleaseLock (&mSmmu.Lock);
+    if (UseBounce && !CleanupFailed) {
+      (VOID)gBS->FreePages (AlignedPhysical, Pages);
+    }
     return Status;
   }
 
+  PrepareMappingForDma (Map);
   *DeviceAddress = Iova;
   *Mapping       = Map;
   EfiReleaseLock (&mSmmu.Lock);
@@ -888,6 +1183,7 @@ CrSmmuUnmap (
 {
   CR_SMMU_MAPPING *Map;
   EFI_STATUS       Status;
+  EFI_STATUS       FirstError;
   UINTN            Index;
 
   if ((This != &mIoMmuProtocol) || !mSmmu.Initialized ||
@@ -902,7 +1198,7 @@ CrSmmuUnmap (
     EfiReleaseLock (&mSmmu.Lock);
     return EFI_INVALID_PARAMETER;
   }
-  Status = EFI_SUCCESS;
+  FirstError = EFI_SUCCESS;
   for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
     if (!mSmmu.Domains[Index].InUse) {
       continue;
@@ -915,15 +1211,22 @@ CrSmmuUnmap (
                               0
                               );
     if (EFI_ERROR (Status)) {
-      break;
+      if (!EFI_ERROR (FirstError)) {
+        FirstError = Status;
+      }
+      continue;
+    }
+    Map->DomainAccess[Index] = 0;
+  }
+  if (!EFI_ERROR (FirstError)) {
+    FirstError = CompleteMappingDma (Map);
+    if (!EFI_ERROR (FirstError)) {
+      ReleaseIovaRange (Map->IovaBase, Map->Pages);
+      ZeroMem (Map, sizeof (*Map));
     }
   }
-  if (!EFI_ERROR (Status)) {
-    ReleaseIovaRange (Map->IovaBase, Map->Pages);
-    ZeroMem (Map, sizeof (*Map));
-  }
   EfiReleaseLock (&mSmmu.Lock);
-  return Status;
+  return FirstError;
 }
 
 STATIC
@@ -938,37 +1241,114 @@ CrSmmuAllocateBuffer (
   IN     UINT64                Attributes
   )
 {
-  EFI_PHYSICAL_ADDRESS Address;
+  EFI_PHYSICAL_ADDRESS            Address;
+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR Descriptor;
+  EFI_STATUS                      Status;
+  CR_SMMU_DMA_BUFFER             *Slot;
+  UINT64                          UncachedAttributes;
+  UINTN                           Index;
+  UINTN                           Size;
 
   (VOID)Type;
+  if (HostAddress != NULL) {
+    *HostAddress = NULL;
+  }
   if ((This != &mIoMmuProtocol) || !mSmmu.Initialized ||
       mSmmu.ExistingIoMmu || mSmmu.AfterExitBootServices ||
-      (Pages == 0) || (HostAddress == NULL) ||
-      ((Attributes & ~EDKII_IOMMU_ATTRIBUTE_VALID_FOR_ALLOCATE_BUFFER) != 0) ||
-      ((Attributes & EDKII_IOMMU_ATTRIBUTE_MEMORY_WRITE_COMBINE) != 0)) {
+      (Pages == 0) || (Pages > MAX_UINTN / SMMU_PAGE_SIZE) ||
+      (HostAddress == NULL) ||
+      ((MemoryType != EfiBootServicesData) &&
+       (MemoryType != EfiRuntimeServicesData))) {
     return EFI_INVALID_PARAMETER;
   }
-  if (gBS == NULL || gBS->AllocatePages == NULL) {
+  if (((Attributes & ~EDKII_IOMMU_ATTRIBUTE_VALID_FOR_ALLOCATE_BUFFER) != 0) ||
+      ((Attributes & (EDKII_IOMMU_ATTRIBUTE_MEMORY_WRITE_COMBINE |
+                      EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED)) != 0)) {
+    return EFI_UNSUPPORTED;
+  }
+  if ((gBS == NULL) || (gBS->AllocatePages == NULL) ||
+      (gBS->FreePages == NULL) || (gDS == NULL) ||
+      (gDS->GetMemorySpaceDescriptor == NULL) ||
+      (gDS->SetMemorySpaceAttributes == NULL)) {
     return EFI_NOT_READY;
   }
+
+  Slot = NULL;
+  EfiAcquireLock (&mSmmu.Lock);
+  for (Index = 0; Index < ARRAY_SIZE (mSmmu.DmaBuffers); Index++) {
+    if (!mSmmu.DmaBuffers[Index].InUse && !mSmmu.DmaBuffers[Index].Busy) {
+      Slot       = &mSmmu.DmaBuffers[Index];
+      Slot->Busy = TRUE;
+      break;
+    }
+  }
+  EfiReleaseLock (&mSmmu.Lock);
+  if (Slot == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   Address = (mSmmu.Device.AddressBits >= 64)
               ? MAX_UINT64
               : ((mSmmu.Device.AddressBits == 0)
                    ? 0
                    : ((1ULL << mSmmu.Device.AddressBits) - 1ULL));
-  if (Address == 0 || EFI_ERROR (gBS->AllocatePages (
-                                  AllocateMaxAddress,
-                                  MemoryType,
-                                  Pages,
-                                  &Address))) {
-    return EFI_OUT_OF_RESOURCES;
+  if (Address == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto ReleaseSlot;
+  }
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  MemoryType,
+                  Pages,
+                  &Address
+                  );
+  if (EFI_ERROR (Status)) {
+    goto ReleaseSlot;
   }
   if (!AddressRangeFitsDevice (Address, Pages)) {
-    gBS->FreePages (Address, Pages);
-    return EFI_OUT_OF_RESOURCES;
+    Status = EFI_OUT_OF_RESOURCES;
+    goto FreePages;
   }
+
+  Status = gDS->GetMemorySpaceDescriptor (Address, &Descriptor);
+  if (EFI_ERROR (Status)) {
+    goto FreePages;
+  }
+  if ((Descriptor.Capabilities & EFI_MEMORY_UC) == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto FreePages;
+  }
+
+  Size               = Pages * SMMU_PAGE_SIZE;
+  UncachedAttributes =
+    (Descriptor.Attributes & ~EFI_CACHE_ATTRIBUTE_MASK) | EFI_MEMORY_UC;
+  WriteBackInvalidateDataCacheRange ((VOID *)(UINTN)Address, Size);
+  Status = gDS->SetMemorySpaceAttributes (
+                  Address,
+                  Size,
+                  UncachedAttributes
+                  );
+  if (EFI_ERROR (Status)) {
+    goto FreePages;
+  }
+
+  EfiAcquireLock (&mSmmu.Lock);
+  Slot->Address            = Address;
+  Slot->Pages              = Pages;
+  Slot->OriginalAttributes = Descriptor.Attributes;
+  Slot->InUse              = TRUE;
+  Slot->Busy               = FALSE;
+  EfiReleaseLock (&mSmmu.Lock);
   *HostAddress = (VOID *)(UINTN)Address;
   return EFI_SUCCESS;
+
+FreePages:
+  (VOID)gBS->FreePages (Address, Pages);
+ReleaseSlot:
+  EfiAcquireLock (&mSmmu.Lock);
+  ZeroMem (Slot, sizeof (*Slot));
+  EfiReleaseLock (&mSmmu.Lock);
+  return Status;
 }
 
 STATIC
@@ -980,13 +1360,78 @@ CrSmmuFreeBuffer (
   IN VOID                 *HostAddress
   )
 {
+  CR_SMMU_DMA_BUFFER *Slot;
+  EFI_PHYSICAL_ADDRESS Address;
+  EFI_STATUS           Status;
+  EFI_STATUS           RestoreStatus;
+  UINT64               UncachedAttributes;
+  BOOLEAN              KeepBusy;
+  UINTN                Index;
+  UINTN                Size;
+
   if ((This != &mIoMmuProtocol) || !mSmmu.Initialized ||
       mSmmu.ExistingIoMmu || mSmmu.AfterExitBootServices ||
-      (Pages == 0) || (HostAddress == NULL) || (gBS == NULL) ||
-      (gBS->FreePages == NULL)) {
+      (Pages == 0) || (Pages > MAX_UINTN / SMMU_PAGE_SIZE) ||
+      (HostAddress == NULL) ||
+      (((UINTN)HostAddress & (SMMU_PAGE_SIZE - 1U)) != 0)) {
     return EFI_INVALID_PARAMETER;
   }
-  return gBS->FreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)HostAddress, Pages);
+  if ((gBS == NULL) || (gBS->FreePages == NULL) || (gDS == NULL) ||
+      (gDS->SetMemorySpaceAttributes == NULL)) {
+    return EFI_NOT_READY;
+  }
+
+  Address = (EFI_PHYSICAL_ADDRESS)(UINTN)HostAddress;
+  Slot    = NULL;
+  EfiAcquireLock (&mSmmu.Lock);
+  for (Index = 0; Index < ARRAY_SIZE (mSmmu.DmaBuffers); Index++) {
+    if (mSmmu.DmaBuffers[Index].InUse &&
+        !mSmmu.DmaBuffers[Index].Busy &&
+        (mSmmu.DmaBuffers[Index].Address == Address) &&
+        (mSmmu.DmaBuffers[Index].Pages == Pages)) {
+      Slot       = &mSmmu.DmaBuffers[Index];
+      Slot->Busy = TRUE;
+      break;
+    }
+  }
+  EfiReleaseLock (&mSmmu.Lock);
+  if (Slot == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Size = Pages * SMMU_PAGE_SIZE;
+  KeepBusy = FALSE;
+  WriteBackInvalidateDataCacheRange (HostAddress, Size);
+  Status = gDS->SetMemorySpaceAttributes (
+                  Address,
+                  Size,
+                  Slot->OriginalAttributes
+                  );
+  if (!EFI_ERROR (Status)) {
+    Status = gBS->FreePages (Address, Pages);
+    if (EFI_ERROR (Status)) {
+      UncachedAttributes =
+        (Slot->OriginalAttributes & ~EFI_CACHE_ATTRIBUTE_MASK) | EFI_MEMORY_UC;
+      RestoreStatus = gDS->SetMemorySpaceAttributes (
+                            Address,
+                            Size,
+                            UncachedAttributes
+                            );
+      if (EFI_ERROR (RestoreStatus)) {
+        Status   = RestoreStatus;
+        KeepBusy = TRUE;
+      }
+    }
+  }
+
+  EfiAcquireLock (&mSmmu.Lock);
+  if (EFI_ERROR (Status)) {
+    Slot->Busy = KeepBusy;
+  } else {
+    ZeroMem (Slot, sizeof (*Slot));
+  }
+  EfiReleaseLock (&mSmmu.Lock);
+  return Status;
 }
 
 STATIC
@@ -997,25 +1442,47 @@ CrSmmuExitBootServices (
   IN VOID      *Context
   )
 {
+  EFI_STATUS Status;
+  UINTN      Index;
+
   (VOID)Context;
   mSmmu.AfterExitBootServices = TRUE;
+  if (mSmmu.Initialized && !mSmmu.ExistingIoMmu) {
+    EfiAcquireLock (&mSmmu.Lock);
+    for (Index = 0; Index < ARRAY_SIZE (mSmmu.Domains); Index++) {
+      if (!mSmmu.Domains[Index].InUse) {
+        continue;
+      }
+      Status = (EFI_STATUS)SmmuBlock (&mSmmu.Domains[Index].Domain);
+      if (EFI_ERROR (Status)) {
+        DEBUG ((
+          DEBUG_ERROR,
+          "Crane SMMU: failed to block SID 0x%x at ExitBootServices: %r\n",
+          mSmmu.Domains[Index].Sid,
+          Status
+          ));
+      }
+    }
+    EfiReleaseLock (&mSmmu.Lock);
+  }
   if ((Event != NULL) && (gBS != NULL) && (gBS->CloseEvent != NULL)) {
     gBS->CloseEvent (Event);
   }
+  mSmmu.ExitBootServicesEvent = NULL;
 }
 
 STATIC
 EFI_STATUS
 GetTargetSmmuContext (
-  OUT CrTargetSmmuContext **Target
+  OUT CONST CrTargetSmmuContext **Target
   )
 {
-  CrTargetSmmuContext *Context;
+  CONST CrTargetSmmuContext *Context;
 
   if (Target == NULL) {
     return EFI_INVALID_PARAMETER;
   }
-  Context = CrTargetGetSmmuContext ();
+  Context = CrDalGetSmmuContext ();
   if ((Context == NULL) || (Context->Base == 0) || (Context->Size == 0) ||
       (Context->SegmentCount == 0) ||
       (Context->DefaultStreamCount != 0 &&
@@ -1032,7 +1499,7 @@ GetTargetSmmuContext (
 STATIC
 VOID
 InitializeSmmuMetadata (
-  IN CrTargetSmmuContext *Target
+  IN CONST CrTargetSmmuContext *Target
   )
 {
   ZeroMem (&mSmmu, sizeof (mSmmu));
@@ -1052,7 +1519,7 @@ InitializeExternalSmmuState (
   )
 {
   EFI_STATUS            Status;
-  CrTargetSmmuContext  *Target;
+  CONST CrTargetSmmuContext *Target;
 
   if (Existing == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -1094,7 +1561,7 @@ InitializeSmmuState (
 {
   CR_STATUS            CrStatus;
   EFI_STATUS           Status;
-  CrTargetSmmuContext *Target;
+  CONST CrTargetSmmuContext *Target;
 
   Status = GetTargetSmmuContext (&Target);
   if (EFI_ERROR (Status)) {
@@ -1127,7 +1594,7 @@ SmmuCrDxeEntryPoint (
   (VOID)SystemTable;
   mSmmuImageHandle = ImageHandle;
 
-  /* HALIOMMUDxe may already provide a complete IOMMU implementation. */
+  /* A standard IOMMU protocol producer may already own the controller. */
   Existing = NULL;
   Status   = gBS->LocateProtocol (&gEdkiiIoMmuProtocolGuid, NULL,
                                   (VOID **)&Existing);

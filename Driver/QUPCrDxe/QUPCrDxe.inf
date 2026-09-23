@@ -15,14 +15,15 @@
 
 [LibraryClasses]
   BaseLib
-  CrTargetLib
+  CrDalLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
+  gEfiCrDalProtocolGuid          ## CONSUMES
   gEfiClockCrProtocolGuid        ## CONSUMES
   gEfiInterconnectCrProtocolGuid ## CONSUMES
   gEfiQupCrProtocolGuid          ## PRODUCES
 
 [Depex]
-  gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid

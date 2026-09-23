@@ -5,7 +5,6 @@
  */
 
 #include "pdc_internal.h"
-#include <Library/CrTargetPdcLib.h>
 #ifdef _KERNEL_MODE
 #include "pdc.tmh"
 #endif
@@ -202,13 +201,9 @@ PdcLibInit(IN OUT PdcDeviceContext **Ctx) {
   if (Ctx == NULL) {
     return CR_INVALID_PARAMETER;
   }
-  // Get PDC Context only if not provided
   if (*Ctx == NULL) {
-    *Ctx = GetPdcDevContext();
-    if (*Ctx == NULL) {
-      log_err("GetPdcDevContext failed.");
-      return CR_NOT_FOUND;
-    }
+    log_err("PdcLibInit requires a target context.");
+    return CR_NOT_FOUND;
   }
   // Disable All IRQs in PDC
   PdcPinsMapping(*Ctx);

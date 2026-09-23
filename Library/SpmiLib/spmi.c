@@ -8,7 +8,6 @@
  */
 
 #include "spmi_internal.h"
-#include <Library/CrTargetSpmiLib.h>
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
 #include "spmi.tmh"
@@ -439,9 +438,6 @@ SpmiLibInit(IN OUT SpmiDeviceContext **Ctx) {
 
   if (Ctx == NULL) {
     return CR_INVALID_PARAMETER;
-  }
-  if (*Ctx == NULL) {
-    *Ctx = CrTargetGetSpmiContext();
   }
   if (*Ctx == NULL) {
     return CR_NOT_FOUND;

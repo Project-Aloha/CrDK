@@ -30,20 +30,13 @@
 [LibraryClasses]
   BaseLib
   DebugLib
-  GpioLib
-  PdcLib
+  CrDalLib
   BaseMemoryLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
   gEfiGpioCrProtocolGuid   # CONSUMER
-  gEfiRpmhCrProtocolGuid   # CONSUMER
-
-[Pcd]
-  gCranePkgTokenSpaceGuid.PcdLt9611GpioHigh
-  gCranePkgTokenSpaceGuid.PcdLt9611GpioInt
 
 [Depex]
-  gEfiRpmhCrProtocolGuid AND
   gEfiGpioCrProtocolGuid

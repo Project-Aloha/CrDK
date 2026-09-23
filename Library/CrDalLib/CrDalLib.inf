@@ -1,0 +1,29 @@
+## @file
+#  Typed client accessors for CrDALDxe.
+#
+#  SPDX-License-Identifier: MIT
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrDalLib
+  FILE_GUID                      = 39cccf8e-a478-4918-9dc7-4bcc49aeaf3e
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CrDalLib
+
+[Sources]
+  CrDalLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEfiCrDalProtocolGuid          ## CONSUMES
+
+[Depex]
+  gEfiCrDalProtocolGuid

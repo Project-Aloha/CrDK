@@ -17,10 +17,14 @@
 extern EFI_GUID                      gEfiRpmhCrProtocolGuid;
 typedef struct _EFI_RPMH_CR_PROTOCOL EFI_RPMH_CR_PROTOCOL;
 
-/* Note: All tcs cmds are sending to active onlt tcs currently */
+/* Raw active-set commands are optional. Waipio's NPA adapter returns
+   EFI_UNSUPPORTED because the packaged RPMh driver owns shared TCS state. */
 typedef EFI_STATUS(EFIAPI *EFI_RPMH_CR_WRITE)(
     IN EFI_RPMH_CR_PROTOCOL *This, IN RpmhTcsCmd *TcsCmd, IN UINT32 NumCmds);
 
+/* FALSE releases this adapter's complete rail request, including any voltage
+   and mode votes acquired before an enable failure. Other NPA clients retain
+   their requests. A failed release must be retried before prerequisites go. */
 typedef EFI_STATUS(EFIAPI *EFI_RPMH_CR_ENABLE_VREG)(
     IN EFI_RPMH_CR_PROTOCOL *This, IN CONST CHAR8 *Name, IN BOOLEAN Enable);
 

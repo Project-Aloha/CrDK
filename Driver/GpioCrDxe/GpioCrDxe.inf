@@ -29,6 +29,7 @@
 
 [LibraryClasses]
   BaseLib
+  CrDalLib
   DebugLib
   GpioLib
   PdcLib
@@ -39,7 +40,8 @@
   UefiDriverEntryPoint
 
 [Protocols]
+  gEfiCrDalProtocolGuid    ## CONSUMES
   gEfiGpioCrProtocolGuid   # PRODUCER
 
 [Depex]
-  TRUE
+  gEfiCrDalProtocolGuid

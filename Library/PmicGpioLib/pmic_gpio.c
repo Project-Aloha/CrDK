@@ -497,11 +497,9 @@ PmicGpioInitialize(
 
 CR_STATUS
 PmicGpioLibInit(
-    OUT PmicGpioDeviceContext *Context, IN CONST PmicGpioBusOps *Bus)
+    OUT PmicGpioDeviceContext *Context, IN CONST PmicGpioTargetContext *Target,
+    IN CONST PmicGpioBusOps *Bus)
 {
-  PmicGpioTargetContext *Target;
-
-  Target = CrTargetGetPmicGpioContext();
   if (Target == NULL) {
     return CR_NOT_FOUND;
   }

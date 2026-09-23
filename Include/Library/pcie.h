@@ -11,6 +11,7 @@
 #include <oskal/cr_lock.h>
 
 #define PCIE_MAX_CONTROLLERS 8
+#define PCIE_MAX_RESOURCES   64
 
 typedef enum {
   PCIE_GPIO_INPUT,
@@ -28,6 +29,12 @@ typedef enum {
 typedef UINT32 (*PCIE_MMIO_READ32)(IN VOID *Context, IN UINT64 Address);
 typedef VOID (*PCIE_MMIO_WRITE32)(
     IN VOID *Context, IN UINT64 Address, IN UINT32 Value);
+typedef UINT8 (*PCIE_MMIO_READ8)(IN VOID *Context, IN UINT64 Address);
+typedef UINT16 (*PCIE_MMIO_READ16)(IN VOID *Context, IN UINT64 Address);
+typedef VOID (*PCIE_MMIO_WRITE8)(
+    IN VOID *Context, IN UINT64 Address, IN UINT8 Value);
+typedef VOID (*PCIE_MMIO_WRITE16)(
+    IN VOID *Context, IN UINT64 Address, IN UINT16 Value);
 typedef VOID (*PCIE_DELAY_US)(IN VOID *Context, IN UINT32 Microseconds);
 typedef CR_STATUS (*PCIE_SET_CLOCK)(
     IN VOID *Context, IN CONST PcieTargetClock *Clock, IN BOOLEAN Enable);
@@ -64,6 +71,12 @@ typedef struct _PcieIoOps {
   PCIE_SET_IOMMU          SetIommu;
   PCIE_SET_GPIO           SetGpio;
   VOID                   *Context;
+  /* Configuration accesses must preserve byte enables. A 32-bit RMW can
+     acknowledge adjacent W1C status bits when writing the command field. */
+  PCIE_MMIO_READ8         Read8;
+  PCIE_MMIO_READ16        Read16;
+  PCIE_MMIO_WRITE8        Write8;
+  PCIE_MMIO_WRITE16       Write16;
 } PcieIoOps;
 
 typedef struct {
@@ -77,6 +90,9 @@ typedef struct {
   UINT64                      ConfigSize;
   CR_STATUS                   LastStatus;
   PCIE_PORT_STATE             State;
+  UINT64                      ClockOwnedMask;
+  UINT64                      SupplyOwnedMask;
+  BOOLEAN                     ControllerConfigured;
   BOOLEAN                     GpiosConfigured;
   BOOLEAN                     SuppliesEnabled;
   BOOLEAN                     PowerEnabled;
@@ -129,7 +145,8 @@ PcieIsLinkUp(IN OUT PcieDeviceContext *Context, IN UINT16 PortIndex);
   Access one configuration register through the DesignWare outbound CFG
   window.  Root-port BDF 0:0.0 is read directly from DBI; root-bus slots and
   functions other than 0:0.0 are absent, while downstream BDFs reprogram iATU
-  region 0 while ConfigLock is held.
+  region 0 while ConfigLock is held. Byte and halfword operations require
+  their matching I/O callbacks and never fall back to 32-bit RMW.
 **/
 CR_STATUS
 PcieConfigAccess(

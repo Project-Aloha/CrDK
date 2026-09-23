@@ -217,8 +217,7 @@ struct SpmiDeviceContext {
 };
 
 /**
- * Initialize the SPMI PMIC arbiter. If *Ctx is NULL the context is
- * obtained from the target library.
+ * Initialize the SPMI PMIC arbiter using a caller-supplied target context.
  */
 CR_STATUS
 SpmiLibInit(IN OUT SpmiDeviceContext **Ctx);

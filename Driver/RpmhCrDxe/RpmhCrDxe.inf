@@ -27,17 +27,16 @@
   AndromedaPkg/AndromedaPkg.dec
 
 [LibraryClasses]
-  BaseLib
+  CrDalLib
   DebugLib
-  RpmhLib
-  MemoryAllocationLib
-  IoLib
-  BaseMemoryLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
+  UefiLib
 
 [Protocols]
-  gEfiCmdDBCrProtocolGuid   # CONSUMER
-  gEfiRpmhCrProtocolGuid    # PRODUCER
+  gEfiCrDalProtocolGuid     ## CONSUMES
+  gEfiNpaProtocolGuid       ## CONSUMES
+  gQcomPmicVregProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid    ## PRODUCES
 [Depex]
-  gEfiCmdDBCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiNpaProtocolGuid AND gQcomPmicVregProtocolGuid

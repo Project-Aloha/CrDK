@@ -27,6 +27,7 @@
 
 [LibraryClasses]
   BaseLib
+  CrDalLib
   DebugLib
   MemoryAllocationLib
   BaseMemoryLib
@@ -36,8 +37,9 @@
   DevicePathLib
 
 [Protocols]
+  gEfiCrDalProtocolGuid           ## CONSUMES
   gEfiSerialIoProtocolGuid        #PRODUCER
   gEfiDevicePathProtocolGuid      #PRODUCER
 
 [Depex]
-  TRUE
+  gEfiCrDalProtocolGuid

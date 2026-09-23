@@ -22,5 +22,4 @@
 [LibraryClasses]
   BaseLib
   DebugLib
-  CrTargetLib
   SynchronizationLib

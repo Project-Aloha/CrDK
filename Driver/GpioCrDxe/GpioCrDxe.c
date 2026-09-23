@@ -7,6 +7,7 @@
 #include <Uefi.h>
 
 #include <Library/BaseLib.h>
+#include <Library/CrDalLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Library/gpio.h>
@@ -131,6 +132,15 @@ CR_STATUS
 GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
   EFI_STATUS Status = EFI_SUCCESS;
+  CR_STATUS CleanupStatus;
+
+  // Resolve both objects before either library can touch hardware.
+  mPdcContext = CrDalGetPdcContext();
+  mGpioContext = CrDalGetGpioContext();
+  if (mPdcContext == NULL || mGpioContext == NULL) {
+    log_err("Failed to get PDC/GPIO contexts from CrDAL");
+    return EFI_NOT_FOUND;
+  }
 
   // Init PDC
   if (CR_ERROR(PdcLibInit(&mPdcContext)) || (mPdcContext == NULL)) {
@@ -145,9 +155,10 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   }
 
   // Init Gpio interrupt
-  if (CR_ERROR(GpioInitIrq(mGpioContext))) {
+  Status = GpioInitIrq(mGpioContext);
+  if (CR_ERROR(Status)) {
     log_err("GpioInitIrq failed");
-    return EFI_DEVICE_ERROR;
+    goto Error;
   }
 
   // Install protocol
@@ -155,7 +166,7 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
       &ImageHandle, &gEfiGpioCrProtocolGuid, &gGpioCrProtocol, NULL);
   if (EFI_ERROR(Status)) {
     log_err("Failed to install Gpio CR Protocol, Status=0x%X", Status);
-    return Status;
+    goto Error;
   }
 
   // Test case (on hdk8450)
@@ -325,4 +336,14 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 #endif
 
   return EFI_SUCCESS;
+
+Error:
+  CleanupStatus = CrUnregisterInterrupt(&mGpioContext->InterruptConfig);
+  if (CR_ERROR(CleanupStatus) && CleanupStatus != CR_NOT_FOUND) {
+    log_err("GPIO IRQ cleanup failed; retaining driver image: 0x%X", CleanupStatus);
+    return EFI_SUCCESS;
+  }
+  mGpioContext->InterruptConfig.Handler = NULL;
+  mGpioContext->InterruptConfig.Param = NULL;
+  return Status;
 }

@@ -1,4 +1,5 @@
 #include "gpio_internal.h"
+#include <oskal/cr_memory.h>
 #include <Library/pdc.h>
 typedef struct {
   CR_INTERRUPT_HANDLER Handler;

@@ -22,8 +22,8 @@
   ArmLib
   DebugLib
   IoLib
+  SynchronizationLib
   TimerLib
-  CrTargetLib
 
 [Sources.common]
   clock.c

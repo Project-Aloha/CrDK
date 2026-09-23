@@ -234,4 +234,4 @@ CR_STATUS GpioSetInterruptCfg(
     IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex,
     IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
 
-CR_STATUS GpioLibInit(OUT GpioDeviceContext **GpioContext);
+CR_STATUS GpioLibInit(IN OUT GpioDeviceContext **GpioContext);
