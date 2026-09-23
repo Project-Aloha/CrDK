@@ -81,7 +81,7 @@ static void TestEntry(void) {
   assert(PrivateLocateCalls == 0 && Allocations == 0 && mInstances == NULL);
   InstallStatus = EFI_SUCCESS;
   assert(I2CCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_SUCCESS);
-  Protocol = LastInstalled;
+  Protocol = &mInstances[0].Protocol;
   assert(Protocol->MasterHandle == (EFI_HANDLE)0x4444);
   assert(Protocol->Master == &Master && Protocol->I2cControllerCapabilities == &Caps);
   assert(Protocol->Qcom == NULL && PrivateLocateCalls == 0);
@@ -93,14 +93,33 @@ static void TestEntry(void) {
   StandardLocateStatus = EFI_NOT_FOUND;
   InstallStatus = EFI_OUT_OF_RESOURCES;
   assert(I2CCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_OUT_OF_RESOURCES);
-  assert(Opens == 24 && Closes == 1 && mInstances == NULL && Allocations == 0);
+  assert(Opens == 0 && Closes == 0 && mInstances == NULL && Allocations == 0);
   InstallStatus = EFI_SUCCESS;
   assert(I2CCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_SUCCESS);
-  Protocol = LastInstalled;
+  Protocol = &mInstances[0].Protocol;
   assert(Protocol->Instance == 1 && Protocol->Qcom == &Mu);
   assert(Protocol->I2cControllerCapabilities->MaximumTotalBytes == 0x00ffffff);
-  assert(Opens == 48 && Closes == 1 && Allocations == 1);
-  Close(Protocol->QcomHandle);
+  assert(Opens == 0 && Closes == 0 && Allocations == 1);
+  {
+    MU_I2C_SLAVE_CONFIG Config = {
+      .BusFrequencyKHz = 400,
+      .SlaveAddress = 0x36,
+      .Mode = MU_I2C_MODE_I2C,
+      .SlaveMaxClockStretchUs = 500
+    };
+    UINT8 First[2] = {0x12, 0};
+    UINT8 Second[3] = {0x34, 0, 0};
+    MU_I2C_DESCRIPTOR Descriptors[2] = {
+      { First, sizeof (First), MU_I2C_FLAG_START | MU_I2C_FLAG_WRITE },
+      { Second, sizeof (Second), MU_I2C_FLAG_START | MU_I2C_FLAG_WRITE |
+                                 MU_I2C_FLAG_STOP }
+    };
+    Result = MU_I2C_SUCCESS;
+    assert (Protocol->MuTransfer (Protocol, &Config, Descriptors, 2,
+                                  NULL, NULL, 0, NULL) == EFI_SUCCESS);
+    assert (Opens == 1 && Protocol->QcomHandle == (VOID *)0x3333);
+    assert (Protocol->Qcom->Close (Protocol->QcomHandle) == MU_I2C_SUCCESS);
+  }
   FreePool(mInstances); mInstances = NULL;
 }
 

@@ -27,6 +27,8 @@ typedef struct {
   EFI_HANDLE             AliasHandle;
   EFI_I2C_CR_PROTOCOL     Protocol;
   volatile UINT32        Busy;
+  BOOLEAN                 QcomOpenAttempted;
+  EFI_STATUS              QcomOpenStatus;
 } I2C_CR_INSTANCE;
 
 typedef struct {
@@ -90,6 +92,48 @@ I2cCrInstanceFromProtocol (
   )
 {
   return (This == NULL) ? NULL : BASE_CR (This, I2C_CR_INSTANCE, Protocol);
+}
+
+STATIC EFI_STATUS
+I2cCrEnsureQcomOpen (
+  IN I2C_CR_INSTANCE  *Instance
+  )
+{
+  MU_I2C_STATUS  MuStatus;
+  VOID           *Handle;
+
+  if ((Instance == NULL) || (Instance->Protocol.Qcom == NULL)) {
+    return EFI_UNSUPPORTED;
+  }
+  if (Instance->Protocol.QcomHandle != NULL) {
+    return EFI_SUCCESS;
+  }
+  if (Instance->Protocol.Qcom->Open == NULL) {
+    return EFI_UNSUPPORTED;
+  }
+  if (Instance->QcomOpenAttempted) {
+    return EFI_ERROR (Instance->QcomOpenStatus) ?
+             Instance->QcomOpenStatus : EFI_NOT_READY;
+  }
+
+  /* Native MU Open() may touch an unpowered GENI/QUP block.  Never probe all
+     instances from EntryPoint; only a real transaction is allowed to start
+     this hardware access, and a failed probe is cached for this boot. */
+  Instance->QcomOpenAttempted = TRUE;
+  Handle = NULL;
+  MuStatus = Instance->Protocol.Qcom->Open (
+      Instance->Protocol.Instance, &Handle);
+  if ((MuStatus == MU_I2C_SUCCESS) && (Handle != NULL)) {
+    Instance->Protocol.QcomHandle = Handle;
+    Instance->QcomOpenStatus = EFI_SUCCESS;
+    return EFI_SUCCESS;
+  }
+  if (MuStatus == MU_I2C_SUCCESS) {
+    Instance->QcomOpenStatus = EFI_DEVICE_ERROR;
+  } else {
+    Instance->QcomOpenStatus = MuI2cStatusToEfi (MuStatus);
+  }
+  return Instance->QcomOpenStatus;
 }
 
 STATIC VOID
@@ -156,8 +200,9 @@ I2cCrSubmit (
     return EFI_INVALID_PARAMETER;
   }
   if ((Instance->Protocol.Qcom == NULL) ||
-      (Instance->Protocol.QcomHandle == NULL) ||
-      (Instance->Protocol.Qcom->Transfer == NULL)) {
+      (Instance->Protocol.Qcom->Transfer == NULL) ||
+      ((Instance->Protocol.QcomHandle == NULL) &&
+       (Instance->Protocol.Qcom->Open == NULL))) {
     return EFI_UNSUPPORTED;
   }
 
@@ -174,6 +219,12 @@ I2cCrSubmit (
   }
   if (InterlockedCompareExchange32 (&Instance->Busy, 0, 1) != 0) {
     return EFI_ALREADY_STARTED;
+  }
+
+  Status = I2cCrEnsureQcomOpen (Instance);
+  if (EFI_ERROR (Status)) {
+    InterlockedCompareExchange32 (&Instance->Busy, 1, 0);
+    return Status;
   }
 
   if ((Event != NULL) || (Callback != NULL)) {
@@ -518,19 +569,13 @@ I2CCrEntryPoint (
   Installed = 0;
   FailureStatus = EFI_NOT_FOUND;
   for (Index = MU_I2C_INSTANCE_001; Index < MU_I2C_INSTANCE_MAX; ++Index) {
-    VOID          *Handle;
-    MU_I2C_STATUS  MuStatus;
     EFI_HANDLE     AliasHandle;
 
-    Handle = NULL;
-    MuStatus = MuI2c->Open ((MU_I2C_INSTANCE)Index, &Handle);
-    if ((MuStatus != MU_I2C_SUCCESS) || (Handle == NULL)) {
-      continue;
-    }
     I2cCrInitializeProtocol (&mInstances[Installed].Protocol);
     mInstances[Installed].Protocol.Qcom = MuI2c;
     mInstances[Installed].Protocol.Instance = (MU_I2C_INSTANCE)Index;
-    mInstances[Installed].Protocol.QcomHandle = Handle;
+    mInstances[Installed].Protocol.QcomHandle = NULL;
+    mInstances[Installed].QcomOpenStatus = EFI_NOT_READY;
     mInstances[Installed].Protocol.BusFrequencyKHz =
         I2C_CR_DEFAULT_FREQUENCY_KHZ;
     mInstances[Installed].Protocol.I2cControllerCapabilities =
@@ -541,7 +586,6 @@ I2CCrEntryPoint (
         &AliasHandle, &gEfiI2cCrProtocolGuid,
         &mInstances[Installed].Protocol, NULL);
     if (EFI_ERROR (Status)) {
-      MuI2c->Close (Handle);
       FailureStatus = Status;
       continue;
     }
