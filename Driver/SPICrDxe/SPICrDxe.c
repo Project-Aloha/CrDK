@@ -26,7 +26,6 @@ typedef struct {
   EFI_HANDLE          AliasHandle;
   EFI_SPI_CR_PROTOCOL Protocol;
   volatile UINT32     Busy;
-  BOOLEAN             QcomOpenAttempted;
   EFI_STATUS          QcomOpenStatus;
 } SPI_CR_INSTANCE;
 
@@ -194,21 +193,18 @@ SpiCrMuTransfer (
      transfer, after the platform's QUP/clock/GPI dependencies are ready;
      probing every possible instance from EntryPoint can abort the DXE CPU. */
   if (Instance->Protocol.QcomHandle == NULL) {
-    if (!Instance->QcomOpenAttempted) {
-      VOID         *Handle;
+    VOID         *Handle;
 
-      Handle = NULL;
-      Instance->QcomOpenAttempted = TRUE;
-      MuStatus = Instance->Protocol.Qcom->Open (
-          Instance->Protocol.Instance, &Handle);
-      if ((MuStatus == MU_SPI_SUCCESS) && (Handle != NULL)) {
-        Instance->Protocol.QcomHandle = Handle;
-        Instance->QcomOpenStatus = EFI_SUCCESS;
-      } else if (MuStatus == MU_SPI_SUCCESS) {
-        Instance->QcomOpenStatus = EFI_DEVICE_ERROR;
-      } else {
-        Instance->QcomOpenStatus = MuSpiStatusToEfi (MuStatus);
-      }
+    Handle = NULL;
+    MuStatus = Instance->Protocol.Qcom->Open (
+        Instance->Protocol.Instance, &Handle);
+    if ((MuStatus == MU_SPI_SUCCESS) && (Handle != NULL)) {
+      Instance->Protocol.QcomHandle = Handle;
+      Instance->QcomOpenStatus = EFI_SUCCESS;
+    } else if (MuStatus == MU_SPI_SUCCESS) {
+      Instance->QcomOpenStatus = EFI_DEVICE_ERROR;
+    } else {
+      Instance->QcomOpenStatus = MuSpiStatusToEfi (MuStatus);
     }
     if (Instance->Protocol.QcomHandle == NULL) {
       EFI_STATUS OpenStatus;
@@ -506,7 +502,6 @@ SpiCrEntryPoint (
     mInstances[Installed].Protocol.Qcom       = mMuSpi;
     mInstances[Installed].Protocol.Instance   = (MU_SPI_INSTANCE)Index;
     mInstances[Installed].Protocol.QcomHandle = Handle;
-    mInstances[Installed].QcomOpenAttempted = FALSE;
     mInstances[Installed].QcomOpenStatus = EFI_NOT_READY;
     /* The adapter implements these using one equal-length MU descriptor. */
     mInstances[Installed].Protocol.Attributes =
