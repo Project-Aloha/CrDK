@@ -13,7 +13,8 @@ INTN EFIAPI CompareMem(CONST VOID *A,CONST VOID *B,UINTN N){return memcmp(A,B,N)
 VOID *EFIAPI CopyMem(VOID *D,CONST VOID *S,UINTN N){return memmove(D,S,N);}
 typedef struct {
   UINT32 Calls,Fail,PinCalls,RetainCalls,Delays,Elapsed;
-  BOOLEAN Posted,Dropped;EFI_STATUS Failure;
+  BOOLEAN Posted,Dropped,InputLag;EFI_STATUS Failure;
+  UINT32 InputReads;
   VOID *Owners[2];GpioConfigParams Pins[2];UINT8 Values[2];
   BOOLEAN Floors[3];UINT32 FloorWrites[3];
 } MODEL;
@@ -47,11 +48,14 @@ static EFI_STATUS EFIAPI AcquirePin(EFI_GPIO_CR_PROTOCOL *T,VOID *Owner,CONST Gp
 }
 static EFI_STATUS EFIAPI SetPin(EFI_GPIO_CR_PROTOCOL *T,VOID *Owner,UINT16 N,UINT8 V){
   assert(T==&G&&Owner==&P&&H.Owners[Pin(N)]==Owner&&N==75);EFI_STATUS S=Step();
-  if((S==EFI_SUCCESS||H.Posted)&&!H.Dropped)H.Values[Pin(N)]=V;return S;
+  if((S==EFI_SUCCESS||H.Posted)&&!H.Dropped)H.Values[Pin(N)]=V;
+  /* Real SetPinValue calls GpioApplyConfigChecked: dropped latch writes
+     cannot return SUCCESS. ReadPinValue separately samples the input. */
+  return S==EFI_SUCCESS&&H.Values[Pin(N)]!=V?EFI_DEVICE_ERROR:S;
 }
 static EFI_STATUS EFIAPI ReadPin(EFI_GPIO_CR_PROTOCOL *T,VOID *Owner,UINT16 N,UINT8 *V){
   assert(T==&G&&Owner==&P&&H.Owners[Pin(N)]==Owner);EFI_STATUS S=Step();
-  if(S==EFI_SUCCESS)*V=H.Values[Pin(N)];return S;
+  ++H.InputReads;if(S==EFI_SUCCESS)*V=H.Values[Pin(N)]^(H.InputLag?1U:0U);return S;
 }
 static EFI_STATUS EFIAPI ForbiddenRelease(EFI_GPIO_CR_PROTOCOL *T,VOID *Owner,UINT16 N){abort();}
 static EFI_STATUS NativeReady(VOID *C){assert(C==&H);return Step();}
@@ -97,6 +101,11 @@ int main(void){
   assert(MdpPanelPowerReset(&P,TRUE)==EFI_SUCCESS&&H.Values[0]==1);
   H.Dropped=TRUE;assert(MdpPanelPowerReset(&P,FALSE)==EFI_DEVICE_ERROR&&H.Values[0]==1);
   H.Dropped=FALSE;assert(MdpPanelPowerReset(&P,FALSE)==EFI_SUCCESS&&!H.Values[0]);
+  H.InputLag=TRUE;UINT32 Reads=H.InputReads;
+  assert(MdpPanelPowerReset(&P,TRUE)==EFI_SUCCESS&&H.Values[0]==1);
+  assert(MdpPanelPowerReset(&P,FALSE)==EFI_SUCCESS&&H.Values[0]==0);
+  assert(H.InputReads==Reads); /* Input propagation is not a latch ACK. */
+  H.InputLag=FALSE;
   Retained();assert(MdpPanelPowerSet(&P,TRUE,&Owned)==EFI_NOT_READY&&Owned);
   /* Every actual adapter provider/delay position, before/after effects and
    * warning returns. Retry must preserve the same GPIO owner and each floor. */
@@ -105,6 +114,27 @@ int main(void){
     assert(MdpPanelPowerSet(&P,TRUE,&Owned)!=EFI_SUCCESS);
     H.Fail=0;assert(MdpPanelPowerSet(&P,TRUE,&Owned)==EFI_SUCCESS&&Owned);Retained();
   }
+  /* Reset keeps the same permanent GPIO owner at every provider boundary,
+     including posted failures and warning acknowledgements, in both directions. */
+  UINT32 ResetFaults=0;
+  for(UINT32 High=0;High<2;++High){
+    Init();assert(MdpPanelPowerBindPins(&P,&Owned)==EFI_SUCCESS&&Owned);
+    H.Calls=0;H.InputLag=TRUE;
+    assert(MdpPanelPowerReset(&P,(BOOLEAN)High)==EFI_SUCCESS);
+    UINT32 ResetCalls=H.Calls;
+    for(UINT32 Kind=0;Kind<2;++Kind)for(UINT32 Posted=0;Posted<2;++Posted)for(UINT32 I=1;I<=ResetCalls;++I){
+      Init();assert(MdpPanelPowerBindPins(&P,&Owned)==EFI_SUCCESS&&Owned);
+      H.Calls=0;H.Fail=I;H.Posted=Posted;H.Failure=Kind?1:EFI_DEVICE_ERROR;H.InputLag=TRUE;
+      assert(MdpPanelPowerReset(&P,(BOOLEAN)High)!=EFI_SUCCESS);
+      assert(P.PermanentHold&&P.PinOwned[0]&&H.Owners[0]==&P);
+      H.Fail=0;assert(MdpPanelPowerReset(&P,(BOOLEAN)High)==EFI_SUCCESS);
+      ++ResetFaults;
+    }
+  }
+  Init();assert(MdpPanelPowerBindPins(&P,&Owned)==EFI_SUCCESS&&Owned);
+  assert(MdpPanelPowerSet(&P,FALSE,&Owned)==EFI_UNSUPPORTED&&Owned);
+  assert(MdpPanelPowerReset(&P,TRUE)==EFI_NOT_READY);
+  assert(MdpPanelPowerReset(&P,FALSE)==EFI_SUCCESS); /* Cleanup can still hold reset. */
   Init();MDP_PANEL_POWER Saved=P;UINT32 Calls=H.Calls;
   assert(MdpPanelPowerSet(&P,TRUE,&P.PermanentHold)==EFI_INVALID_PARAMETER&&!memcmp(&P,&Saved,sizeof(P))&&H.Calls==Calls);
   MDP_PANEL_POWER Copy=P;assert(MdpPanelPowerSet(&Copy,TRUE,&Owned)==EFI_INVALID_PARAMETER&&H.Calls==Calls);
@@ -127,6 +157,6 @@ int main(void){
   Init();assert(MdpPanelPowerBindPins(&P,&Owned)==EFI_SUCCESS&&Owned);
   assert(MdpPanelPowerReset(&P,FALSE)==EFI_SUCCESS&&!H.Values[0]);
   Calls=H.Calls;assert(MdpPanelPowerSet(&P,FALSE,&Owned)==EFI_UNSUPPORTED&&Owned&&H.Calls==Calls);
-  printf("PASS: actual shared panel supplier, %u on positions x4, retained floors/pins, physical reset readback and permanent OFF refusal\n",OnCalls);
+  printf("PASS: actual shared panel supplier, %u on positions x4, retained floors/pins, checked reset output latch and permanent OFF refusal; %u reset fault cases\n",OnCalls,ResetFaults);
   return 0;
 }

@@ -458,6 +458,14 @@ Lt9611TestI2cReadyToBoot (EFI_EVENT Event, VOID *Context)
   if (!mBootServicesLive || mHandoffFrozen || Event != mI2cTestEvent || Event == NULL) return;
   gBS->CloseEvent (mI2cTestEvent);
   mI2cTestEvent = NULL;
+  /* MDSS may retain reset LOW after a failed bring-up. This optional
+     diagnostic must obey the same power/reset fence as the IRQ worker;
+     consuming the event does not grant permission to access the MCU. */
+  if (mPanelOwner.Initialized &&
+      (!mPanelOwner.Powered || mPanelOwner.ResetHeld)) {
+    DEBUG ((DEBUG_INIT, "LT9611: skipping self-test while panel reset/power is fenced\n"));
+    return;
+  }
   DEBUG ((DEBUG_INIT, "LT9611: ReadyToBoot FIFO/GPI/FIFO self-test begin\n"));
   Config = CrDalGetLt9611Config ();
   if (Config == NULL) {
@@ -644,6 +652,10 @@ Lt9611ConfigureVideo (
   EFI_STATUS Status;
   if (!mBootServicesLive || mHandoffFrozen) return EFI_NOT_READY;
   if (mPanelOwner.Initialized && mPanelOwner.Owner != NULL) return EFI_ACCESS_DENIED;
+  /* Release clears Owner but intentionally leaves reset asserted. The
+     legacy interface must not bypass that physical-owner state. */
+  if (mPanelOwner.Initialized &&
+      (!mPanelOwner.Powered || mPanelOwner.ResetHeld)) return EFI_NOT_READY;
   if (!Lt9611AcquireMcu ()) return EFI_NOT_READY;
   mVideoTouched = FALSE;
   Status = Lt9611ConfigureVideoInternal (This, Timing);

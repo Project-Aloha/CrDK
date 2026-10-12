@@ -137,9 +137,12 @@ EFI_STATUS MdpPanelPowerReset(VOID *Context,BOOLEAN High){
   EFI_STATUS S=Current(P);if(S!=EFI_SUCCESS)return S;
   if(!P->PinOwned[0]||!P->PinReady[0]||(P->Closing&&High))return EFI_NOT_READY;
   S=Exact(P->SetPin(P->Gpio,P,P->Config.Reset.PinNumber,(UINT8)High));if(S!=EFI_SUCCESS)return S;
-  S=Current(P);if(S!=EFI_SUCCESS)return S;UINT8 Value=0xff;
-  S=Exact(P->ReadPin(P->Gpio,P,P->Config.Reset.PinNumber,&Value));if(S!=EFI_SUCCESS)return S;
-  return Value==(UINT8)High?EFI_SUCCESS:EFI_DEVICE_ERROR;
+  /* The owner-scoped SetPinValue uses GpioApplyConfigChecked: SUCCESS
+   * already verifies mux, output enable and the commanded output latch.
+   * ReadPinValue samples the input, which can lag the output transition.
+   * Do not abort before the caller's reset settling delay on that sample.
+   * Neither the latch acknowledgement nor reset LOW proves bias power OFF. */
+  return Current(P);
 }
 EFI_STATUS MdpPanelPowerClose(MDP_PANEL_POWER *P){
   if(!P||!P->Initialized||P->Self!=P)return EFI_INVALID_PARAMETER;
