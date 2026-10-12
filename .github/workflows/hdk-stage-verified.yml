@@ -1,0 +1,93 @@
+name: Assemble verified HDK patch
+on:
+  push:
+    branches: [fix/hdk-mdss-console-20261012]
+    paths: [.github/workflows/hdk-stage-verified.yml, .hdk-stage/**]
+permissions:
+  contents: read
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Read pinned baseline
+        id: baseline
+        shell: python
+        run: |
+          import json, os, re
+          value = json.load(open('.hdk-stage/manifest.json'))['base']
+          assert re.fullmatch('[0-9a-f]{40}', value)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('sha='+value+'\n')
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.baseline.outputs.sha }}
+          path: .hdk-stage-base
+          persist-credentials: false
+      - name: Verify exact patch and create Git objects only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request
+          workspace = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          root = workspace/'.hdk-stage-base'
+          manifest = json.loads((workspace/'.hdk-stage/manifest.json').read_text())
+          patch = workspace/'.hdk-stage/verified.patch'
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=root).decode().strip()
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          assert git('rev-parse','HEAD') == manifest['base']
+          assert hashlib.sha256(patch.read_bytes()).hexdigest() == manifest['patch_sha256']
+          files = manifest['files']
+          links = manifest.get('gitlinks', [])
+          paths = [item['path'] for item in files+links]
+          assert len(paths) == len(set(paths))
+          for item in files+links:
+              path = pathlib.PurePosixPath(item['path'])
+              assert not path.is_absolute() and '..' not in path.parts and '.git' not in path.parts
+              if item['before']:
+                  assert git('rev-parse','HEAD:'+item['path']) == item['before']
+              else:
+                  assert not (root/item['path']).exists()
+          subprocess.run(['git','apply','--index','--check',str(patch)],cwd=root,check=True)
+          subprocess.run(['git','apply','--index',str(patch)],cwd=root,check=True)
+          for item in links:
+              git('update-index','--add','--cacheinfo','160000,'+item['after']+','+item['path'])
+          git('diff','--cached','--check')
+          changed = set(git('diff','--cached','--name-only').splitlines())
+          assert changed == set(paths), (changed, paths)
+          def post(resource, payload):
+              url = 'https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/'+resource
+              request = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST', headers={
+                  'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          entries = []
+          for item in files:
+              data = (root/item['path']).read_bytes()
+              assert blob(data) == item['after'], item['path']
+              result = post('blobs', {'content':base64.b64encode(data).decode(), 'encoding':'base64'})
+              assert result['sha'] == item['after']
+              entries.append({'path':item['path'],'mode':item['mode'],'type':'blob','sha':result['sha']})
+          for item in links:
+              entries.append({'path':item['path'],'mode':'160000','type':'commit','sha':item['after']})
+          result = post('trees', {'base_tree':git('rev-parse','HEAD^{tree}'), 'tree':entries})
+          assert result['sha'] == git('write-tree')
+          receipt = {'base':manifest['base'],'tree':result['sha'],'entries':entries,
+                     'patch_sha256':manifest['patch_sha256'],'scope':'Hash-verified Git objects only; no branch refs modified'}
+          (workspace/'hdk-tree-result.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print(json.dumps(receipt,indent=2))
+      - uses: actions/upload-artifact@v6
+        with:
+          name: hdk-verified-tree
+          path: hdk-tree-result.json
+          retention-days: 3
+          if-no-files-found: error
