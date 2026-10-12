@@ -1,0 +1,59 @@
+name: Assemble HDK repair
+on:
+  push:
+    branches: [work/hdk-boot-contracts-20261012]
+    paths: [.github/workflows/assemble-hdk-fix.yml]
+permissions:
+  contents: write
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify payload and assemble clean commit
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/hdk-evidence"
+          cp .automation/hdk-payload.b64 "$RUNNER_TEMP/hdk-evidence/input.b64"
+          python3 - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, zlib
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hdk-evidence'
+          encoded = (out / 'input.b64').read_text().strip()
+          data = zlib.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(data).hexdigest() == '0aec1737434fe638004a423a9a41cc23c0a349e7d134f899a1cc87564488c777', 'payload digest mismatch'
+          payload = json.loads(data)
+          files = payload['files']
+          assert len(files) == 16
+          for name in files:
+              p = pathlib.PurePosixPath(name)
+              assert not p.is_absolute() and '..' not in p.parts and '.git' not in p.parts
+              assert p.parts[0] in ('Documentation', 'Driver', 'Library', 'Override', 'Tests')
+          base = '9c521bbd1d2bd14e9aef7c54c9dc63ad2209d05a'
+          subprocess.run(['git', 'checkout', '--detach', base], check=True)
+          patch = out / 'reviewed.patch'
+          patch.write_bytes(payload['patch'].encode())
+          subprocess.run(['git', 'apply', '--index', '--whitespace=nowarn', str(patch)], check=True)
+          paths = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().strip('\0').split('\0')
+          assert sorted(paths) == sorted(files)
+          for name, expected in files.items():
+              actual = subprocess.check_output(['git', 'hash-object', name]).decode().strip()
+              assert actual == expected, (name, actual, expected)
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          message = 'HDK: repair fixed-mode console policy and gate uninitialized Renesas hosts\n\nAdd native console selection, early graphics and WHEA storage regressions. Preserve notify-safe GOP changes from 9c521bb. Check Renesas ROM/FW state before xHCI reset without downloading or writing firmware. Record reproducible fork provenance and repair the legacy GOP test fixture.\n\nLocal validation: 38 new boot contract cases, 4 platform checks, display/typed-SMMU/USB/storage host regressions under ASan/UBSan. Physical console, Renesas firmware, FatDiskIo and OS-loader acceptance remain unverified.'
+          subprocess.run(['git', 'commit', '-m', message], check=True)
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
+          parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^']).decode().strip()
+          assert parent == base
+          subprocess.run(['git', 'push', 'origin', 'HEAD:refs/heads/fix/hdk-boot-contracts-20261012'], check=True)
+          (out / 'receipt.json').write_text(json.dumps({'commit': head, 'parent': parent, 'files': files}, indent=2) + '\n')
+          print('CLEAN_STAGING_COMMIT=' + head)
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: hdk-assembly-evidence
+          path: ${{ runner.temp }}/hdk-evidence/
+          retention-days: 1
