@@ -22,6 +22,19 @@ STATIC UINTN StartFault,CleanupFault,Tpl,Runs,Halts,Frees,SchedFrees,Published;
 STATIC UINTN SlotFrees,AsyncFrees;
 STATIC BOOLEAN Running,PciOpen,Schedule,PollLive,EbsLive,MmioAllowed;
 STATIC EFI_STATUS FaultStatus;
+STATIC UINT32 Identity, PciReads, AttributeCalls;
+STATIC UINT8 FirmwareState;
+STATIC UINT16 RomState;
+STATIC UINTN ReadFailOffset;
+STATIC EFI_STATUS ReadFailStatus;
+STATIC EFI_STATUS EFIAPI ReadPci(EFI_PCI_IO_PROTOCOL *P,EFI_PCI_IO_PROTOCOL_WIDTH W,UINT32 O,UINTN N,VOID *B){
+  assert(P==&Pci && PciOpen && N==1);++PciReads;
+  if(O==ReadFailOffset)return ReadFailStatus;
+  if(O==0){assert(W==EfiPciIoWidthUint32);*(UINT32*)B=Identity;}
+  else if(O==0xf4){assert(W==EfiPciIoWidthUint8);*(UINT8*)B=FirmwareState;}
+  else {assert(O==0xf6 && W==EfiPciIoWidthUint16);*(UINT16*)B=RomState;}
+  return EFI_SUCCESS;
+}
 STATIC EFI_EVENT_NOTIFY EbsFn;
 STATIC VOID *EbsContext;
 STATIC EFI_STATUS ExactFault(UINTN Phase){return (StartFault==Phase||CleanupFault==Phase)?FaultStatus:EFI_SUCCESS;}
@@ -55,7 +68,7 @@ STATIC EFI_STATUS EFIAPI CloseProtocol(EFI_HANDLE H,EFI_GUID *G,EFI_HANDLE A,EFI
   EFI_STATUS S=ExactFault(PCI_CLOSE_FAIL);if(S==EFI_SUCCESS)PciOpen=FALSE;return S;
 }
 STATIC EFI_STATUS EFIAPI Attributes(EFI_PCI_IO_PROTOCOL *P,EFI_PCI_IO_PROTOCOL_ATTRIBUTE_OPERATION O,UINT64 A,UINT64 *R){
-  assert(P==&Pci && PciOpen);
+  assert(P==&Pci && PciOpen);++AttributeCalls;
   if(O==EfiPciIoAttributeOperationGet){*R=0;return ExactFault(ATTR_GET_FAIL);}
   if(O==EfiPciIoAttributeOperationSupported){*R=EFI_PCI_DEVICE_ENABLE;return EFI_SUCCESS;}
   // A failed Attributes call can commit its writes too. No subsequent register
@@ -124,7 +137,9 @@ STATIC VOID Setup(UINTN S,UINTN C,BOOLEAN Warn){
   Bs.OpenProtocol=OpenProtocol;Bs.CloseProtocol=CloseProtocol;Bs.RaiseTPL=Raise;Bs.RestoreTPL=Restore;
   Bs.SetTimer=SetTimer;Bs.CreateEventEx=CreateEx;Bs.CloseEvent=CloseEvent;
   Bs.InstallMultipleProtocolInterfaces=Install;Bs.UninstallMultipleProtocolInterfaces=Uninstall;
-  Pci.Attributes=Attributes;
+  Pci.Attributes=Attributes;Pci.Pci.Read=ReadPci;
+  Identity=0x12348086;PciReads=AttributeCalls=0;FirmwareState=0;RomState=0;
+  ReadFailOffset=MAX_UINTN;ReadFailStatus=EFI_DEVICE_ERROR;
 }
 int main(int argc,char **argv){
   UINTN Count=0;
@@ -140,6 +155,33 @@ int main(int argc,char **argv){
     assert(XhcDriverBindingStart(&Binding,Controller,NULL)!=EFI_SUCCESS);
     assert(!Hc && !PciOpen && !PollLive && !EbsLive && !Schedule && !Published);
     return 0;
+  }
+  // Renesas uPD720201/202 must have running firmware before enabling or
+  // resetting xHCI. A failed preflight retains no PCI open or MMIO owner.
+  struct {UINT32 Id;UINT8 Fw;UINT16 Rom;EFI_STATUS Expected;} FirmwareCases[]={
+    {0x00141912,0,0,EFI_NOT_READY},{0x00151912,0,0,EFI_NOT_READY},
+    {0x00141912,0x10,0,EFI_SUCCESS},{0x00151912,0x12,0,EFI_SUCCESS},
+    {0x00141912,0,0x8010,EFI_SUCCESS},{0x00141912,0,0x8000,EFI_NOT_READY},
+    {0x00141912,0x10,0x8000,EFI_SUCCESS},{0x00141912,1,0,EFI_NOT_READY},
+    {0x00141912,2,0,EFI_DEVICE_ERROR},{0x00141912,0x20,0,EFI_DEVICE_ERROR},
+    {0x00141912,0x30,0,EFI_DEVICE_ERROR},{0x00141912,0,0x8020,EFI_NOT_READY},
+    {0x00141912,0,0x8014,EFI_NOT_READY},{0x00131912,0,0,EFI_SUCCESS},
+    {0x00148086,0,0,EFI_SUCCESS}
+  };
+  for(UINTN I=0;I<ARRAY_SIZE(FirmwareCases);++I){
+    Setup(OK,OK,FALSE);Identity=FirmwareCases[I].Id;
+    FirmwareState=FirmwareCases[I].Fw;RomState=FirmwareCases[I].Rom;
+    assert(XhcDriverBindingStart(&Binding,Controller,NULL)==FirmwareCases[I].Expected);
+    if(FirmwareCases[I].Expected==EFI_SUCCESS){
+      assert(Published && Runs==1);assert(XhcDriverBindingStop(&Binding,Controller,0,NULL)==EFI_SUCCESS);
+    }else assert(!Hc && !PciOpen && !AttributeCalls && !Runs && !Halts && !MmioAllowed);
+    ++Count;
+  }
+  for(UINTN W=0;W<2;++W)for(UINTN I=0;I<3;++I){
+    Setup(OK,OK,FALSE);Identity=0x00141912;ReadFailOffset=I==0?0:I==1?0xf6:0xf4;
+    ReadFailStatus=W?EFI_WARN_UNKNOWN_GLYPH:EFI_DEVICE_ERROR;
+    assert(XhcDriverBindingStart(&Binding,Controller,NULL)==(W?EFI_NOT_READY:EFI_DEVICE_ERROR));
+    assert(!Hc && !PciOpen && !AttributeCalls && !Runs && !Halts);++Count;
   }
   UINTN Faults[]={NO_INSTANCE,RESET_FAIL,RUN_FAIL,TIMER_FAIL,EVENT_FAIL,INSTALL_FAIL,INIT_FAIL,ATTR_GET_FAIL,ATTR_ENABLE_FAIL,OPEN_FAIL};
   for(UINTN Warn=0;Warn<2;++Warn)for(UINTN I=0;I<ARRAY_SIZE(Faults);++I){

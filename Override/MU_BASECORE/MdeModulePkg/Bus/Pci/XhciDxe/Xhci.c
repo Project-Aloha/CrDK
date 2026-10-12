@@ -2135,6 +2135,40 @@ DONE:
   @return EFI_OUT_OF_RESOURCES cannot allocate resources.
 
 **/
+/**
+  Read-only admission for Renesas uPD720201/202 firmware prerequisites.
+  Linux xhci-pci-renesas.c checks ROM and FW result fields before xHCI probe.
+  No download, ROM reload/erase, reset or vendor register write is performed.
+  A later firmware provider may make a previously NOT_READY device usable.
+**/
+STATIC EFI_STATUS
+XhcCheckRenesasFirmware (EFI_PCI_IO_PROTOCOL *PciIo)
+{
+  UINT32 Identity;
+  UINT16 Rom;
+  UINT8 Firmware;
+  EFI_STATUS Status;
+
+  Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, 0, 1, &Identity);
+  if (Status != EFI_SUCCESS) return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+  if ((Identity & 0xffffU) != 0x1912 ||
+      (Identity >> 16 != 0x0014 && Identity >> 16 != 0x0015)) return EFI_SUCCESS;
+
+  Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint16, 0xf6, 1, &Rom);
+  if (Status != EFI_SUCCESS) return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+  /* ROM_EXISTS plus successful load, with no access/erase/reload in flight. */
+  if ((Rom & (BIT15 | 0x70U | 7U)) == (BIT15 | BIT4)) return EFI_SUCCESS;
+  Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, 0xf4, 1, &Firmware);
+  if (Status != EFI_SUCCESS) return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+  if ((Firmware & 0x70U) == BIT4 && !(Firmware & BIT0)) return EFI_SUCCESS;
+
+  Status = (Firmware & BIT1) || (Firmware & 0x70U) ? EFI_DEVICE_ERROR : EFI_NOT_READY;
+  DEBUG ((DEBUG_WARN,
+    "XhciDxe: Renesas %04x: firmware unavailable FW=%02x ROM=%04x; skipping xHCI reset (%r)\n",
+    Identity >> 16, Firmware, Rom, Status));
+  return Status;
+}
+
 EFI_STATUS
 EFIAPI
 XhcDriverBindingStart (
@@ -2175,6 +2209,9 @@ XhcDriverBindingStart (
     return Status == EFI_SUCCESS || EFI_ERROR (Status) ? Status : EFI_NOT_READY;
   }
   Xhc->PciIo = PciIo;
+
+  Status = XhcCheckRenesasFirmware (PciIo);
+  if (Status != EFI_SUCCESS) goto FREE_POOL;
 
   //
   // Open Device Path Protocol for on USB host controller

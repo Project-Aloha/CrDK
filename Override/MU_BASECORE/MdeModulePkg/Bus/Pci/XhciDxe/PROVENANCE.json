@@ -62,13 +62,13 @@
       "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c",
       "source_sha256": "e02a7f4aac9626aa746ac90fde76c58f5c9d1f3c818328ccd9fbfd26fa07e9ae",
       "upstream_sha256": "fe324763a008855d4cf9917609e1627f74157f3c6aaa9150937728b40a5749c3",
-      "fork_sha256": "e10a6e65a516c733b722e11d91cb53c853dfcff2e9f0d3dc5172f9e40a6ce8eb",
+      "fork_sha256": "7dbc6f814e02d9a7b0aa3363a307d9ac446bf4ca2818cc34de743924ba20b488",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
       "source_mode": "0o664",
       "fork_mode": "0o664",
       "upstream_mode": "0o644",
-      "post_relocation_edit": "Read-only controller, endpoint or hub diagnostics added after relocation"
+      "post_relocation_edit": "Read-only bring-up diagnostics and pre-reset Renesas firmware admission; no firmware/ROM writes"
     },
     {
       "file": "Xhci.h",
@@ -169,6 +169,15 @@
     }
   ],
   "post_relocation_changes": [
-    "Preserve the captured source hashes; current fork and patch include existing read-only bring-up diagnostics."
+    "Preserve the captured source hashes; current fork and patch include existing read-only bring-up diagnostics.",
+    "2026-10-12: require running firmware or completed ROM load on Renesas 1912:0014/0015 before xHCI reset; tested actual Start/Stop faults with no hardware claim."
+  ],
+  "post_relocation_patches": [
+    {
+      "file": "RenesasFirmware.patch",
+      "sha256": "6b08f419fb531b540124c060cd13b42501ae0e0a3d3ef1d1bb19f3f43b96307c",
+      "apply_after": "MU_BASECORE.patch",
+      "scope": "Read-only pre-reset firmware admission and reconstruction of the already-recorded CranePkg package dependency"
+    }
   ]
 }

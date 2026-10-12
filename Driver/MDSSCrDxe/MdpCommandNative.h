@@ -39,6 +39,7 @@ EFI_STATUS MdpCommandNativeOpen(MDP_COMMAND_NATIVE *,CONST MDP_NATIVE_PROVIDERS 
  * deliver the real frame IRQ; no blocking first-frame polling or timer proof. */
 EFI_STATUS MdpCommandNativeStart(MDP_COMMAND_NATIVE *);
 EFI_STATUS MdpCommandNativeReady(MDP_COMMAND_NATIVE *);
+/* Retained autorefresh pixel publication is allowed through TPL_NOTIFY. */
 EFI_STATUS MdpCommandNativePublish(MDP_COMMAND_NATIVE *,UINTN Offset,UINTN Bytes);
 EFI_STATUS MdpCommandNativeBrightness(MDP_COMMAND_NATIVE *,UINT32);
 EFI_STATUS MdpCommandNativeClose(MDP_COMMAND_NATIVE *);

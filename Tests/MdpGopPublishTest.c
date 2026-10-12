@@ -9,6 +9,9 @@ static unsigned char handoff_enable;
 #define _PCD_VALUE_PcdMdssHandoffEnable handoff_enable
 #define _PCD_GET_MODE_BOOL_PcdMdssHdkExtendedProfileEnable FALSE
 #define _PCD_VALUE_PcdMdssHdkExtendedProfileEnable FALSE
+/* This fixture covers the legacy SM8450 path; selected native frontends
+ * have their own command/video composition suites. */
+#define _PCD_VALUE_PcdMdssPanelProfile 0
 #include "../Driver/MDSSCrDxe/MDSSCrDxe.c"
 #include <Configuration/BootDevices.h>
 

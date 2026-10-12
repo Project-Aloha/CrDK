@@ -9,9 +9,9 @@ a.add_argument('--source',type=Path,default=xhci/'Xhci.c');a.add_argument('--exp
 a.add_argument('--expect-before-stop-failure',action='store_true')
 a=a.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
 source=a.source.read_text();parts=[]
-for name in ['XhcFreeze','XhcExitBootService','XhcFindFailedStart','XhcCleanupFailedStart','XhcDriverBindingStart','XhcDriverBindingStop']:
+for name in ['XhcCheckRenesasFirmware','XhcFreeze','XhcExitBootService','XhcFindFailedStart','XhcCleanupFailedStart','XhcDriverBindingStart','XhcDriverBindingStop']:
  m=re.search(r'^(?:STATIC(?:\n| ))?(?:EFI_STATUS|VOID|USB_XHCI_INSTANCE \*)(?: EFIAPI)?\n(?:EFIAPI\n)?'+name+r' \([^;{]*\)\n+\{',source,re.M)
- if not m and a.expect_before_failure and name in ['XhcFindFailedStart','XhcCleanupFailedStart']:continue
+ if not m and ((a.expect_before_failure and name in ['XhcFindFailedStart','XhcCleanupFailedStart']) or (name=='XhcCheckRenesasFirmware' and 'XhcCheckRenesasFirmware (' not in source)):continue
  assert m,name
  end,depth=m.end(),1
  while depth:depth+=(source[end]=='{')-(source[end]=='}');end+=1

@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix="crane-mdp-gop-") as tmp:
                     str(crane / "Driver/MDSSCrDxe/MdpDsiSequence.c"),
                     str(crane / "Driver/MDSSCrDxe/MdpScanout.c"),
                     str(crane / "Library/MdssCrLib/Mdss.c"), str(crane / "Library/MdssHandoffCrLib/Handoff.c"), "-o", exe], check=True)
-    source = root / "Platforms/WaipioCrPkg/Device/qcom-hdk8450/Binaries/RawFiles/Panel_lt9611uxc_dsi2hdmi_vid.xml"
+    source = root / "Platforms/WaipioCrPkg/Device/qcom-hdk8450/Resources/Panel_lt9611uxc_dsi2hdmi_vid.xml"
     subprocess.run([exe, str(source), str((1 << 12) | (1 << 15)), "baseline"], check=True)
     for scenario in ("handoff", "handoff-busy", "handoff-fence", "handoff-retire", "handoff-register"):
         subprocess.run([exe, str(source), str((1 << 12) | (1 << 15)), scenario], check=True)

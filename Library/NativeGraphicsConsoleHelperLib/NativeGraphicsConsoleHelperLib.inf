@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = NativeGraphicsConsoleHelperLib
+  FILE_GUID = a1476b96-f7fb-4522-94b1-b2c73c9cbb2e
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = GraphicsConsoleHelperLib|DXE_DRIVER UEFI_APPLICATION
+[Sources]
+  NativeGraphicsConsoleHelper.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  PcBdsPkg/PcBdsPkg.dec
+[LibraryClasses]
+  UefiBootServicesTableLib
+  PcdLib
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid ## CONSUMES
+  gEfiSimpleTextOutProtocolGuid ## CONSUMES
+[Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutColumn
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoVerticalResolution
