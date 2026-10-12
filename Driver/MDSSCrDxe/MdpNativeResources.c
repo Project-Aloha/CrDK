@@ -91,7 +91,7 @@ STATIC CR_STATUS Seal(VOID *C){
 }
 STATIC CR_STATUS Reset(VOID *C,BOOLEAN Assert){
   MDP_NATIVE_RESOURCES *R=C;TRY(Access(R));
-  if(!R->WritersSealed)return EFI_ACCESS_DENIED;
+  if(!R->WritersSealed||!R->OutputBlanked)return EFI_ACCESS_DENIED;
   return Exact(R->Providers.External->ResetCore(R->Providers.External,R,R->OwnerGeneration,Assert));
 }
 STATIC EFI_STATUS PllFloorPolicy(VOID) {
@@ -242,7 +242,7 @@ EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *R,CONST MDP_NATIVE_PROVI
   if(!R||!C||!TargetValid(C->Target)||!ProvidersValid(P)||!Controllers||(Controllers&~3U)||
      !Physical||(Physical&EFI_PAGE_MASK)||!Bytes||Bytes>MAX_UINTN-EFI_PAGE_MASK||Physical>MAX_UINT32||
      ALIGN_VALUE(Bytes,EFI_PAGE_SIZE)>0x100000000ULL-Physical||
-     !C->MdpHz||!C->AverageKBps[0]||!C->AverageKBps[1]||
+     !C->BlankOutput||!C->OutputContext||!C->MdpHz||!C->AverageKBps[0]||!C->AverageKBps[1]||
      C->PeakKBps[0]<C->AverageKBps[0]||C->PeakKBps[1]<C->AverageKBps[1])return EFI_INVALID_PARAMETER;
   if(mOwner&&mOwner!=R)return EFI_ACCESS_DENIED;
   if(!R->Initialized){
@@ -258,6 +258,7 @@ EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *R,CONST MDP_NATIVE_PROVI
   }else if(mOwner!=R||R->Config.Target!=C->Target||R->Config.MdpHz!=C->MdpHz||
            R->Config.AverageKBps[0]!=C->AverageKBps[0]||R->Config.AverageKBps[1]!=C->AverageKBps[1]||
            R->Config.PeakKBps[0]!=C->PeakKBps[0]||R->Config.PeakKBps[1]!=C->PeakKBps[1]||
+           R->Config.BlankOutput!=C->BlankOutput||R->Config.OutputContext!=C->OutputContext||
            R->FrameCpu!=(VOID *)(UINTN)Physical||R->FrameBytes!=Bytes||
            R->ControllerMask!=Controllers||R->Closing)return EFI_ACCESS_DENIED;
   if(R->Stage==1){
@@ -307,6 +308,16 @@ EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *R,CONST MDP_NATIVE_PROVI
   }
   if(R->Stage<2)return EFI_ALREADY_STARTED;
   if(R->Stage==2){
+    if(!R->OutputBlanked){
+      /* The panel/bridge still receives inherited scanout. Hold its reset
+       * before the core BCR, source retirement or ICC demand withdrawal.
+       * A failed GPIO acknowledgement retains ownership and blocks reset. */
+      R->OutputTouched=TRUE;
+      EFI_STATUS Blank=Exact(C->BlankOutput(C->OutputContext));
+      DEBUG((DEBUG_WARN,"MDSSCr: output reset before core/clock/ICB retirement: %r\n",Blank));
+      if(Blank!=EFI_SUCCESS)return Blank;
+      R->OutputBlanked=TRUE;
+    }
     EFI_STATUS Status=Exact(CrMdssRetireStart(&R->Retirement));
     STATIC CONST UINT32 ForceOffsets[]={0x2ac,0x2b4,0x2bc,0x2c4};
     for(UINT32 I=0;I<4;++I)if(R->Retirement.ForceMissing[I])
@@ -347,6 +358,10 @@ EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *R){
   for(UINT32 I=0;I<7;++I)if(!R->ClockOwned[I]||!R->ClockReady[I])return EFI_NOT_READY;
   TRY(R->Providers.External->CheckFunctionalPll(R->Providers.External,R,R->OwnerGeneration));
   TRY(Query(R,&R->FrameLease,FALSE));return Query(R,&R->CommandLease,TRUE);
+}
+EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *R){
+  TRY(Level());TRY(Access(R));
+  return R->Closing||!R->Qualified||!R->ExternalReady?EFI_NOT_READY:EFI_SUCCESS;
 }
 EFI_STATUS MdpNativeResourcesCheck(MDP_NATIVE_RESOURCES *R){
   TRY(MdpNativeResourcesReady(R));
@@ -392,7 +407,7 @@ EFI_STATUS MdpNativeResourcesClose(MDP_NATIVE_RESOURCES *R){
   /* The typed producer permanently retains this stop callback and group
      identity. A touched reset/retirement must also retain supplier access.
      Never discard this storage or release suppliers on a partial fence. */
-  if(R->Retirement.Touched||R->Group.Token)return EFI_UNSUPPORTED;
+  if(R->OutputTouched||R->Retirement.Touched||R->Group.Token)return EFI_UNSUPPORTED;
   R->Closing=TRUE;
   for(UINT32 I=7;I-->0;)if(R->ClockOwned[I]){
     TRY(R->Providers.Clock->SetClock(R->Providers.Clock,R->Config.Target->Clocks[I].Controller,

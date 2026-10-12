@@ -758,7 +758,8 @@ STATIC VOID EFIAPI Lt9611IrqWorker (EFI_EVENT Event, VOID *Context)
   EFI_STATUS Status;
   (VOID)Context;
   if (!mBootServicesLive || mHandoffFrozen || Event == NULL || Event != mIrqTimer) return;
-  if (mIrqPending && (!mPanelOwner.Initialized || mPanelOwner.Powered) && Lt9611AcquireMcu ()) {
+  if (mIrqPending && (!mPanelOwner.Initialized ||
+      (mPanelOwner.Powered && !mPanelOwner.ResetHeld)) && Lt9611AcquireMcu ()) {
     /* Clear before I2C so an edge arriving during work remains pending. */
     mIrqPending = FALSE;
     Status = Lt9611ServiceIrq ();

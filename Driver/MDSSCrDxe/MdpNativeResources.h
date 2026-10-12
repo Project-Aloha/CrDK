@@ -22,6 +22,10 @@ typedef struct {
 typedef struct {
   CONST CR_MDSS_TARGET *Target;
   UINT64 MdpHz,AverageKBps[2],PeakKBps[2];
+  /* Keep the selected output in reset before disrupting inherited scanout.
+   * Callback owns its GPIO/bridge lease and must be safe to retry. */
+  EFI_STATUS (*BlankOutput)(VOID *);
+  VOID *OutputContext;
 } MDP_NATIVE_RESOURCE_CONFIG;
 typedef struct {
   CONST CR_MDSS_HW_PROFILE *Hardware;
@@ -39,6 +43,7 @@ typedef struct {
   BOOLEAN ClockReady[7],FunctionalReady;
   BOOLEAN Qualified,RailReady[2],PathReady[2],ExternalReady;
   BOOLEAN Initialized,AccessReady,WritersSealed,Closing;
+  BOOLEAN OutputTouched,OutputBlanked;
 } MDP_NATIVE_RESOURCES;
 /* One stable native owner, serialized by its containing frontend. Admission
  * is pure; all MMIO windows are qualified before acquiring resources. Open
@@ -50,6 +55,9 @@ typedef struct {
 EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *,CONST MDP_NATIVE_PROVIDERS *,
   CONST MDP_NATIVE_RESOURCE_CONFIG *,UINT32 ControllerMask,EFI_PHYSICAL_ADDRESS,UINTN);
 EFI_STATUS MdpNativeResourcesClose(MDP_NATIVE_RESOURCES *);
+/* GPIO/bridge operations need the retained suppliers, but must precede
+ * functional-clock rebuild and DMA admission. Does not grant MDSS MMIO. */
+EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *);
 /* Lightweight exact producer journal admission; no page-table walk. */
 EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *);
 /* Physical mapping proof at Start/publication/freeze operation boundaries. */

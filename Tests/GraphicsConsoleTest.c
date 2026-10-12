@@ -28,11 +28,15 @@ static EFI_DISPLAY_DEVICE_PATH PrimaryPath = ANDROMEDA_DISPLAY_DEVICE_PATH_INIT;
 static EFI_DISPLAY_DEVICE_PATH SecondaryPath = ANDROMEDA_DP_DISPLAY_DEVICE_PATH_INIT;
 static BOOLEAN SelectPrimary;
 EFI_BOOT_SERVICES *gBS;
+static EFI_SYSTEM_TABLE SystemTable;
+EFI_SYSTEM_TABLE *gST = &SystemTable;
+static EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL Input;
+static BOOLEAN InputInstalled;
 
 typedef struct {
   EFI_EVENT_NOTIFY Notify;
   VOID *Context;
-  BOOLEAN Closed;
+  BOOLEAN Closed, Timer;
 } TEST_EVENT;
 static TEST_EVENT Events[12];
 static unsigned EventCount, Pools, Registrations, Signals, Stage2, KeyboardInit, Connections;
@@ -81,6 +85,9 @@ static EFI_STATUS EFIAPI HandleProtocol (EFI_HANDLE Handle, EFI_GUID *Guid, VOID
     else if(Handle == NativeHandle && NativeGop) *Interface = &Native;
     else if(Handle == (VOID *)3 && OtherGop) *Interface = &Other;
     else return EFI_NOT_FOUND;
+  } else if(Guid == &gEfiSimpleTextInputExProtocolGuid) {
+    if(Handle != (VOID *)11 || !InputInstalled) return EFI_NOT_FOUND;
+    *Interface = &Input;
   } else {
     assert(Guid == &gMsSREProtocolGuid);
     if((Handle == NativeHandle && NativeSre) || (Handle == (VOID *)3 && OtherSre)) *Interface = &Engine;
@@ -90,12 +97,16 @@ static EFI_STATUS EFIAPI HandleProtocol (EFI_HANDLE Handle, EFI_GUID *Guid, VOID
 }
 static EFI_STATUS EFIAPI CreateEvent (UINT32 Type, EFI_TPL Tpl, EFI_EVENT_NOTIFY Notify,
                                       VOID *Context, EFI_EVENT *Event) {
-  assert(Type == EVT_NOTIFY_SIGNAL && EventCount < ARRAY_SIZE(Events));
+  assert((Type == EVT_NOTIFY_SIGNAL || Type == (EVT_NOTIFY_SIGNAL | EVT_TIMER)) && EventCount < ARRAY_SIZE(Events));
   Events[EventCount] = (TEST_EVENT){ .Notify = Notify, .Context = Context };
   *Event = &Events[EventCount++]; return EFI_SUCCESS;
 }
 static EFI_STATUS EFIAPI CloseEvent (EFI_EVENT Event) {
   TEST_EVENT *E = Event; assert(!E->Closed); E->Closed = TRUE; return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI SetTimer (EFI_EVENT Event, EFI_TIMER_DELAY Type, UINT64 Time) {
+  TEST_EVENT *E = Event; assert(!E->Closed && Type == TimerPeriodic && Time == 1000000);
+  E->Timer = TRUE; return EFI_SUCCESS;
 }
 static EFI_STATUS EFIAPI SignalEvent (EFI_EVENT Event) {
   TEST_EVENT *E = Event; assert(!E->Closed); Signals++; E->Notify(Event, E->Context); return EFI_SUCCESS;
@@ -139,11 +150,12 @@ static EFI_HANDLE SwmImage;
 static EFI_GRAPHICS_OUTPUT_PROTOCOL *SwmGop;
 static MS_RENDERING_ENGINE_PROTOCOL *mRenderingEngine;
 static EFI_EVENT SwmEvent;
-static VOID *SwmRegistration, *mSreRegistration, *mTheme;
+static VOID *SwmRegistration, *mSreRegistration, *mInputRegistration, *mTheme;
 static EFI_ABSOLUTE_POINTER_MODE mAbsPointerMode;
 static VOID *MsUiGetPlatformTheme (VOID) { return NULL; }
 static EFI_STATUS EFIAPI DriverInitStage2 (EFI_HANDLE Handle) {
   assert(SwmGop == &Native && mRenderingEngine == &Engine);
+  assert(gST->ConsoleInHandle == (VOID *)11 && InputInstalled);
   Stage2++; WindowReady = TRUE; return EFI_SUCCESS;
 }
 static EFI_STATUS WindowCleanUp (EFI_HANDLE Handle) { abort(); }
@@ -191,11 +203,12 @@ static void Reset (void) {
   NativeGop = TRUE; SelectPrimary = FALSE; memset(&SelectedGuid,0,sizeof(SelectedGuid));
   NativeOverride = OtherGop = NativeSre = OtherSre = WindowReady = FailLocate = FailRemove = Bound = FALSE;
   mGopRegisterEvent = SwmEvent = mSwmNotifyEvent = NULL;
+  gST->ConsoleInHandle = (VOID *)11; InputInstalled = TRUE;
   SwmGop = mGop = NULL; mRenderingEngine = NULL;
 }
 int main (void) {
   EFI_BOOT_SERVICES Bs = { .LocateHandleBuffer = LocateHandles, .HandleProtocol = HandleProtocol,
-    .CreateEvent = CreateEvent, .CloseEvent = CloseEvent, .SignalEvent = SignalEvent,
+    .CreateEvent = CreateEvent, .CloseEvent = CloseEvent, .SignalEvent = SignalEvent, .SetTimer = SetTimer,
     .RegisterProtocolNotify = RegisterNotify, .InstallProtocolInterface = Install,
     .UninstallMultipleProtocolInterfaces = Uninstall, .LocateProtocol = LocateProtocol,
     .OpenProtocol = OpenProtocol, .CloseProtocol = CloseProtocol, .ConnectController = Connect };
@@ -230,9 +243,22 @@ int main (void) {
   Reset(); FailRegistration = 1;
   assert(OverrideInit(NULL, NULL) == EFI_OUT_OF_RESOURCES && !mGopRegisterEvent && Events[0].Closed);
 
+  /* ConSplitter installs InputEx before assigning ConsoleInHandle. Neither
+     early notification may trigger stage2 or permanently consume the GOP. */
+  Reset(); NativeSre = TRUE; gST->ConsoleInHandle = NULL; InputInstalled = FALSE;
+  assert(WindowInit((VOID *)7, NULL) == EFI_SUCCESS && SwmEvent && !Stage2 && !SwmGop);
+  InputInstalled = TRUE; SignalEvent(SwmEvent);
+  assert(!Stage2 && !SwmGop && SwmEvent);
+  gST->ConsoleInHandle = (VOID *)11; InputInstalled = FALSE; SignalEvent(SwmEvent);
+  assert(!Stage2 && !SwmGop && SwmEvent);
+  InputInstalled = TRUE;
+  assert(((TEST_EVENT *)SwmEvent)->Timer);
+  SignalEvent(SwmEvent); assert(Stage2 == 1 && !SwmEvent);
+  WindowCallback(NULL, NULL); assert(Stage2 == 1);
+
   Reset(); NativeSre = TRUE;
   assert(WindowInit((VOID *)7, NULL) == EFI_SUCCESS);
-  assert(Stage2 == 1 && SwmGop == &Native && !SwmEvent && Registrations == 2 && Signals == 1);
+  assert(Stage2 == 1 && SwmGop == &Native && !SwmEvent && Registrations == 3 && Signals == 1);
   assert(mAbsPointerMode.AbsoluteMaxX == 1920 && mAbsPointerMode.AbsoluteMaxY == 1080);
   Reset();
   assert(WindowInit((VOID *)7, NULL) == EFI_SUCCESS && SwmEvent && !Stage2 && !SwmGop);

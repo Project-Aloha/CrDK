@@ -45,6 +45,7 @@ EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *mSimpleTextInEx;
 EFI_EVENT                      mGopRegisterEvent;
 VOID                           *mGopRegistration;
 VOID                           *mSreRegistration;
+VOID                           *mInputRegistration;
 WINMGR_CONTEXT                 mSWM;
 EFI_EVENT                      mSWMWatchListTimerEvent;
 EFI_ABSOLUTE_POINTER_MODE      mAbsPointerMode;
@@ -1576,6 +1577,18 @@ GopRegisteredCallback (
     goto Exit;
   }
 
+  /* GOP can arrive before ConSplitter has published ConsoleInHandle. Do
+     not register fonts/clients or consume the GOP until stage2 has its input
+     prerequisite. Protocol notifications can precede the system-table update;
+     the registration event also retries at 100 ms until initialization. */
+  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Input = NULL;
+  if ((gST->ConsoleInHandle == NULL) ||
+      EFI_ERROR (gBS->HandleProtocol (gST->ConsoleInHandle,
+                 &gEfiSimpleTextInputExProtocolGuid, (VOID **)&Input)) ||
+      (Input == NULL)) {
+    goto Exit;
+  }
+
   // ConSplitter's GOP is virtual. Use the GOP on the rendering engine handle.
   Status = LocateRenderingDisplay (&mGop, &mRenderingEngine);
 
@@ -1638,12 +1651,12 @@ DriverInit (
   // Acquire access to the current theme.
   mTheme = MsUiGetPlatformTheme ();
 
-  // Watch both protocols and inspect already published rendering displays.
+  // Watch rendering and input protocols; inspect already published displays.
   mGop = NULL;
   mRenderingEngine = NULL;
 
   Status = gBS->CreateEvent (
-                  EVT_NOTIFY_SIGNAL,
+                  EVT_TIMER | EVT_NOTIFY_SIGNAL,
                   TPL_CALLBACK,
                   GopRegisteredCallback,
                   NULL,
@@ -1672,6 +1685,16 @@ DriverInit (
     goto Exit;
   }
 
+  Status = gBS->RegisterProtocolNotify (&gEfiSimpleTextInputExProtocolGuid,
+                                       mGopRegisterEvent, &mInputRegistration);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
+  Status = gBS->SetTimer (mGopRegisterEvent, TimerPeriodic, 1000000);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
   Status = gBS->SignalEvent (mGopRegisterEvent);
 
 Exit:

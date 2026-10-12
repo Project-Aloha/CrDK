@@ -44,16 +44,16 @@ STATIC EFI_STATUS EFIAPI Acquire(EFI_LT9611_PANEL_CR_PROTOCOL *This,VOID *Owner,
   P->Owner=Owner;*Owned=TRUE;
   /* Commit exact ownership before any pin mutation. Powered is only restored
      after every actual pin readback; a failed off journal may be retried. */
-  BOOLEAN WasPowered=P->Powered;P->Powered=FALSE;
+  BOOLEAN WasPowered=P->Powered;P->Powered=FALSE;P->ResetHeld=TRUE;
   for(UINT32 I=0;I<3;++I){S=Pin(P,I,TRUE,!WasPowered);if(S!=EFI_SUCCESS)return End(P,S);
     if(!WasPowered&&I==0)MicroSecondDelay(1000);}
-  P->Powered=TRUE;return End(P,EFI_SUCCESS);
+  P->Powered=TRUE;P->ResetHeld=FALSE;return End(P,EFI_SUCCESS);
 }
 STATIC EFI_STATUS EFIAPI Release(EFI_LT9611_PANEL_CR_PROTOCOL *This,VOID *Owner,BOOLEAN *Owned){
   if(!This||!Owned)return EFI_INVALID_PARAMETER;LT9611_PANEL_OWNER *P=State(This);
   EFI_STATUS S=Begin(P,Owner);if(S!=EFI_SUCCESS)return S;
   if(!P->Owner){*Owned=FALSE;return End(P,EFI_SUCCESS);}
-  *Owned=TRUE;P->Powered=FALSE;
+  *Owned=TRUE;P->Powered=FALSE;P->ResetHeld=TRUE;
   /* DPU/DSI are fenced by the consumer before this physical reset/power off.
      MCU worker is excluded by the same lock and stays gated while off. */
   for(UINT32 I=3;I-- >0;){
@@ -70,12 +70,15 @@ STATIC EFI_STATUS EFIAPI Reset(EFI_LT9611_PANEL_CR_PROTOCOL *This,VOID *Owner,BO
      partial power-on claim. Low is safe with those exact owned GPIOs even
      when all supply readbacks have not completed; high still needs power. */
   if(P->Owner!=Owner||(High&&!P->Powered))return End(P,EFI_NOT_READY);
-  return End(P,Pin(P,2,High,TRUE));
+  P->ResetHeld=TRUE;
+  S=Pin(P,2,High,TRUE);
+  if(S==EFI_SUCCESS&&High)P->ResetHeld=FALSE;
+  return End(P,S);
 }
 STATIC EFI_STATUS EFIAPI Prepare(EFI_LT9611_PANEL_CR_PROTOCOL *This,VOID *Owner,CONST EFI_MDP_DSI_TIMING *T){
   if(!This||!T)return EFI_INVALID_PARAMETER;LT9611_PANEL_OWNER *P=State(This);
   EFI_STATUS S=Begin(P,Owner);if(S!=EFI_SUCCESS)return S;
-  if(P->Owner!=Owner||!P->Powered)return End(P,EFI_NOT_READY);
+  if(P->Owner!=Owner||!P->Powered||P->ResetHeld)return End(P,EFI_NOT_READY);
   for(UINT32 I=0;I<3;++I){S=Pin(P,I,TRUE,FALSE);if(S!=EFI_SUCCESS)return End(P,S);}
   S=Exact(P->Io.Prepare(P->Io.Context,T));return End(P,S);
 }
@@ -86,11 +89,11 @@ EFI_STATUS Lt9611PanelOwnerInitRoute(LT9611_PANEL_OWNER *P,EFI_GPIO_CR_PROTOCOL 
     Pins[0]>255||Pins[1]>255||Pins[2]>255||Pins[0]==Pins[1]||Pins[0]==Pins[2]||
     Pins[1]==Pins[2]||RetainSupplies>1)return EFI_INVALID_PARAMETER;
   if(P->Initialized)return EFI_ALREADY_STARTED;if(EfiGetCurrentTpl()>TPL_CALLBACK)return EFI_ACCESS_DENIED;
-  ZeroMem(P,sizeof(*P));P->Gpio=G;P->Io=*Io;P->Initialized=TRUE;
+  ZeroMem(P,sizeof(*P));P->Gpio=G;P->Io=*Io;P->Initialized=TRUE;P->ResetHeld=TRUE;
   CopyMem(P->Pins,Pins,sizeof(P->Pins));P->RetainSupplies=RetainSupplies;
   P->Protocol=(EFI_LT9611_PANEL_CR_PROTOCOL){EFI_LT9611_PANEL_CR_PROTOCOL_REVISION,Current,Acquire,Release,Reset,Prepare};
   for(UINT32 I=0;I<3;++I){EFI_STATUS S=Pin(P,I,TRUE,FALSE);if(S!=EFI_SUCCESS)return S;P->Touched[I]=TRUE;}
-  P->Powered=TRUE;return EFI_SUCCESS;
+  P->Powered=TRUE;P->ResetHeld=FALSE;return EFI_SUCCESS;
 }
 EFI_STATUS Lt9611PanelOwnerInit(LT9611_PANEL_OWNER *P,EFI_GPIO_CR_PROTOCOL *G,CONST LT9611_PANEL_OWNER_IO *Io){
   STATIC CONST UINT16 Pins[]={9,109,107};

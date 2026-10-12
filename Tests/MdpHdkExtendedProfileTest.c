@@ -88,7 +88,13 @@ static EFI_STATUS EFIAPI PinSet(EFI_GPIO_CR_PROTOCOL *G,UINT16 Pin,UINT8 Value){
 static EFI_STATUS EFIAPI PinRead(EFI_GPIO_CR_PROTOCOL *G,UINT16 Pin,UINT8 *Value){
   assert(G&&(Pin==9||Pin==109||Pin==107)&&Value);EFI_STATUS S=BoundaryStep();if(S==EFI_SUCCESS)*Value=Levels[Pin];return S;
 }
-static EFI_GPIO_CR_PROTOCOL Gpio={.Revision=EFI_GPIO_CR_PROTOCOL_REVISION,.SetIoValue=PinSet,.ReadIoValue=PinRead};
+static EFI_STATUS EFIAPI PinConfig(EFI_GPIO_CR_PROTOCOL *G,GpioConfigParams *C){
+  assert(G&&C&&(C->PinNumber==9||C->PinNumber==109||C->PinNumber==107));
+  EFI_STATUS S=BoundaryStep();if(S==EFI_SUCCESS){C->FunctionSel=GPIO_FUNC_NORMAL;
+    C->OutputEnable=TRUE;C->OutputValue=Levels[C->PinNumber];}return S;
+}
+static EFI_GPIO_CR_PROTOCOL Gpio={.Revision=EFI_GPIO_CR_PROTOCOL_REVISION,.SetIoValue=PinSet,
+ .ReadIoValue=PinRead,.GetGpioConfig=PinConfig};
 static EFI_STATUS EFIAPI LocateActual(EFI_GUID *G,VOID *Registration,VOID **Out){
   assert(!Registration);EFI_STATUS S=BoundaryStep();if(S!=EFI_SUCCESS)return S;
   if(G==&gEfiLt9611PanelCrProtocolGuid){if(MissingBridge)return EFI_NOT_FOUND;*Out=&BridgeOwner.Protocol;}

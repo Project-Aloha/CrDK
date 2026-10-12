@@ -28,9 +28,17 @@ EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *R,CONST MDP_NATIVE_PROVI
  assert(R==&N.Resources&&C->Target==&Target&&Controllers==1&&A==0x82000000&&Bytes==sizeof(Frame));
  if(!R->Initialized){R->Initialized=TRUE;R->Providers=*P;R->Config=*C;R->OwnerGeneration=91;
   R->Hardware=CrMdssGetHardwareProfile(C->Target->Soc);R->FrameCpu=Frame;R->FrameBytes=Bytes;
-  R->CommandCpu=Commands;R->FrameIova=0x82000000;R->CommandIova=0x83000000;R->AccessReady=TRUE;}
+  R->CommandCpu=Commands;R->FrameIova=0x82000000;R->CommandIova=0x83000000;R->Stage=2;}
+ assert(C->BlankOutput&&C->OutputContext==&N);
+ EFI_STATUS S=C->BlankOutput(C->OutputContext);if(S!=EFI_SUCCESS)return S;
+ assert(N.Panel.PinOwned[0]&&!ResetLevel&&"reset must precede inherited MDSS disruption");
+ R->OutputBlanked=TRUE;R->AccessReady=TRUE;
  return CR_SUCCESS;
 }
+EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *R){
+ assert(R==&N.Resources&&R->Initialized&&R->Stage>=2);return Step(&H);
+}
+UINTN EFIAPI MicroSecondDelay(UINTN Us){assert(Us&&Us<=20000);return Us;}
 EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *R){
  assert(R==&N.Resources);if(MappingLost||ResourceClosed)return EFI_DEVICE_ERROR;return Step(&H);
 }
@@ -81,7 +89,7 @@ static EFI_STATUS EFIAPI PrepareObserver(EFI_SMMU_CR_PROTOCOL *P,VOID *Owner,EFI
 static VOID Complete(VOID *C,EFI_STATUS S){assert(C==&N&&!N.Busy&&EventTpl<=TPL_CALLBACK);++Notifications;NotificationStatus=S;}
 static void NativeSetup(void){
  Init();EventSetup(115);memset(&N,0,sizeof(N));H.D=&N.Core;
- Notifications=Checks=Publishes=0;MappingLost=ResourceClosed=FALSE;ResetLevel=0;NativePrepare=NULL;
+ Notifications=Checks=Publishes=0;MappingLost=ResourceClosed=FALSE;ResetLevel=1;NativePrepare=NULL;
  Target=(CR_MDSS_TARGET){.Revision=CR_MDSS_TARGET_REVISION,.Size=sizeof(Target),.Soc=CR_MDSS_CMD_SM8250,
   .RequiresStoppedDisplay=TRUE,.VbifBase=0xaeb0000,.VbifBytes=0x3000,.Interrupt=115};
  NativeRpmh=(EFI_RPMH_CR_PROTOCOL){.Revision=EFI_RPMH_CR_PROTOCOL_REVISION,.EnsureRetainedVregEnabled=Retain,.EnsureRetainedVreg=RetainFixed};

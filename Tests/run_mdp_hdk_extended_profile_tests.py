@@ -17,8 +17,8 @@ cmd=['clang','-std=c11','-fshort-wchar','-g','-O1','-Wall','-Wextra','-Werror','
  r/'MU_BASECORE/MdePkg/Include/X64',r/'MU_BASECORE/MdeModulePkg/Include')],*[str(x) for x in s],'-o',str(o/'native')]
 x=subprocess.run(cmd,text=True,capture_output=True);(o/'compile.log').write_text(x.stdout+x.stderr)
 if x.returncode:print(x.stderr);x.check_returncode()
-x=subprocess.run([str(o/'native'),str(r/'Platforms/WaipioCrPkg/Device/qcom-hdk8450/Binaries/RawFiles/Panel_lt9611uxc_dsi2hdmi_vid.xml')],text=True,capture_output=True,timeout=180);(o/'test.log').write_text(x.stdout+x.stderr);print(x.stdout+x.stderr,end='');x.check_returncode()
-inputs=s+[Path(__file__),c/'Tests/MdpExtendedOutputTest.c',c/'Driver/MDSSCrDxe/MdpHdkExtendedProfile.c',c/'Driver/MDSSCrDxe/MdpHdkExtendedProfile.h',c/'Driver/Lt9611uxcCrDxe/Lt9611PanelOwner.h',r/'Platforms/WaipioCrPkg/Device/qcom-hdk8450/Binaries/RawFiles/Panel_lt9611uxc_dsi2hdmi_vid.xml',c/'Tests/MdpExtendedNativeTest.c',c/'Tests/MdssDsiPanelTest.c',c/'Tests/MdssDsiExtendedTest.c',
+x=subprocess.run([str(o/'native'),str(r/'Platforms/WaipioCrPkg/Device/qcom-hdk8450/Resources/Panel_lt9611uxc_dsi2hdmi_vid.xml')],text=True,capture_output=True,timeout=180);(o/'test.log').write_text(x.stdout+x.stderr);print(x.stdout+x.stderr,end='');x.check_returncode()
+inputs=s+[Path(__file__),c/'Tests/MdpExtendedOutputTest.c',c/'Driver/MDSSCrDxe/MdpHdkExtendedProfile.c',c/'Driver/MDSSCrDxe/MdpHdkExtendedProfile.h',c/'Driver/Lt9611uxcCrDxe/Lt9611PanelOwner.h',r/'Platforms/WaipioCrPkg/Device/qcom-hdk8450/Resources/Panel_lt9611uxc_dsi2hdmi_vid.xml',c/'Tests/MdpExtendedNativeTest.c',c/'Tests/MdssDsiPanelTest.c',c/'Tests/MdssDsiExtendedTest.c',
  *[c/f'Driver/MDSSCrDxe/{n}.h' for n in ('MdpExtendedNative','MdpExtendedOutput','MdpExtendedPanel','MdpExtendedEntry','MdpPanel','MdpDsiSequence')],
  *[c/f'Tests/{n}.c' for n in ('ClockExternalLeaseTest','ClockExternalTest','ClockOwnershipTest')],c/'Library/Sm8450ClockLib/Sm8450Clock.c']
 (o/'artifacts.json').write_text(json.dumps({'status':'PASS','scope':__doc__,'inputs':{str(x.relative_to(r)):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs}},indent=2)+'\n')

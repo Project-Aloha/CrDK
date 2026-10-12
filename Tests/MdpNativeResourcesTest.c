@@ -43,6 +43,8 @@ STATIC BOOLEAN ResetOn,ExternalOn,FailRounded,GopPresent,ResetCompleted,PllPrepa
 STATIC CR_CLOCK_PLL_SUPPLY_CHECK PllSupplyCheck;
 STATIC VOID *PllSupplyContext;
 STATIC UINTN ResetHoldUs;
+STATIC BOOLEAN OutputResetLow;
+STATIC UINTN OutputBlankCalls;
 STATIC UINT64 DisplayVote[2],ForeignVote[2];
 STATIC UINT32 InfoCorruption;
 STATIC MDP_NATIVE_RESOURCES Resources;
@@ -105,6 +107,7 @@ STATIC EFI_STATUS EFIAPI ClockSet(EFI_CLOCK_CR_PROTOCOL *P,CONST CHAR8 *C,CONST 
   assert(P==&Clock&&C&&N&&!Hz&&!On);++ProviderReleases;return ProviderStep();
 }
 STATIC EFI_STATUS EFIAPI OwnerReset(EFI_CLOCK_EXTERNAL_CR_PROTOCOL *P,VOID *O,UINT64 G,BOOLEAN On){
+  assert(OutputResetLow&&"panel must be blank before MDSS reset");
   assert(P==&External&&O==&Resources&&G==Resources.OwnerGeneration&&Resources.WritersSealed);
   if(ResetCompleted)return EFI_SUCCESS;
   if(!On)assert(ResetHoldUs>=20000);EFI_STATUS S=ProviderStep();if(S!=EFI_SUCCESS)return S;
@@ -150,7 +153,7 @@ STATIC EFI_STATUS EFIAPI PathAcquire(EFI_INTERCONNECT_CR_PROTOCOL *P,CONST CHAR8
 }
 STATIC EFI_STATUS EFIAPI Bandwidth(EFI_INTERCONNECT_CR_PROTOCOL *P,INTERCONNECT_PATH_HANDLE H,UINT64 A,UINT64 B){
   assert(P==&Icb&&H&&B>=A);UINT32 I=H==(INTERCONNECT_PATH_HANDLE)(UINTN)(Config.Target->Paths[0].Source+1)?0:1;
-  if(!A)assert(ResetCompleted&&!ResetOn);DisplayVote[I]=A;
+  if(!A)assert(OutputResetLow&&ResetCompleted&&!ResetOn);DisplayVote[I]=A;
   assert(ForeignVote[0]==12345&&ForeignVote[1]==67890);return ProviderStep();
 }
 STATIC EFI_STATUS EFIAPI PathRelease(EFI_INTERCONNECT_CR_PROTOCOL *P,INTERCONNECT_PATH_HANDLE H){
@@ -205,6 +208,13 @@ STATIC EFI_STATUS EFIAPI BufferQuery(EFI_SMMU_CR_PROTOCOL *P,EFI_SMMU_CR_DISPLAY
 STATIC EFI_STATUS EFIAPI OrdinaryAttach(EFI_SMMU_CR_PROTOCOL *P,UINT16 S,UINT16 B,UINT16 I){
   (VOID)P;(VOID)S;(VOID)B;(VOID)I;assert(0&&"ordinary Attach forbidden");return EFI_UNSUPPORTED;
 }
+STATIC EFI_STATUS BlankOutput(VOID *C){
+  assert(C==&Resources&&!ResetOn&&!ResetCompleted&&!ProviderWrites&&!Resources.FunctionalReady);
+  ++OutputBlankCalls;
+  /* GPIO can take effect before its readback fails. Such failure must still
+   * prevent MDSS reset and be retried with the same output owner. */
+  OutputResetLow=TRUE;return ProviderStep();
+}
 STATIC VOID RebootFixture(UINT32 Soc){
   /* Test-only simulated reboot discards permanent journals. This is never
      claimed as resource cleanup and has no production reset API. */
@@ -215,6 +225,7 @@ STATIC VOID RebootFixture(UINT32 Soc){
   for(UINT32 I=CrMdssRetirePhy0;I<=CrMdssRetirePhy1;++I){MdpRegs[I][0x3c/4]=1;MdpRegs[I][0x24/4]=0x7f;MdpRegs[I][0x14/4]=0x20;MdpRegs[I][0x1c/4]=0xff;}
   assert(MockAllocatePages(AllocateAnyPages,EfiReservedMemoryType,2,&FramePhysical)==EFI_SUCCESS);
   ProviderCalls=ProviderFail=ProviderWrites=ProviderReleases=GcdCalls=0;ProviderFailure=EFI_DEVICE_ERROR;
+  OutputResetLow=FALSE;OutputBlankCalls=0;
   memcpy(ArcEntries,mSm8350ArcEntries,sizeof(ArcEntries));
   ArcInventory=mSm8350ArcInventory;ArcInventory.Entries=ArcEntries;
   ArcInfo=(CR_DAL_DEVICE_INFO){.DataRevision=CR_DAL_DATA_REVISION_1,.DataSize=sizeof(ArcInventory),.Data=&ArcInventory};
@@ -231,7 +242,8 @@ STATIC VOID RebootFixture(UINT32 Soc){
   mCrProtocol.PrepareDisplayBuffer=BufferPrepare;mCrProtocol.CheckDisplayBuffer=BufferCheck;mCrProtocol.QueryDisplayBuffer=BufferQuery;
   mCrProtocol.PreserveDisplayFrame=FramePreserve;mCrProtocol.Attach=OrdinaryAttach;
   Providers=(MDP_NATIVE_PROVIDERS){.Clock=&Clock,.External=&External,.Rpmh=&Rpmh,.Icb=&Icb,.Smmu=&mCrProtocol,.Iommu=&mIoMmuProtocol,.Dxe=&ResourceDxe};
-  Config=(MDP_NATIVE_RESOURCE_CONFIG){.Target=&DisplayTarget,.MdpHz=400000000,.AverageKBps={1000,2000},.PeakKBps={4000,8000}};
+  Config=(MDP_NATIVE_RESOURCE_CONFIG){.Target=&DisplayTarget,.MdpHz=400000000,.AverageKBps={1000,2000},.PeakKBps={4000,8000},
+    .BlankOutput=BlankOutput,.OutputContext=&Resources};
 }
 STATIC EFI_STATUS OpenResources(VOID){return MdpNativeResourcesOpen(&Resources,&Providers,&Config,1,FramePhysical,6000);}
 int main(VOID){
@@ -240,6 +252,7 @@ int main(VOID){
     EFI_STATUS Initial=OpenResources();
     if(Initial!=EFI_SUCCESS)fprintf(stderr,"Open SoC=%x status=%llx stage=%u retirement=%u calls=%llu group=%llx\n",Soc,(unsigned long long)Initial,Resources.Stage,Resources.Retirement.Stage,(unsigned long long)ProviderCalls,(unsigned long long)mDisplayGroup.LastStatus);
     assert(Initial==EFI_SUCCESS&&PllPrepared&&Resources.AccessReady&&Resources.Retirement.Resumed);
+    assert(OutputBlankCalls==1&&OutputResetLow);
     if(Soc==0x8250)assert(Hardware[HW_CB(4)/4]==0&&Hardware[(0xc00+4*4)/4]==0x20000);
     UINTN Calls=ProviderCalls,Stops=StopChecks,ResetWrites=ProviderWrites;
     assert(CrMdssRetireCheck(&Resources.Retirement)==CR_NOT_READY);
@@ -259,7 +272,7 @@ int main(VOID){
       RebootFixture(Soc);ProviderFail=Fail;ProviderFailure=Warning?EFI_WARN_UNKNOWN_GLYPH:EFI_DEVICE_ERROR;
       assert(OpenResources()!=EFI_SUCCESS&&!Resources.AccessReady);ProviderFail=0;
       Free=mFreeCalls;
-      if(Resources.Retirement.Touched||Resources.Group.Token){
+      if(Resources.OutputTouched||Resources.Retirement.Touched||Resources.Group.Token){
         assert(MdpNativeResourcesClose(&Resources)==EFI_UNSUPPORTED&&mOwner==&Resources&&mFreeCalls==Free);
         assert(OpenResources()==EFI_SUCCESS&&Resources.AccessReady);
       }else{

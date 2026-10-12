@@ -3,6 +3,7 @@
 #include "MdpCommandNative.h"
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
+#include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #define TRY(X) do{EFI_STATUS S_ = Exact(X);if(S_!=EFI_SUCCESS)return S_;}while(0)
@@ -43,7 +44,25 @@ STATIC CR_STATUS Write(VOID *C,CR_MDSS_CMD_WINDOW W,UINT32 O,UINT32 V){
 }
 STATIC CR_STATUS Fence(VOID *C){MDP_COMMAND_NATIVE *N=C;TRY(Access(N));return MdpNativeResourcesFence(&N->Resources);}
 STATIC CR_STATUS Delay(VOID *C,UINT32 Us){MDP_COMMAND_NATIVE *N=C;TRY(Access(N));return MdpNativeResourcesDelay(&N->Resources,Us);}
-STATIC EFI_STATUS PowerReady(VOID *C){return Access(C);}
+STATIC EFI_STATUS PowerReady(VOID *C){
+  MDP_COMMAND_NATIVE *N=C;
+  if(!Valid(N)||N->Frozen)return EFI_NOT_READY;
+  return MdpNativeResourcesSuppliersReady(&N->Resources);
+}
+STATIC EFI_STATUS PowerDelay(VOID *C,UINT32 Us){
+  TRY(PowerReady(C));
+  if(!Us||Us>20000)return EFI_INVALID_PARAMETER;
+  MicroSecondDelay(Us);return PowerReady(C);
+}
+STATIC EFI_STATUS BlankOutput(VOID *C){
+  MDP_COMMAND_NATIVE *N=C;TRY(PowerReady(N));
+  if(!N->Panel.Initialized)TRY(MdpPanelPowerInit(&N->Panel,N->Providers.Rpmh,N->Config.Gpio,
+    &N->Config.Panel,N,PowerReady,PowerDelay));
+  BOOLEAN Owned=FALSE;TRY(MdpPanelPowerBindPins(&N->Panel,&Owned));
+  if(!Owned)return EFI_NOT_READY;
+  TRY(MdpPanelPowerReset(&N->Panel,FALSE));
+  return PowerDelay(N,20000);
+}
 STATIC CR_STATUS FrameReady(VOID *C,CR_MDSS_CMD_WINDOW W){return W==CrMdssCmdDpu?Access(C):EFI_ACCESS_DENIED;}
 STATIC CR_STATUS CommandReady(VOID *C,CR_MDSS_CMD_WINDOW W){return W==CrMdssCmdHost?Access(C):EFI_ACCESS_DENIED;}
 STATIC CR_STATUS PublishFrame(VOID *C,VOID *Cpu,UINTN Bytes){
@@ -128,11 +147,13 @@ EFI_STATUS MdpCommandNativeOpen(MDP_COMMAND_NATIVE *N,CONST MDP_NATIVE_PROVIDERS
   if(N->Closing||N->Frozen)return EFI_NOT_READY;
   EFI_TPL Old;TRY(Enter(N,FALSE,&Old));EFI_STATUS S=EFI_SUCCESS;
   if(N->Stage<1){
-    S=Exact(MdpNativeResourcesOpen(&N->Resources,P,&C->Resources,1,Physical,Bytes));
+    MDP_NATIVE_RESOURCE_CONFIG Resources=C->Resources;
+    Resources.BlankOutput=BlankOutput;Resources.OutputContext=N;
+    S=Exact(MdpNativeResourcesOpen(&N->Resources,P,&Resources,1,Physical,Bytes));
     if(S==EFI_SUCCESS){N->Generation=N->Resources.OwnerGeneration;N->Stage=1;}
   }
   if(S==EFI_SUCCESS&&N->Stage<2){
-    if(!N->Panel.Initialized)S=Exact(MdpPanelPowerInit(&N->Panel,P->Rpmh,C->Gpio,&C->Panel,N,PowerReady,Delay));
+    if(!N->Panel.Initialized)S=Exact(MdpPanelPowerInit(&N->Panel,P->Rpmh,C->Gpio,&C->Panel,N,PowerReady,PowerDelay));
     if(S==EFI_SUCCESS){BOOLEAN Owned=FALSE;S=Exact(MdpPanelPowerBindPins(&N->Panel,&Owned));}
     if(S==EFI_SUCCESS)N->Stage=2;
   }

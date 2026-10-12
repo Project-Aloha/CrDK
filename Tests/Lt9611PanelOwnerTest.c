@@ -5,6 +5,7 @@
 #undef NULL
 #include <Uefi.h>
 #include "../Driver/Lt9611uxcCrDxe/Lt9611PanelOwner.h"
+#include "../Driver/MDSSCrDxe/MdpExtendedNative.h"
 static LT9611_PANEL_OWNER P;
 static UINT8 Levels[3];
 static BOOLEAN Locked,Closed,Busy,Commit,Drop,InputHigh,BadMux,BadOe;
@@ -16,7 +17,7 @@ static UINT16 Pins[]={9,109,107};
 EFI_TPL EFIAPI EfiGetCurrentTpl(VOID){return Tpl;}
 VOID *EFIAPI ZeroMem(VOID *B,UINTN N){return memset(B,0,N);}
 VOID *EFIAPI CopyMem(VOID *D,CONST VOID *S,UINTN N){return memcpy(D,S,N);}
-UINTN EFIAPI MicroSecondDelay(UINTN Us){assert(Us==1000&&Locked);++Sleeps;return Us;}
+UINTN EFIAPI MicroSecondDelay(UINTN Us){assert((Us==1000&&Locked)||(Us==20000&&!Locked));++Sleeps;return Us;}
 static EFI_STATUS Op(VOID){return ++Calls==Fail?Failure:EFI_SUCCESS;}
 static UINT32 Index(UINT32 Pin){for(UINT32 I=0;I<3;++I)if(Pin==Pins[I])return I;assert(0);return 0;}
 static EFI_STATUS EFIAPI Set(EFI_GPIO_CR_PROTOCOL *This,UINT16 Pin,UINT8 V){assert(This==P.Gpio&&Locked&&V<=1);++Sets;
@@ -40,13 +41,45 @@ static VOID Drain(VOID){Fail=0;Drop=Commit=FALSE;BOOLEAN Owned=TRUE;
  if(!P.Owner)assert(P.Protocol.Acquire(&P.Protocol,&Owner,&Owned)==EFI_SUCCESS&&Owned);
  assert(P.Protocol.Release(&P.Protocol,&Owner,&Owned)==EFI_SUCCESS&&!Owned&&!P.Owner&&!P.Powered&&!Locked);
  for(UINT32 I=0;I<3;++I)assert(!Levels[I]&&!P.Touched[I]);}
+static MDP_EXTENDED_NATIVE Native;
+static UINT32 SupplierCalls,SupplierFail;
+EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *R){
+ assert(R==&Native.Resources);return ++SupplierCalls==SupplierFail?EFI_DEVICE_ERROR:EFI_SUCCESS;
+}
+static EFI_STATUS Current(VOID *C){assert(C==&Native);return MdpNativeResourcesSuppliersReady(&Native.Resources);}
+static CR_STATUS NativeReady(VOID *C){assert(C==&P);return P.Protocol.Ready(&P.Protocol,&Owner);}
+static CR_STATUS NativeAcquire(VOID *C,BOOLEAN *Owned){assert(C==&P);return P.Protocol.Acquire(&P.Protocol,&Owner,Owned);}
+static CR_STATUS NativeRelease(VOID *C,BOOLEAN *Owned){assert(C==&P);return P.Protocol.Release(&P.Protocol,&Owner,Owned);}
+static CR_STATUS NativeReset(VOID *C,BOOLEAN High){assert(C==&P);return P.Protocol.Reset(&P.Protocol,&Owner,High);}
+#include "ExtendedBlank.inc"
+static VOID BlankFixture(VOID){
+ Fixture();assert(Init()==EFI_SUCCESS);memset(&Native,0,sizeof(Native));
+ Native.Config.Panel=(CR_MDSS_PANEL_IO){.Context=&P,.Ready=NativeReady,.Acquire=NativeAcquire,.Release=NativeRelease,.Reset=NativeReset};
+ SupplierCalls=SupplierFail=0;
+}
+static VOID TestEarlyBlank(VOID){
+ BlankFixture();SupplierFail=2;
+ assert(BlankOutput(&Native)==EFI_DEVICE_ERROR&&Native.PanelLeaseOwned&&Native.OutputPanelAcquired&&P.ResetHeld&&!Levels[2]);
+ SupplierFail=0;UINT32 Before=Sets;
+ assert(BlankOutput(&Native)==EFI_SUCCESS&&Sets==Before+1&&!Levels[2]);
+ BOOLEAN Owned=FALSE;Before=Sets;
+ assert(PanelAcquire(&Native,&Owned)==EFI_SUCCESS&&Owned&&Sets==Before&&!Levels[2]);
+ assert(PanelRelease(&Native,&Owned)==EFI_SUCCESS&&!Owned&&!Native.OutputPanelAcquired);
+ // Failed Acquire may own the panel but must never set the success journal.
+ BlankFixture();Calls=0;Fail=4;
+ assert(BlankOutput(&Native)==EFI_DEVICE_ERROR&&Native.PanelLeaseOwned&&!Native.OutputPanelAcquired);
+ Fail=0;assert(BlankOutput(&Native)==EFI_SUCCESS&&Native.OutputPanelAcquired&&!Levels[2]);
+ Drain();
+}
 int main(void){
+ TestEarlyBlank();
+
  Fixture();assert(Init()==EFI_SUCCESS&&P.Powered&&Sets==0&&Reads==3&&Observed==3);UINT32 InitCalls=Calls;
  BOOLEAN Owned=FALSE;Calls=0;assert(P.Protocol.Acquire(&P.Protocol,&Owner,&Owned)==EFI_SUCCESS&&Owned&&P.Owner==&Owner);UINT32 AcquireCalls=Calls;
  Calls=0;Drain();UINT32 ReleaseCalls=Calls;
  Calls=0;Owned=FALSE;assert(P.Protocol.Acquire(&P.Protocol,&Owner,&Owned)==EFI_SUCCESS&&Owned&&P.Powered&&Sleeps==1);UINT32 OnCalls=Calls;
  UINT32 Before=Prepares;assert(P.Protocol.Reset(&P.Protocol,&Owner,FALSE)==EFI_SUCCESS&&Levels[2]==0);
- assert(P.Protocol.Prepare(&P.Protocol,&Owner,&Timing)==EFI_DEVICE_ERROR&&Prepares==Before);
+ assert(P.ResetHeld&&P.Protocol.Prepare(&P.Protocol,&Owner,&Timing)==EFI_NOT_READY&&Prepares==Before);
  assert(P.Protocol.Reset(&P.Protocol,&Owner,TRUE)==EFI_SUCCESS&&P.Protocol.Prepare(&P.Protocol,&Owner,&Timing)==EFI_SUCCESS&&Prepares==Before+1);
  Drain();
  UINT32 Cases=0;
@@ -83,6 +116,16 @@ int main(void){
  assert(P.Protocol.Reset(&P.Protocol,&Owner,TRUE)==EFI_SUCCESS&&Levels[2]);
  BadMux=TRUE;assert(P.Protocol.Reset(&P.Protocol,&Owner,FALSE)==EFI_DEVICE_ERROR);BadMux=FALSE;
  BadOe=TRUE;assert(P.Protocol.Reset(&P.Protocol,&Owner,FALSE)==EFI_DEVICE_ERROR);BadOe=FALSE;Drain();
+ // A committed reset-high write with a failed latch read is not permission
+ // for the MCU worker to run. Only a fully acknowledged retry clears it.
+ Fixture();assert(Init()==EFI_SUCCESS);Owned=FALSE;
+ assert(P.Protocol.Acquire(&P.Protocol,&Owner,&Owned)==EFI_SUCCESS&&Owned);
+ assert(P.Protocol.Reset(&P.Protocol,&Owner,FALSE)==EFI_SUCCESS&&P.ResetHeld);
+ Calls=0;Fail=6;Commit=TRUE;
+ assert(P.Protocol.Reset(&P.Protocol,&Owner,TRUE)==EFI_DEVICE_ERROR&&Levels[2]&&P.ResetHeld);
+ assert(P.Protocol.Prepare(&P.Protocol,&Owner,&Timing)==EFI_NOT_READY);
+ Fail=0;assert(P.Protocol.Reset(&P.Protocol,&Owner,TRUE)==EFI_SUCCESS&&!P.ResetHeld);
+ Drain();
  // Explicit alternate routing is copied; shared enable outputs stay high.
  Fixture();Pins[0]=47;Pins[1]=49;Pins[2]=48;UINT16 Descriptor[3]={47,49,48};
  assert(Lt9611PanelOwnerInitRoute(&P,&G,&Io,Descriptor,TRUE)==EFI_SUCCESS);

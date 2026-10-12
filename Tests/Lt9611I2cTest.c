@@ -481,6 +481,8 @@ static void HandoffTests(const EFI_MDP_DSI_TIMING *Timing) {
   Before=Transfers;
   assert(Lt9611ConfigureVideo(&mLt9611Bridge,Timing)==EFI_ACCESS_DENIED&&Transfers==Before);
   assert(mPanelOwner.Protocol.Reset(&mPanelOwner.Protocol,&Owner,FALSE)==EFI_SUCCESS&&!PinLevels[107]);
+  mIrqPending=TRUE;Before=Transfers;
+  TimerNotify((VOID*)1,NULL);assert(Transfers==Before&&mIrqPending&&TimerArmed);
   assert(mPanelOwner.Protocol.Reset(&mPanelOwner.Protocol,&Owner,TRUE)==EFI_SUCCESS&&PinLevels[107]);
   assert(mPanelOwner.Protocol.Prepare(&mPanelOwner.Protocol,&Owner,Timing)==EFI_SUCCESS&&Transfers>Before);
   assert(mPanelOwner.Protocol.Release(&mPanelOwner.Protocol,&Owner,&Owned)==EFI_SUCCESS&&!Owned&&!mPanelOwner.Powered);

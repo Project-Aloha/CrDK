@@ -107,14 +107,34 @@ STATIC CR_STATUS PanelReady(VOID *C){MDP_EXTENDED_NATIVE *N=C;EFI_STATUS S=Curre
   return S==EFI_SUCCESS?Exact(N->Config.Panel.Ready(N->Config.Panel.Context)):S;}
 STATIC CR_STATUS PanelAcquire(VOID *C,BOOLEAN *Owned){MDP_EXTENDED_NATIVE *N=C;
   EFI_STATUS S=PanelReady(N);
-  if(S==EFI_SUCCESS)S=Exact(N->Config.Panel.Acquire(N->Config.Panel.Context,&N->PanelLeaseOwned));
+  /* The inherited-output fence already acquired this exact panel owner.
+     Reacquiring a powered bridge would demand reset HIGH too early. */
+  if(S==EFI_SUCCESS&&!(N->PanelLeaseOwned&&N->OutputPanelAcquired))
+    S=Exact(N->Config.Panel.Acquire(N->Config.Panel.Context,&N->PanelLeaseOwned));
   *Owned=N->PanelLeaseOwned;return S;}
 STATIC CR_STATUS PanelRelease(VOID *C,BOOLEAN *Owned){MDP_EXTENDED_NATIVE *N=C;
   EFI_STATUS S=PanelReady(N);
   if(S==EFI_SUCCESS)S=Exact(N->Config.Panel.Release(N->Config.Panel.Context,&N->PanelLeaseOwned));
+  if(!N->PanelLeaseOwned)N->OutputPanelAcquired=FALSE;
   *Owned=N->PanelLeaseOwned;return S;}
 STATIC CR_STATUS Reset(VOID *C,BOOLEAN High){MDP_EXTENDED_NATIVE *N=C;EFI_STATUS S=PanelReady(N);
   return S==EFI_SUCCESS?Exact(N->Config.Panel.Reset(N->Config.Panel.Context,High)):S;}
+STATIC EFI_STATUS BlankOutput(VOID *C){
+  MDP_EXTENDED_NATIVE *N=C;
+  EFI_STATUS S=MdpNativeResourcesSuppliersReady(&N->Resources);if(S!=EFI_SUCCESS)return S;
+  S=Exact(N->Config.Panel.Ready(N->Config.Panel.Context));if(S!=EFI_SUCCESS)return S;
+  /* A successful early acquisition is distinct from a partial owned claim.
+     Reset-low retries must not call Acquire, which validates reset HIGH. */
+  if(!N->OutputPanelAcquired){
+    S=Exact(N->Config.Panel.Acquire(N->Config.Panel.Context,&N->PanelLeaseOwned));if(S!=EFI_SUCCESS)return S;
+    if(!N->PanelLeaseOwned)return EFI_NOT_READY;
+    N->OutputPanelAcquired=TRUE;
+  }
+  if(!N->PanelLeaseOwned)return EFI_NOT_READY;
+  S=Exact(N->Config.Panel.Reset(N->Config.Panel.Context,FALSE));if(S!=EFI_SUCCESS)return S;
+  MicroSecondDelay(20000);
+  return MdpNativeResourcesSuppliersReady(&N->Resources);
+}
 STATIC CR_STATUS Publish(VOID *C,VOID *Cpu,UINTN Bytes){MDP_EXTENDED_NATIVE *N=C;
   EFI_STATUS S=Current(N);if(S!=EFI_SUCCESS)return S;
   if(Cpu!=N->FrameCpu||Bytes!=N->FrameBytes)return EFI_INVALID_PARAMETER;
@@ -179,7 +199,8 @@ EFI_STATUS MdpExtendedNativeOpen(MDP_EXTENDED_NATIVE *N,CONST MDP_EXTENDED_PROVI
   S=CrMdssDsiBuildPlan(&F->Mode,&N->Plan);if(S!=EFI_SUCCESS)goto Failed;
   if(C->Target->RequiresStoppedDisplay){
     MDP_NATIVE_RESOURCE_CONFIG ResourceConfig={.Target=C->Target,.MdpHz=C->MdpHz,
-      .AverageKBps={C->AverageKBps[0],C->AverageKBps[1]},.PeakKBps={C->PeakKBps[0],C->PeakKBps[1]}};
+      .AverageKBps={C->AverageKBps[0],C->AverageKBps[1]},.PeakKBps={C->PeakKBps[0],C->PeakKBps[1]},
+      .BlankOutput=BlankOutput,.OutputContext=N};
     UINT32 Mask=((1U<<N->Plan.Mode.Controllers)-1U)<<N->Plan.Mode.FirstController;
     S=MdpNativeResourcesOpen(&N->Resources,P,&ResourceConfig,Mask,Physical,Bytes);
     if(S!=EFI_SUCCESS)goto Failed;

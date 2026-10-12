@@ -212,9 +212,19 @@ static VOID TestPreferredGraphicsConsole (VOID) {
   assert (memcmp (Path, &DisplayDevicePath, sizeof (DisplayDevicePath)) == 0);
   FreePool (Path);
 
+  /* Already managed controller: no new driver starts, existing GOP is valid. */
+  GraphicsConnectStatus = EFI_NOT_FOUND;
+  assert (GetPlatformPreferredConsole (&Path) == &GraphicsController && Path != NULL);
+  FreePool (Path);
+  PublicGopInstalled = FALSE;
+  assert (GetPlatformPreferredConsole (&Path) == NULL && Path == NULL);
+  PublicGopInstalled = TRUE;
+  GraphicsConnectStatus = EFI_SUCCESS;
+
+  UINT32 BeforeChildLookup = GopChildPathCalls;
   GraphicsHasGopChild = TRUE;
   assert (GetPlatformPreferredConsole (&Path) == &GraphicsController);
-  assert (Path != NULL && GopChildPathCalls == 1);
+  assert (Path != NULL && GopChildPathCalls == BeforeChildLookup + 1);
   FreePool (Path);
   GraphicsSuppressGop = TRUE;
   Path = (VOID *)1;

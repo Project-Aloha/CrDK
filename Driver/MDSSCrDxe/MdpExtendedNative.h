@@ -36,6 +36,7 @@ typedef struct {
   BOOLEAN RailOwned[2], ClockOwned[7], ExternalOwned, PanelLeaseOwned;
   BOOLEAN Initialized, AccessReady, Closing, Frozen, FreezeAccess;
   BOOLEAN FreezeComplete;
+  BOOLEAN OutputPanelAcquired;
   EFI_STATUS FreezeStatus;
 } MDP_EXTENDED_NATIVE;
 /* Stable zeroed storage and external caller serialization. Explicit profile

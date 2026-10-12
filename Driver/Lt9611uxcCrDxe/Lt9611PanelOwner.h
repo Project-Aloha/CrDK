@@ -18,6 +18,8 @@ typedef struct {
   UINT16 Pins[3];
   BOOLEAN RetainSupplies;
   BOOLEAN Initialized,Powered,Touched[3];
+  /* Set before reset writes; a failed acknowledgment keeps MCU access gated. */
+  BOOLEAN ResetHeld;
 } LT9611_PANEL_OWNER;
 /* The resident bridge has configured its verified GPIO9/109/107 outputs
    before Init. Confirm their actual level before publishing the service.
