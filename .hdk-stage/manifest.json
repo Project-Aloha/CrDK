@@ -1,0 +1,16 @@
+{
+  "base": "8e6af802b97b1e2f166afd399dc702daa49a2778",
+  "patch_sha256": "21d9d48d937b96639fce02a04148e9c48b8d957decccabb8eb68a65227bbdf04",
+  "files": [
+    {"path":"Driver/MDSSCrDxe/MdpCommandNative.c","mode":"100644","before":"ef8652a7d20d7887ea82119030e1c086fe6d67a7","after":"7fcd734a01919f0733b3603280543edcbd7614d8"},
+    {"path":"Driver/MDSSCrDxe/MdpExtendedOutput.c","mode":"100644","before":"a43b34f0db14598a2224dece616505e998185c2e","after":"d4b1439d40b700be44a591033e1c3f8ea5fa6668"},
+    {"path":"Driver/MDSSCrDxe/MdpExtendedOutput.h","mode":"100644","before":"9f03bf48ff1ad1a3695e1c245d2ffafa2ead5030","after":"c9fa79f58f4bc06de8aea58130d2d403ce68c64a"},
+    {"path":"Driver/MDSSCrDxe/MdpNativeResources.c","mode":"100644","before":"58ac89bc66485e4672e3536687e6164e35f18500","after":"0c394cae39a058749325a6c8b1b8b0f2af06b3e3"},
+    {"path":"Driver/MDSSCrDxe/MdpNativeResources.h","mode":"100644","before":"134e0812c1f655a5bcabc25af6224511ed1a9493","after":"d6a9c7a82e4d1c3fd21fb7747a4d4ac8de0bc10b"},
+    {"path":"Tests/MdpCommandNativeTest.c","mode":"100644","before":"0ca6085466300a0feec49a407fa11597dca08030","after":"133edc21d655a7a787af0e972dc21b9cd0b7daaf"},
+    {"path":"Tests/MdpExtendedOutputTest.c","mode":"100644","before":"ea6fd1ed71dd3a2990d8c24a57d7da818427106c","after":"c2ff31b9e3143a645b5b11b8bf7ae33632f88596"},
+    {"path":"Tests/MdpNativeResourcesTest.c","mode":"100644","before":"0481c05be4d31def06206a0e961526fa9c92bc40","after":"de7fa6fc50196e1bfe2556780e046a97c47c309b"},
+    {"path":"Tests/MdpOutputPipelineTest.c","mode":"100644","before":"c70ef72cbcdfeabc533b81fbaac86c4daef14f93","after":"a07c728f25845f9bac0ec99fd2d58eb320962fca"}
+  ],
+  "gitlinks": []
+}
