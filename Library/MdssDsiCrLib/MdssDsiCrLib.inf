@@ -1,0 +1,22 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssDsiCrLib
+  FILE_GUID = 9F6C2C05-C6CF-41C1-A9F1-CE10ECB69B68
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssDsiCrLib
+[Sources]
+  MdssDsi.c
+  MdssDsiCommands.c
+  MdssDsiClock.c
+  MdssDsiPanel.c
+  DsiPhyExtended.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  MdssCrLib
+  MdssDscCrLib
+  ClockExternalLib
+  BaseMemoryLib
+  CompilerIntrinsicsLib

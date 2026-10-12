@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "MdeModulePkg/Universal/SerialDxe",
+  "scope": "Explicit platform copy to remove functional changes from official submodule; same behavior as local pre-migration module",
+  "files": {
+    "SerialDxe.inf": {
+      "upstream_sha256": "12c6dc0ba7471691b395e044011607698f22fc2453eac82f452bfcea685f04f6",
+      "pre_migration_sha256": "12c6dc0ba7471691b395e044011607698f22fc2453eac82f452bfcea685f04f6",
+      "platform_sha256": "12c6dc0ba7471691b395e044011607698f22fc2453eac82f452bfcea685f04f6"
+    },
+    "SerialDxe.uni": {
+      "upstream_sha256": "390bbdbc1867649170df6df861131f5bd3eaea5a2956fcaee339b2fc9dc4d825",
+      "pre_migration_sha256": "390bbdbc1867649170df6df861131f5bd3eaea5a2956fcaee339b2fc9dc4d825",
+      "platform_sha256": "390bbdbc1867649170df6df861131f5bd3eaea5a2956fcaee339b2fc9dc4d825"
+    },
+    "SerialDxeExtra.uni": {
+      "upstream_sha256": "af8568beaef8bb7be4f1dbd5c7e8df050cc7c6f3a9fe6458989d97486687abea",
+      "pre_migration_sha256": "af8568beaef8bb7be4f1dbd5c7e8df050cc7c6f3a9fe6458989d97486687abea",
+      "platform_sha256": "af8568beaef8bb7be4f1dbd5c7e8df050cc7c6f3a9fe6458989d97486687abea"
+    },
+    "SerialIo.c": {
+      "upstream_sha256": "f0256ad8fcadf20540ff7e02323f525285ba282a1a582bdb5eefd41f475c2448",
+      "pre_migration_sha256": "234fc1bbc911f0148a0a5ac72a4c9ff64482d86bf3664944b2821cba115fb29e",
+      "platform_sha256": "234fc1bbc911f0148a0a5ac72a4c9ff64482d86bf3664944b2821cba115fb29e"
+    }
+  }
+}

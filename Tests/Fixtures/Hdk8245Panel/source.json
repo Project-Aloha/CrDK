@@ -1,0 +1,10 @@
+{
+  "url": "https://raw.githubusercontent.com/Project-Aloha/UEFIFirmwareBackup/main/qcom-hdk8245/BOOT.XF.3.2-00353-SM8250-1/RawFiles/Panel_r66451_fhd_plus_60hz_cmd.xml",
+  "sha256": "8e00f827aa9234a4936ee0893866e4e37e54312f8c0b93d3c8d706ad1a7d2118",
+  "size": 3051,
+  "dtb_sha256": "2743c213f1c286030eb65647c693cf0e2dfa69ee2a84ceac0e17a86d82de3070",
+  "last_path_commit": "b603f9b535325a7ec6b6562f265aa003202aec21",
+  "immutable_url": "https://raw.githubusercontent.com/Project-Aloha/UEFIFirmwareBackup/b603f9b535325a7ec6b6562f265aa003202aec21/qcom-hdk8245/BOOT.XF.3.2-00353-SM8250-1/RawFiles/Panel_r66451_fhd_plus_60hz_cmd.xml",
+  "license_notice_in_xml": null,
+  "root_license_files": []
+}

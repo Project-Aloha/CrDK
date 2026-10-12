@@ -168,7 +168,7 @@ TestTranslatedHostReads (
 
   ResetAccesses ();
   mTestPciIoTranslation = 0;
-  Status = mCpuIo2.Io.Read (
+  Status = mCpuIo2.Mem.Read (
                         &mCpuIo2,
                         EfiCpuIoWidthUint32,
                         0x60200020,
@@ -194,7 +194,7 @@ TestTranslatedHostWrites (
 
   ResetAccesses ();
   mTestPciIoTranslation = 0;
-  Status = mCpuIo2.Io.Write (
+  Status = mCpuIo2.Mem.Write (
                          &mCpuIo2,
                          EfiCpuIoWidthUint16,
                          0x40200010,

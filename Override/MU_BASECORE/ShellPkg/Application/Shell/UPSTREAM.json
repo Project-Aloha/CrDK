@@ -1,0 +1,103 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "ShellPkg/Application/Shell",
+  "scope": "Explicit platform copy to remove functional changes from official submodule; same behavior as local pre-migration module",
+  "files": {
+    "ConsoleLogger.c": {
+      "upstream_sha256": "4138c981b7ab4fc369288e0201f4affbd019174fd6557df98fde49b7b3d4779b",
+      "pre_migration_sha256": "4138c981b7ab4fc369288e0201f4affbd019174fd6557df98fde49b7b3d4779b",
+      "platform_sha256": "4138c981b7ab4fc369288e0201f4affbd019174fd6557df98fde49b7b3d4779b"
+    },
+    "ConsoleLogger.h": {
+      "upstream_sha256": "a9ba5274ac92364abc86f08382f191eda1ade91f657bbf6b3e6f1e05587e42c1",
+      "pre_migration_sha256": "a9ba5274ac92364abc86f08382f191eda1ade91f657bbf6b3e6f1e05587e42c1",
+      "platform_sha256": "a9ba5274ac92364abc86f08382f191eda1ade91f657bbf6b3e6f1e05587e42c1"
+    },
+    "ConsoleWrappers.c": {
+      "upstream_sha256": "d1f304c9d9d6a8c4ce54a1be1d25e9deab3e5a63af2b55acc68f87c8795f2554",
+      "pre_migration_sha256": "d1f304c9d9d6a8c4ce54a1be1d25e9deab3e5a63af2b55acc68f87c8795f2554",
+      "platform_sha256": "d1f304c9d9d6a8c4ce54a1be1d25e9deab3e5a63af2b55acc68f87c8795f2554"
+    },
+    "ConsoleWrappers.h": {
+      "upstream_sha256": "d859e1dea9310d61659af32d05b17c6541e4a096a3b47d4cb5836f5b6603467e",
+      "pre_migration_sha256": "d859e1dea9310d61659af32d05b17c6541e4a096a3b47d4cb5836f5b6603467e",
+      "platform_sha256": "d859e1dea9310d61659af32d05b17c6541e4a096a3b47d4cb5836f5b6603467e"
+    },
+    "FileHandleInternal.h": {
+      "upstream_sha256": "1be23ae100a502e4e8d8017eda796937eb159883d6f2efa17196f20e6f46bce0",
+      "pre_migration_sha256": "1be23ae100a502e4e8d8017eda796937eb159883d6f2efa17196f20e6f46bce0",
+      "platform_sha256": "1be23ae100a502e4e8d8017eda796937eb159883d6f2efa17196f20e6f46bce0"
+    },
+    "FileHandleWrappers.c": {
+      "upstream_sha256": "aeaaa80efcead914afef9e10c7185e5e9b14b6a38801481ada978bdf22e11c82",
+      "pre_migration_sha256": "aeaaa80efcead914afef9e10c7185e5e9b14b6a38801481ada978bdf22e11c82",
+      "platform_sha256": "aeaaa80efcead914afef9e10c7185e5e9b14b6a38801481ada978bdf22e11c82"
+    },
+    "FileHandleWrappers.h": {
+      "upstream_sha256": "a8b834db3002b596756572f33ef472a4a3d6e0800edfa73a89741bf972b2e98c",
+      "pre_migration_sha256": "a8b834db3002b596756572f33ef472a4a3d6e0800edfa73a89741bf972b2e98c",
+      "platform_sha256": "a8b834db3002b596756572f33ef472a4a3d6e0800edfa73a89741bf972b2e98c"
+    },
+    "Shell.c": {
+      "upstream_sha256": "6bacc12822054dda3d892b73eda8871b126a913a29ec7462eeab107967930840",
+      "pre_migration_sha256": "6bacc12822054dda3d892b73eda8871b126a913a29ec7462eeab107967930840",
+      "platform_sha256": "6bacc12822054dda3d892b73eda8871b126a913a29ec7462eeab107967930840"
+    },
+    "Shell.h": {
+      "upstream_sha256": "b89cf27ea1fa054f7b6aa0361f86735390e89d5e3513453baa8f8d824613b6be",
+      "pre_migration_sha256": "b89cf27ea1fa054f7b6aa0361f86735390e89d5e3513453baa8f8d824613b6be",
+      "platform_sha256": "b89cf27ea1fa054f7b6aa0361f86735390e89d5e3513453baa8f8d824613b6be"
+    },
+    "Shell.inf": {
+      "upstream_sha256": "d46bc78bf707429b537d92916a0a7e6a6be6ae4fac9ec4ce14ad324413cd05f1",
+      "pre_migration_sha256": "d46bc78bf707429b537d92916a0a7e6a6be6ae4fac9ec4ce14ad324413cd05f1",
+      "platform_sha256": "d46bc78bf707429b537d92916a0a7e6a6be6ae4fac9ec4ce14ad324413cd05f1"
+    },
+    "Shell.uni": {
+      "upstream_sha256": "480719ce681dcadc4b95fce7073199ab1a9c31426bbdb169ab280499aa71f1fd",
+      "pre_migration_sha256": "480719ce681dcadc4b95fce7073199ab1a9c31426bbdb169ab280499aa71f1fd",
+      "platform_sha256": "480719ce681dcadc4b95fce7073199ab1a9c31426bbdb169ab280499aa71f1fd"
+    },
+    "ShellEnvVar.c": {
+      "upstream_sha256": "f49a7f2731e7fc76c47324999f83686060f0594ecc5b39d14458c579b183d058",
+      "pre_migration_sha256": "f49a7f2731e7fc76c47324999f83686060f0594ecc5b39d14458c579b183d058",
+      "platform_sha256": "f49a7f2731e7fc76c47324999f83686060f0594ecc5b39d14458c579b183d058"
+    },
+    "ShellEnvVar.h": {
+      "upstream_sha256": "6edf91d5673689c1383cfca971a1cfa3e6e8e33a7a2c852da917d15be0a963ad",
+      "pre_migration_sha256": "6edf91d5673689c1383cfca971a1cfa3e6e8e33a7a2c852da917d15be0a963ad",
+      "platform_sha256": "6edf91d5673689c1383cfca971a1cfa3e6e8e33a7a2c852da917d15be0a963ad"
+    },
+    "ShellManParser.c": {
+      "upstream_sha256": "b8eeeb7870af664c535420f3faded4ab76111db7c624c306287f24c89ec5ad79",
+      "pre_migration_sha256": "b8eeeb7870af664c535420f3faded4ab76111db7c624c306287f24c89ec5ad79",
+      "platform_sha256": "b8eeeb7870af664c535420f3faded4ab76111db7c624c306287f24c89ec5ad79"
+    },
+    "ShellManParser.h": {
+      "upstream_sha256": "196046e886b9d7c94f6171b7b68e79b011f72114992c04e7e1c6b57a08e7bc76",
+      "pre_migration_sha256": "196046e886b9d7c94f6171b7b68e79b011f72114992c04e7e1c6b57a08e7bc76",
+      "platform_sha256": "196046e886b9d7c94f6171b7b68e79b011f72114992c04e7e1c6b57a08e7bc76"
+    },
+    "ShellParametersProtocol.c": {
+      "upstream_sha256": "8b78daf35f70280e13e3928c79854f086d1d9ff5df8a4dcf2227284cd0f2e6c1",
+      "pre_migration_sha256": "1896d18661a27967159849b8ed12418572ef1d4b2bad8b4e7c21ffa9fc0abec1",
+      "platform_sha256": "1896d18661a27967159849b8ed12418572ef1d4b2bad8b4e7c21ffa9fc0abec1"
+    },
+    "ShellParametersProtocol.h": {
+      "upstream_sha256": "cf3d39e5a1b2fa59d74a7d3bc2a9331e6ee71bb101d504c80efd7ae540dcbda5",
+      "pre_migration_sha256": "cf3d39e5a1b2fa59d74a7d3bc2a9331e6ee71bb101d504c80efd7ae540dcbda5",
+      "platform_sha256": "cf3d39e5a1b2fa59d74a7d3bc2a9331e6ee71bb101d504c80efd7ae540dcbda5"
+    },
+    "ShellProtocol.c": {
+      "upstream_sha256": "48056f071fe90bb764913a9e60684c5637bbbd0437421cb3a6bc9c3b2fea75d6",
+      "pre_migration_sha256": "48056f071fe90bb764913a9e60684c5637bbbd0437421cb3a6bc9c3b2fea75d6",
+      "platform_sha256": "48056f071fe90bb764913a9e60684c5637bbbd0437421cb3a6bc9c3b2fea75d6"
+    },
+    "ShellProtocol.h": {
+      "upstream_sha256": "cadee6467199f7b2dd5d3812683d35827fc60372ee0ce54d5c2b81a1599423f4",
+      "pre_migration_sha256": "cadee6467199f7b2dd5d3812683d35827fc60372ee0ce54d5c2b81a1599423f4",
+      "platform_sha256": "cadee6467199f7b2dd5d3812683d35827fc60372ee0ce54d5c2b81a1599423f4"
+    }
+  }
+}

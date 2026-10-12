@@ -27,6 +27,39 @@ with tempfile.TemporaryDirectory(prefix="crane-pci-host-test-") as tmp:
     ], check=True)
     subprocess.run([str(exe)], check=True)
     subprocess.run([
+        args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1", "-include", "Uefi.h",
+        "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-DMDEPKG_NDEBUG",
+        "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+        "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+        "-I" + str(crane / "Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include/X64"),
+        "-I" + str(args.edk2 / "MdeModulePkg/Include"),
+        str(crane / "Tests/PciEndpointPowerTest.c"),
+        str(crane / "Library/RpmhLib/rpmh_rail.c"),
+        str(crane / "Library/RpmhArcVoteLib/RpmhArcVote.c"),
+        str(crane / "Target/Sm8450/CrPcieTarget.c"),
+        str(crane / "Target/Sm8450/CrPcieBackend.c"), "-o", str(exe),
+    ], check=True)
+    subprocess.run([str(exe)], check=True)
+    subprocess.run([
+        args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1", "-include", "Uefi.h",
+        "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
+        "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+        "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+        "-I" + str(crane / "Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include"),
+        "-I" + str(args.edk2 / "MdePkg/Include/X64"),
+        "-I" + str(args.edk2 / "MdeModulePkg/Include"),
+        str(crane / "Tests/PciGpioIntegrationTest.c"),
+        str(crane / "Library/GpioLib/gpio.c"),
+        str(crane / "Library/GpioSdLib/GpioSd.c"),
+        str(crane / "Target/Sm8450/CrGpioTarget.c"),
+        str(crane / "Target/Sm8450/CrPcieTarget.c"),
+        str(crane / "Target/Sm8450/CrPcieBackend.c"), "-o", str(exe),
+    ], check=True)
+    subprocess.run([str(exe)], check=True)
+    subprocess.run([
         args.cc, "-std=c11", "-fshort-wchar", "-g", "-O1",
         "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
         "-Wno-unused-parameter",

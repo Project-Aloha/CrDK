@@ -1,5 +1,5 @@
 // #define CR_OSKAL_TRACE_MMIO 1
-#include <clock_internal.h>
+#include "clock_internal.h"
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_EN_MSK BIT(20)
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_CLR_MSK BIT(21)
 #define CLOCK_DEBUGCC_CTL_REG_XO_DIV4_TERM_COUNT_MSK GEN_MSK(19, 0)
@@ -18,6 +18,7 @@ DebugccMeasureClockInternal(
     IN DebugccInfo *Clock, IN UINT64 SampleTicks)
 {
   UINT32 MeasurementResult = 0;
+  UNREFERENCED_PARAMETER(Clock);
 
   // Ensure measurement is disabled
   CrMmioUpdateBits32(

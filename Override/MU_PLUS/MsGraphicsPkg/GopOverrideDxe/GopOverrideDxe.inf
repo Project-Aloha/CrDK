@@ -1,0 +1,53 @@
+## @file
+# Implements a Graphics (GOP) Override Driver
+#
+# Copyright (C) Microsoft Corporation. All rights reserved..
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = GopOverrideDxe
+  FILE_GUID                      = 27D4595D-D3AA-4008-9B02-881B0AC25F09
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = DriverInit
+  UNLOAD_IMAGE                   = DriverUnload
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 IPF EBC
+#
+
+[Sources]
+  GopOverrideDxe.c
+
+[Packages]
+  CranePkg/CranePkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MsGraphicsPkg/MsGraphicsPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  DebugLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DxeServicesTableLib
+  UefiBootServicesTableLib
+  PcdLib
+
+[Guids]
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid    # CONSUMES
+  gEfiDevicePathProtocolGuid        # CONSUMES
+
+[Pcd]
+  gCranePkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid
+  gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideProtocolGuid
+
+[Depex]
+  TRUE

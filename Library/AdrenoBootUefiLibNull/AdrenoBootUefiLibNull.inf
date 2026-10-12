@@ -1,0 +1,15 @@
+## @file
+# Explicit ACPI pass-through adapter for platforms without SM8450 admission.
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = AdrenoBootUefiLibNull
+  FILE_GUID = 1dbf1b5d-2b7d-4a61-bd47-0982d40c5016
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoBootUefiLib|DXE_DRIVER
+[Sources]
+  AdrenoBootUefiNull.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

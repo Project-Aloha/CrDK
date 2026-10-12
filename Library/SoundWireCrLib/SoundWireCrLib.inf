@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = SoundWireCrLib
+  FILE_GUID = 5AA847BA-AE30-4DE9-986A-E7761F46D687
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SoundWireCrLib
+[Sources]
+  SoundWire.c
+  Sm8450.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  OskInterruptLib
+  SynchronizationLib

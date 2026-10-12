@@ -22,7 +22,7 @@ STATIC inline INTN cr_memcmp(const VOID *dest, const VOID *src, UINTN len) {
 }
 
 // memcpy wrapper
-STATIC inline VOID *cr_memcpy(VOID *dest, VOID *src, UINTN len) {
+STATIC inline VOID *cr_memcpy(VOID *dest, CONST VOID *src, UINTN len) {
   RtlCopyMemory(dest, src, len);
   return dest;
 }
@@ -62,7 +62,7 @@ STATIC inline INTN cr_memcmp(const VOID *dest, const VOID *src, UINTN len) {
 }
 
 // memcpy wrapper
-STATIC inline VOID *cr_memcpy(VOID *dest, VOID *src, UINTN len) {
+STATIC inline VOID *cr_memcpy(VOID *dest, CONST VOID *src, UINTN len) {
   return CopyMem(dest, src, len);
 }
 

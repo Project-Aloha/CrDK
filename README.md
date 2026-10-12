@@ -7,7 +7,8 @@ This repo is also a UEFI Package and provides uefi drivers.
 Include `Crane.dsc.inc`, `Crane.fdf.inc` and `Crane.Apriori.inc` at a correct place of your target uefi package. Then rebuild
 your package.  
 `CrDALDxe` publishes silicon descriptions from the selected `CrTargetLib`
-provider. DXE consumers use `CrDalLib`; portable hardware libraries receive
+provider and a read-only ABL FDT protocol from the raw SEC copy/HOB handoff.
+DXE consumers use `CrDalLib`; portable hardware libraries receive
 their target context from the DXE resource owner. See
 [CrDAL.md](Documentation/CrDAL.md) for the device-data ABI and ownership rules.
 The [Waipio bring-up notes](Documentation/WaipioBringup.md) describe resource

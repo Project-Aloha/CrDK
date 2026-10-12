@@ -22,10 +22,14 @@
   ArmLib
   DebugLib
   IoLib
+  OskMemmapLib
   SynchronizationLib
   TimerLib
 
 [Sources.common]
   clock.c
+  clock_config.c
+  clock_votes.c
+  fixed_pll.c
   gdsc.c
   debugcc.c

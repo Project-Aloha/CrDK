@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = GpioSdLib
+  FILE_GUID = C385A319-65C5-4B9B-9D87-53D9F5669F1A
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = GpioSdLib
+[Sources]
+  GpioSd.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  GpioLib
+  BaseLib
+  IoLib

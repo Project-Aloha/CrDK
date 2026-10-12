@@ -1,0 +1,20 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ScmCrLib
+  FILE_GUID = 8779D6B5-359A-4CF8-BA15-FF13931F7D05
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ScmCrLib
+[Sources]
+  Scm.c
+  ScmPas.c
+  ScmUefi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  ArmLib
+  ArmSmcLib
+  BaseLib
+  BaseMemoryLib
+  SynchronizationLib

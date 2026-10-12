@@ -1,0 +1,13 @@
+# Shared SPMI ownership
+
+`SpmiSharedCrLib` assigns typed clients to one initialized Qualcomm arbiter. It is portable: native firmware serializes the entire provider and every client call using OSKAL's interrupt guard; a Windows resource driver must provide equivalent exclusion and own its deferred IRQ lifetime. This library does not create a Windows device or register another parent interrupt.
+
+Initialization requires the explicit `SharedParentIrqScan` policy as well as external interrupt registration. Only a parent owner that masks the upstream source on failed ACK or orphan dispatch may opt in. The native owner saves and restores both borrowed DAL flags after exact raw deinitialization; uncertain retirement retains them. `InterruptExternallyManaged` alone does not expand a legacy client scan window.
+
+The client token, bus table and subscription token are bound to their original addresses and monotonic generations. Call each bus operation with the **original bus table pointer** as its first argument. Client permissions are copied at acquisition. Each owned PMIC interrupt bit has a retained configuration/enable snapshot; shared PIC access-enable state belongs to the APID, not to an individual client. Ordinary writes cannot change interrupt-control registers.
+
+`Close` seals new operations. Existing clients can call `BeginRetire` to restore their original GPIO state and unsubscribe; the provider cannot be released until every subscription and client has retired. Failed reads, writes, partial IRQ enables and restoration readback failures retain the exact token and saved state. `Dispatch` invokes wake callbacks only; callbacks cannot reenter bus operations. The native adapter masks the parent in its ISR, performs bounded dispatch in its queued work, and rearms under the same guard. Unknown/uncertain sources preserve PMIC latches and close the parent rather than repeatedly interrupting.
+
+This is a firmware ownership API, not an arbitrary user-mode register-access interface. Windows has an existing SPMI adapter whose deferred handler currently discards dispatch failures. It has no qualified fault-mask/rundown path for this shared-parent policy, and is therefore deliberately not opted in. That adapter must complete this separate migration before selecting the shared core; the native EFI protocol is not a Windows ABI.
+
+The existing SpmiLib files retain their MIT notices. Source reference for the unmapped interrupt behavior is Linux `drivers/spmi/spmi-pmic-arb.c` (`cleanup_irq`) at commit `a53261b60834ce617cc4f3c7723dda8285c59789` in https://github.com/sunflower2333/linux .

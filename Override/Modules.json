@@ -1,0 +1,26 @@
+{
+  "description": "Explicit platform-owned replacements for previously edited official modules; original GUIDs retained, select exactly one instance",
+  "modules": {
+    "EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOutSerial.inf": "CranePkg/Override/MU_BASECORE/EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOutSerial.inf",
+    "MdeModulePkg/Universal/SerialDxe/SerialDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/SerialDxe/SerialDxe.inf",
+    "MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf",
+    "MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf",
+    "ShellPkg/Application/Shell/Shell.inf": "CranePkg/Override/MU_BASECORE/ShellPkg/Application/Shell/Shell.inf",
+    "ShellPkg/Library/UefiShellLib/UefiShellLib.inf": "CranePkg/Override/MU_BASECORE/ShellPkg/Library/UefiShellLib/UefiShellLib.inf",
+    "EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf": "CranePkg/Override/MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf",
+    "MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf",
+    "MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf",
+    "MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf",
+    "MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf",
+    "MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf",
+    "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf",
+    "HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf": "CranePkg/Override/MU_PLUS/HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf",
+    "HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf": "CranePkg/Override/MU_PLUS/HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf",
+    "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf": "CranePkg/Override/MU_PLUS/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf",
+    "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf": "CranePkg/Override/MU_PLUS/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf",
+    "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf": "CranePkg/Override/MU_PLUS/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
+    "MsCorePkg/AcpiRGRT/AcpiRgrt.inf": "CranePkg/Override/MU_PLUS/MsCorePkg/AcpiRGRT/AcpiRgrt.inf",
+    "MsWheaPkg/HwErrBert/HwErrBert.inf": "CranePkg/Override/MU_PLUS/MsWheaPkg/HwErrBert/HwErrBert.inf",
+    "MdeModulePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf": "CranePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf"
+  }
+}

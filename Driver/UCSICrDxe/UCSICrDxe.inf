@@ -1,0 +1,41 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = UCSICrDxe
+  FILE_GUID = d2b0665b-1087-4a50-9064-38c819e25106
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = UCSICrEntryPoint
+  UNLOAD_IMAGE = UCSICrUnload
+
+[Sources]
+  UCSICrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  UcsiCrLib
+  UcsiTargetLib
+  BaseMemoryLib
+  DebugLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiPilCrProtocolGuid ## CONSUMES
+  gEfiSmemCrProtocolGuid ## CONSUMES
+  gEfiGpioCrProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid ## CONSUMES
+  gEfiUsbTypeCCrProtocolGuid ## PRODUCES
+  gEfiPmicGlinkCrProtocolGuid ## PRODUCES
+  gHardwareInterrupt2ProtocolGuid ## CONSUMES
+
+[Guids]
+  gEfiEventExitBootServicesGuid
+
+[Depex]
+  gEfiSmemCrProtocolGuid AND gEfiGpioCrProtocolGuid AND gEfiPilCrProtocolGuid AND gEfiRpmhCrProtocolGuid AND gHardwareInterrupt2ProtocolGuid

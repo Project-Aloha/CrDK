@@ -1,0 +1,17 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PmicGpioLib
+  FILE_GUID = 65ab2e64-315d-4b65-8cdb-57bb18e74335
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PmicGpioLib
+[Sources]
+  pmic_gpio.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  SynchronizationLib

@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "ShellPkg/Library/UefiShellLib",
+  "scope": "Explicit platform copy to remove functional changes from official submodule; same behavior as local pre-migration module",
+  "files": {
+    "UefiShellLib.c": {
+      "upstream_sha256": "d372888b4116ae54eac9f6c89a2d8989d7a216455473df6e91c21c0af41b0018",
+      "pre_migration_sha256": "60d6d99567110105aad15b89ee589190f52e4b34ccc7a27c49572dde094052d4",
+      "platform_sha256": "60d6d99567110105aad15b89ee589190f52e4b34ccc7a27c49572dde094052d4"
+    },
+    "UefiShellLib.h": {
+      "upstream_sha256": "086447a51e5ea7be533ec34bb25b633cfbe0bf9c1f7554ed2e45c53a54bcc12c",
+      "pre_migration_sha256": "086447a51e5ea7be533ec34bb25b633cfbe0bf9c1f7554ed2e45c53a54bcc12c",
+      "platform_sha256": "086447a51e5ea7be533ec34bb25b633cfbe0bf9c1f7554ed2e45c53a54bcc12c"
+    },
+    "UefiShellLib.inf": {
+      "upstream_sha256": "e785456895702dcc3f88692a7f6a0535bb14f1913ea8f28ad60e8685770f6704",
+      "pre_migration_sha256": "e785456895702dcc3f88692a7f6a0535bb14f1913ea8f28ad60e8685770f6704",
+      "platform_sha256": "e785456895702dcc3f88692a7f6a0535bb14f1913ea8f28ad60e8685770f6704"
+    }
+  }
+}

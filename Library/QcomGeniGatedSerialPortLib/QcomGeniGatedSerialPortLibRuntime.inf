@@ -1,0 +1,39 @@
+## @file
+# Inactive runtime copy keeps firmware-time diagnostics, closes before EBS.
+# SPDX-License-Identifier: MIT
+##
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = QcomGeniGatedSerialPortLibRuntime
+  FILE_GUID = C5420575-674A-477C-9C2A-98A0D98DF349
+  MODULE_TYPE = DXE_RUNTIME_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SerialPortLib|DXE_RUNTIME_DRIVER
+  CONSTRUCTOR = CrUartSerialConstructor
+  DESTRUCTOR = CrUartSerialDestructor
+
+[Sources]
+  GatedSerial.c
+  UartAdmissionUefi.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+
+[LibraryClasses]
+  UartAdmissionLib
+  SynchronizationLib
+  PcdLib
+  TimerLib
+
+[Guids]
+  gEfiEventExitBootServicesGuid
+
+[FixedPcd]
+  gMUCommonCrPkgTokenSpaceGuid.PcdUartSerialBase
+  gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate
+
+[BuildOptions]
+  GCC:*_*_*_CC_FLAGS = -DCR_UART_RUNTIME_COPY=1
+  MSFT:*_*_*_CC_FLAGS = /DCR_UART_RUNTIME_COPY=1

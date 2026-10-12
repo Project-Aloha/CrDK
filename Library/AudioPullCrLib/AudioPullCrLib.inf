@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AudioPullCrLib
+  FILE_GUID = 2CB710BE-F385-4F86-9E95-E53B957DF674
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AudioPullCrLib
+[Sources]
+  Pull.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  AudioPcmCrLib
+  AudioGprCrLib

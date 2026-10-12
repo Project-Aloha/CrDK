@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PmicCcCrDxe
+  FILE_GUID = 0fac03de-383e-5d63-a209-aae027dcdca4
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = PmicCcCrEntryPoint
+  UNLOAD_IMAGE = PmicCcCrUnload
+[Sources]
+  PmicCcCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  DebugLib
+  OskInterruptLib
+  PmicCcCrLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiCrSpmiProtocolGuid ## CONSUMES
+  gEfiUsbTypeCCrProtocolGuid ## PRODUCES
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiCrSpmiProtocolGuid

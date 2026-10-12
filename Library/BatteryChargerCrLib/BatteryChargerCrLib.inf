@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BatteryChargerCrLib
+  FILE_GUID = 48620361-1a65-4ae2-82d2-82c1c5c2223e
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = BatteryChargerCrLib
+[Sources]
+  BatteryCharger.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib

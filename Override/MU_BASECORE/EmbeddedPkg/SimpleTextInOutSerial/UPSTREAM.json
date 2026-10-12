@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "EmbeddedPkg/SimpleTextInOutSerial",
+  "scope": "Explicit platform copy to remove functional changes from official submodule; same behavior as local pre-migration module",
+  "files": {
+    "SimpleTextInOut.c": {
+      "upstream_sha256": "3b03f34654dba2b0b1e112b216bcb85376d1184d8a583cda6a9610c2763259a3",
+      "pre_migration_sha256": "07dbb6565fdfc44bbd47f763a55ca45786e6eb78041635174d9f2c16c18e7d40",
+      "platform_sha256": "07dbb6565fdfc44bbd47f763a55ca45786e6eb78041635174d9f2c16c18e7d40"
+    },
+    "SimpleTextInOutSerial.inf": {
+      "upstream_sha256": "92241d8b8d64aa718ac52943dd9376fea1a059583b80614749c1a0b38e82c1cd",
+      "pre_migration_sha256": "92241d8b8d64aa718ac52943dd9376fea1a059583b80614749c1a0b38e82c1cd",
+      "platform_sha256": "92241d8b8d64aa718ac52943dd9376fea1a059583b80614749c1a0b38e82c1cd"
+    }
+  }
+}

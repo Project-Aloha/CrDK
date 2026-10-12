@@ -1,0 +1,21 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ClockExternalLib
+  FILE_GUID = C1C98326-BCC6-4C65-9F2A-2A763C33BB7C
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ClockExternalLib
+[Sources]
+  ClockExternal.c
+  ClockExternalPlan.c
+  ClockExternalLease.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  ClockLib
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  TimerLib
+  MdssHandoffCrLib

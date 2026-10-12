@@ -7,10 +7,13 @@
 #define CR_DAL_LIB_H_
 
 #include <Library/CrTargetButtonsLib.h>
+#include <Library/CrTargetMdssLib.h>
 #include <Library/CrTargetInterconnectLib.h>
 #include <Library/CrTargetPcieLib.h>
 #include <Library/CrTargetPmicGpioLib.h>
 #include <Library/CrTargetQupLib.h>
+#include <Library/CrTargetSdLib.h>
+#include <Library/CrTargetUfsLib.h>
 #include <Library/CrTargetSmmuLib.h>
 #include <Library/CrTargetTrngLib.h>
 #include <Library/clock.h>
@@ -63,11 +66,14 @@ CONST PcieTargetContext *CrDalGetPcieContext (VOID);
 CONST InterconnectTargetContext *CrDalGetInterconnectContext (VOID);
 CONST CrTargetSmmuContext       *CrDalGetSmmuContext (VOID);
 CONST CR_TARGET_QUP_CONTEXT     *CrDalGetQupContext (VOID);
+CONST CR_TARGET_SD_CONTEXT      *CrDalGetSdContext (VOID);
+CONST CR_TARGET_UFS_CONTEXT     *CrDalGetUfsContext (VOID);
 SpmiDeviceContext               *CrDalGetSpmiContext (VOID);
 CONST PmicGpioTargetContext     *CrDalGetPmicGpioContext (VOID);
 CONST ButtonsTargetContext      *CrDalGetButtonsContext (VOID);
 CONST CR_DAL_CMD_DB_CONFIG       *CrDalGetCmdDbConfig (VOID);
 CONST CR_DAL_LT9611_CONFIG       *CrDalGetLt9611Config (VOID);
+CONST CR_MDSS_TARGET             *CrDalGetMdssContext (VOID);
 
 CR_STATUS
 CrDalClockInit (

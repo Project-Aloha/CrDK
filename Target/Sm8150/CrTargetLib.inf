@@ -9,14 +9,16 @@
 [Sources]
   CrTarget.c
   CrDebugUartTarget.c
+  CrGpioTarget.c
 
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
 
 [LibraryClasses]
   BaseLib
+  PcdLib
 
 [Pcd]
-  gAndromedaPkgTokenSpaceGuid.PcdUartSerialBase
+  gMUCommonCrPkgTokenSpaceGuid.PcdUartSerialBase

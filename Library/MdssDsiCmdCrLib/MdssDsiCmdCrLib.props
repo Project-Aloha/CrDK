@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Plan.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Io.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Host.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)PanelR66451.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Panel.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)PhySm8250.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)DscLegacy.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)DpuCommand.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Freeze.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Lifecycle.c" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\MdssDscCrLib\MdssDscCrLib.props" />
+</Project>

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PmicCcCrLib
+  FILE_GUID = d4c7d109-5b53-5971-980a-e7913a72d89f
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PmicCcCrLib
+[Sources]
+  PmicCc.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  SynchronizationLib

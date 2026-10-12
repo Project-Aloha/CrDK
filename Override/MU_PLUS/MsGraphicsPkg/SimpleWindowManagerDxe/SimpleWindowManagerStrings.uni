@@ -1,0 +1,33 @@
+// *++
+//
+// Strings for Simple Window Manager
+//
+// Copyright (C) Microsoft Corporation. All rights reserved.
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+// --*/
+
+#langdef   en-US " English "
+#langdef   fr-FR " Français "
+#langdef   ja-JP "\wide 日本語 "
+
+#langdef   en    " Standard English "
+#langdef   fr    " Standard Français "
+#langdef   ja    "\wide 日本語 "
+
+////////////////////////////////////////////////////////////////////////////////////
+// Generic Strings
+//
+#string STR_NULL_STRING             #language en-US  ""
+                                    #language ja-JP  ""
+
+////////////////////////////////////////////////////////////////////////////////////
+// Generic Strings
+//
+#string STR_POWER_TIMEOUT_TITLE     #language en-US  "Shutdown pending"
+                                    #language ja-JP  "Shutdown pending"
+
+#string STR_POWER_TIMEOUT_CAPTION   #language en-US  "Shutdown pending due to inactivity"
+                                    #language ja-JP  "Shutdown pending due to inactivity"
+
+#string STR_POWER_TIMEOUT_BODY      #language en-US  "Shutting down in 30 seconds due to inactivity.  Click Cancel to stop the shutdown and return to settings."
+                                    #language ja-JP  "Shutting down in 30 seconds due to inactivity.  Click Cancel to stop the shutdown and return to settings."

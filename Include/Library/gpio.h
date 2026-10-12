@@ -166,6 +166,8 @@ typedef struct {
 
 // Gpio Pin Info
 typedef struct {
+  // Normal GPIO: tile/stride bank base. Special pads: TLMM base; their
+  // register offsets are already TLMM-relative and are applied by lookup.
   UINTN              PinAddress;
   UINT8              WakeBit;
   BOOLEAN            Reserved;
@@ -193,6 +195,10 @@ typedef struct {
 
   /* Gpio Pins */
   GpioPinInfo GpioPins[GPIO_PINS_MAX];
+  // Zero means unsupported. EGPIO selects the remote owner, not a TLMM mux.
+  GpioFunctionType EgpioFunction;
+  // Native convenience handlers, including retained failed PDC cleanup.
+  UINT16 ActiveInterrupts;
 } GpioDeviceContext;
 
 GpioValueType
@@ -203,6 +209,10 @@ GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex);
 
 VOID GpioSetConfig(
     IN GpioDeviceContext *GpioContext, IN GpioConfigParams *ConfigParams);
+/* Checked whole logical pad configuration under external GPIO/class locking.
+ * Validates every selected field before writes, restores the output latch even
+ * for an input pin, and verifies actual pad configuration/latch readback. */
+CR_STATUS GpioApplyConfigChecked(IN GpioDeviceContext *,IN CONST GpioConfigParams *);
 
 VOID GpioReadConfig(
     IN GpioDeviceContext *GpioContext, IN OUT GpioConfigParams *ConfigParams);
@@ -217,6 +227,9 @@ CR_STATUS GpioRegisterGpioIrq(
     IN GpioDeviceContext *Context, IN PdcDeviceContext *PdcContext,
     IN UINT16 GpioIndex, IN CR_INTERRUPT_HANDLER InterruptHandler,
     IN VOID *Param, IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
+
+CR_STATUS GpioUnregisterGpioIrq(IN GpioDeviceContext *Context,IN UINT16 GpioIndex,
+                               IN CR_INTERRUPT_TRIGGER_TYPE TriggerType);
 
 CR_STATUS GpioInitIrq(GpioDeviceContext *Context);
 

@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UsbMscCrLib
+  FILE_GUID = A62D86B6-5489-4BDE-876B-AE2F59EB78D6
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UsbMscCrLib
+[Sources]
+  UsbMsc.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

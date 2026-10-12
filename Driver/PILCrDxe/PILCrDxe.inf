@@ -1,0 +1,44 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PILCrDxe
+  FILE_GUID = 77E44F0C-2E6B-41D3-9388-3432C10D6E86
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = PILCrDxeEntryPoint
+  UNLOAD_IMAGE = PILCrDxeUnload
+[Sources]
+  PILCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  CrDalLib
+  DebugLib
+  DxeServicesTableLib
+  MemoryAllocationLib
+  PILCrLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+[Protocols]
+  gEfiCrDalProtocolGuid
+  gEfiSmemCrProtocolGuid
+  gEfiCmdDBCrProtocolGuid
+  gEfiRpmhCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiPilCrProtocolGuid
+  gEfiDriverBindingProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiDevicePathProtocolGuid
+[Guids]
+  gEfiFileInfoGuid
+  gEfiEventExitBootServicesGuid
+  gEfiEventReadyToBootGuid
+[Depex]
+  gEfiCrDalProtocolGuid AND gEfiSmemCrProtocolGuid AND gEfiCmdDBCrProtocolGuid AND
+  gEfiRpmhCrProtocolGuid AND gEfiInterconnectCrProtocolGuid

@@ -1,0 +1,41 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = SdhciCrDxe
+  FILE_GUID = 4760419F-20FD-4C61-81D9-30D8450CC202
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = SdhciCrDxeEntryPoint
+  UNLOAD_IMAGE = SdhciCrDxeUnload
+[Sources]
+  SdhciCrDxe.c
+  MmcHost.c
+  SdResources.c
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  CrDalLib
+  BaseMemoryLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  SdhciMsmLib
+  GpioSdLib
+  OskInterruptLib
+[Protocols]
+  gEfiCrDalProtocolGuid
+  gEmbeddedMmcHostProtocolGuid
+  gEfiClockCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiRpmhCrProtocolGuid
+  gEfiGpioCrProtocolGuid
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiCrDalProtocolGuid AND gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND gEfiRpmhCrProtocolGuid AND gEfiGpioCrProtocolGuid

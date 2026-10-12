@@ -1,0 +1,44 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "MdeModulePkg/Universal/Console/ConSplitterDxe",
+  "scope": "Explicit platform copy to remove functional changes from official submodule; same behavior as local pre-migration module",
+  "files": {
+    "ComponentName.c": {
+      "upstream_sha256": "1b4d7a278791c7483a9414191485212f40679c2bdea345bf188fad18f5f34f6f",
+      "pre_migration_sha256": "1b4d7a278791c7483a9414191485212f40679c2bdea345bf188fad18f5f34f6f",
+      "platform_sha256": "1b4d7a278791c7483a9414191485212f40679c2bdea345bf188fad18f5f34f6f"
+    },
+    "ConSplitter.c": {
+      "upstream_sha256": "070cb77d55da4c13c0f04c203be5cda8abbccc4f5ed06393e1b05d4a673a9b89",
+      "pre_migration_sha256": "493c3a75bf3e8a73f7ae3b83436cf468d349b98292a066ff7e93ee79ab0e61c2",
+      "platform_sha256": "493c3a75bf3e8a73f7ae3b83436cf468d349b98292a066ff7e93ee79ab0e61c2"
+    },
+    "ConSplitter.h": {
+      "upstream_sha256": "01de917b831421a485e7a8612b54a423f4c862527a7623cd826a4955e0b07839",
+      "pre_migration_sha256": "978f28a8d5debb1bdfe470898e4e7e4539959d3384971cb955385c74f6bb670e",
+      "platform_sha256": "978f28a8d5debb1bdfe470898e4e7e4539959d3384971cb955385c74f6bb670e"
+    },
+    "ConSplitterDxe.inf": {
+      "upstream_sha256": "b38d50fb66f94b2ac0819b02d95f9b9535fa5b85cd6c70f76e7bffdec226e491",
+      "pre_migration_sha256": "687b797f835e2f4541b401f7a878fe3e617ad69dd5680415775b2abb071623e9",
+      "platform_sha256": "e8b133d83000185f173fb0f83efd5d4c6524d6a4f93a5059b6172a727e3f2ad3",
+      "relocation": "Crane package and platform selector token-space declaration only"
+    },
+    "ConSplitterDxe.uni": {
+      "upstream_sha256": "de6eafa519e068e32e6228a06ddc88996880dff847abf119137759ba6b9123fc",
+      "pre_migration_sha256": "de6eafa519e068e32e6228a06ddc88996880dff847abf119137759ba6b9123fc",
+      "platform_sha256": "de6eafa519e068e32e6228a06ddc88996880dff847abf119137759ba6b9123fc"
+    },
+    "ConSplitterDxeExtra.uni": {
+      "upstream_sha256": "85ef4764ae6d93c3b74970575fce972b3ca1cc53b53f79af5af0dba3843012a5",
+      "pre_migration_sha256": "85ef4764ae6d93c3b74970575fce972b3ca1cc53b53f79af5af0dba3843012a5",
+      "platform_sha256": "85ef4764ae6d93c3b74970575fce972b3ca1cc53b53f79af5af0dba3843012a5"
+    },
+    "ConSplitterGraphics.c": {
+      "upstream_sha256": "4e67ba0e2bd10e8425ec3906ad2ceb05e81170a1e88ccd2727d24b3c51cf3930",
+      "pre_migration_sha256": "ec4c0b2013aff52bb9c428b7b6ab6a24d59ebae02e60e13421b5084eb87319c6",
+      "platform_sha256": "ec4c0b2013aff52bb9c428b7b6ab6a24d59ebae02e60e13421b5084eb87319c6"
+    }
+  }
+}

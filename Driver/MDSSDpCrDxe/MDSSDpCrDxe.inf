@@ -1,0 +1,57 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = MDSSDpCrDxe
+  FILE_GUID = 4F20CD57-6C1F-4B0D-9100-3625CFE1672A
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = MDSSDpCrDxeEntryPoint
+  UNLOAD_IMAGE = MDSSDpCrDxeUnload
+[Sources]
+  MDSSDpCrDxe.c
+  DpAux.c
+  DpLink.c
+  DpScanout.c
+  DpFramebuffer.c
+  DpGop.c
+  DpReservation.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  DxeServicesTableLib
+  IoLib
+  MemoryAllocationLib
+  FrameBufferBltLib
+  PcdLib
+  PlatformMemoryMapLib
+  UefiBootManagerLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiUsbTypeCCrProtocolGuid
+  gEfiUsbDpPhyCrProtocolGuid
+  gEfiClockCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiSmmuCrProtocolGuid
+  gEdkiiIoMmuProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiSimpleTextOutProtocolGuid
+  gEfiMdssHandoffProtocolGuid
+  gEfiCrRamRangeProtocolGuid
+[Guids]
+  gEfiEventExitBootServicesGuid
+  gEfiConsoleOutDeviceGuid
+[FixedPcd]
+  gMUCommonCrPkgTokenSpaceGuid.PcdPlatformDisplayPortConsoleEnable
+[Depex]
+  gEfiUsbTypeCCrProtocolGuid AND gEfiUsbDpPhyCrProtocolGuid AND
+  gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND
+  gEfiSmmuCrProtocolGuid AND gEdkiiIoMmuProtocolGuid AND gEfiMdssHandoffProtocolGuid AND gEfiCrRamRangeProtocolGuid

@@ -1,0 +1,24 @@
+## Inactive final HDK native UART producer. SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UartHandoffCrDxe
+  FILE_GUID = 20382AF5-7EDC-46B8-B3E5-B364D6D28452
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = CrUartHandoffEntryPoint
+  UNLOAD_IMAGE = CrUartHandoffUnload
+[Sources]
+  UartHandoffCrDxe.c
+  UartFirmwareCoverage.h
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  UartHandoffUefiLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Guids]
+  gEfiEventExitBootServicesGuid
+  gEfiEventReadyToBootGuid
+[Depex]
+  TRUE

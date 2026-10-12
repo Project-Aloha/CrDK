@@ -1,0 +1,29 @@
+## Inactive final native UART evidence publisher. SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UartHandoffUefiLib
+  FILE_GUID = CA230559-1E97-4665-A7DD-1DF385469D1B
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UartHandoffUefiLib|DXE_DRIVER
+[Sources]
+  UartHandoffUefi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  UartAdmissionLib
+  UartHandoffLib
+  ArmLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DxeServicesTableLib
+  IoLib
+  TimerLib
+  SynchronizationLib
+  UefiBootServicesTableLib
+[Protocols]
+  gEfiAcpiTableProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiFirmwareVolumeBlockProtocolGuid

@@ -1,3 +1,4 @@
+#include <Library/PcdLib.h>
 #include <Library/CrTargetDebugUartLib.h>
 #include <oskal/common.h>
 

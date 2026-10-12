@@ -100,6 +100,11 @@ PmicArbPpidToApidV2(SpmiDeviceContext *Ctx, UINT16 Ppid, UINT16 *Apid) {
   if (Ppid >= SPMI_PMIC_ARB_MAX_PPID) {
     return CR_INVALID_PARAMETER;
   }
+  if (Ctx->PmicArb.MaxPeriphs==0 || Ctx->PmicArb.MaxPeriphs>SPMI_PMIC_ARB_MAX_PERIPHS ||
+      !SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CORE,
+          PmicArbGetApidMapOffsetV2((UINT16)(Ctx->PmicArb.MaxPeriphs-1U)),sizeof(UINT32)) ||
+      !SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CONFIG,
+          0x700U+4U*(Ctx->PmicArb.MaxPeriphs-1U),sizeof(UINT32))) return CR_INVALID_PARAMETER;
   ApidValid = Ctx->Bus.PpidToApid[Ppid];
   if ((ApidValid & (UINT16)SPMI_PMIC_ARB_APID_VALID) == 0) {
     ApidValid = PmicArbFindApid(Ctx, Ppid);
@@ -108,7 +113,9 @@ PmicArbPpidToApidV2(SpmiDeviceContext *Ctx, UINT16 Ppid, UINT16 *Apid) {
     }
   }
 
-  *Apid = (UINT16)(ApidValid & ~SPMI_PMIC_ARB_APID_VALID);
+  UINT16 Result=(UINT16)(ApidValid & ~SPMI_PMIC_ARB_APID_VALID);
+  if (!SpmiApidValid(Ctx,Result)) return CR_INVALID_PARAMETER;
+  *Apid = Result;
   return CR_SUCCESS;
 }
 

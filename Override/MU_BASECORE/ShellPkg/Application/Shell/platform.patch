@@ -1,0 +1,58 @@
+diff --git a/ShellPkg/Application/Shell/ShellParametersProtocol.c b/ShellPkg/Application/Shell/ShellParametersProtocol.c
+index ece7a33f93..ea8f9d2680 100644
+--- a/ShellPkg/Application/Shell/ShellParametersProtocol.c
++++ b/ShellPkg/Application/Shell/ShellParametersProtocol.c
+@@ -1174,7 +1174,12 @@ UpdateStdInStdOutStdErr (
+           ShellInfoObject.NewEfiShellProtocol->DeleteFileByName (StdErrFileName);
+         }
+ 
++        TempHandle = NULL;
+         Status = ShellOpenFileByName (StdErrFileName, &TempHandle, EFI_FILE_MODE_WRITE|EFI_FILE_MODE_READ|EFI_FILE_MODE_CREATE, 0);
++        if (!EFI_ERROR (Status) && (TempHandle == NULL)) {
++          Status = EFI_DEVICE_ERROR;
++        }
++
+         if (!ErrAppend && ErrUnicode && !EFI_ERROR (Status)) {
+           Status = WriteFileTag (TempHandle);
+         }
+@@ -1190,6 +1195,8 @@ UpdateStdInStdOutStdErr (
+         if (!EFI_ERROR (Status)) {
+           ShellParameters->StdErr = TempHandle;
+           gST->StdErr             = CreateSimpleTextOutOnFile (TempHandle, &gST->StandardErrorHandle, gST->StdErr);
++        } else if (TempHandle != NULL) {
++          ShellCloseFile (&TempHandle);
+         }
+       }
+ 
+@@ -1204,10 +1211,13 @@ UpdateStdInStdOutStdErr (
+           ShellInfoObject.NewEfiShellProtocol->DeleteFileByName (StdOutFileName);
+         }
+ 
++        TempHandle = NULL;
+         Status = ShellOpenFileByName (StdOutFileName, &TempHandle, EFI_FILE_MODE_WRITE|EFI_FILE_MODE_READ|EFI_FILE_MODE_CREATE, 0);
+-        if (TempHandle == NULL) {
+-          Status = EFI_INVALID_PARAMETER;
+-        } else {
++        if (!EFI_ERROR (Status) && (TempHandle == NULL)) {
++          Status = EFI_DEVICE_ERROR;
++        }
++
++        if (!EFI_ERROR (Status)) {
+           if (gUnicodeCollation->MetaiMatch (gUnicodeCollation, StdOutFileName, L"NUL")) {
+             // no-op
+           } else if (!OutAppend && OutUnicode && !EFI_ERROR (Status)) {
+@@ -1240,8 +1250,14 @@ UpdateStdInStdOutStdErr (
+           if (!EFI_ERROR (Status)) {
+             ShellParameters->StdOut = TempHandle;
+             gST->ConOut             = CreateSimpleTextOutOnFile (TempHandle, &gST->ConsoleOutHandle, gST->ConOut);
++          } else if (TempHandle != NULL) {
++            ShellCloseFile (&TempHandle);
+           }
+         }
++
++        if (EFI_ERROR (Status)) {
++          DEBUG ((DEBUG_ERROR, "Shell redirection: stdout '%s': %r\n", StdOutFileName, Status));
++        }
+       }
+ 
+       //

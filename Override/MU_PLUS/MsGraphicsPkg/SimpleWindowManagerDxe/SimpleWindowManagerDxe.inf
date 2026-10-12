@@ -1,0 +1,71 @@
+## @file
+# Implements a simple window manager
+#
+# Copyright (C) Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SimpleWindowManagerDxe
+  FILE_GUID                      = 8E747032-7D55-4D95-9A84-77F83370B3A4
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = DriverInit
+  UNLOAD_IMAGE                   = DriverUnload
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 IPF EBC
+#
+
+[Sources]
+  WindowManager.c
+  SimpleWindowManagerProtocol.c
+  SimpleWindowManagerStrings.uni
+  WaitForEvent.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MsGraphicsPkg/MsGraphicsPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  DebugLib
+  BaseLib
+  HiiLib
+  MemoryAllocationLib
+  MsUiThemeLib
+  DxeServicesTableLib
+  UIToolKitLib
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  PcdLib
+  MsColorTableLib
+  SwmDialogsLib
+
+[Guids]
+  gMsTouchPanelGuid
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid    # CONSUMES
+  gEfiAbsolutePointerProtocolGuid   # CONSUMES
+  gEfiDevicePathProtocolGuid        # CONSUMES
+  gEfiSimpleTextInputExProtocolGuid # CONSUMES
+  gEfiHiiFontProtocolGuid           # CONSUMES
+  gMsOSKProtocolGuid                # CONSUMES
+  gMsSREProtocolGuid                # CONSUMES
+  gMsSWMProtocolGuid                # PRODUCES
+
+ [Pcd]
+  gMsGraphicsPkgTokenSpaceGuid.PcdPowerOffDelay
+  gMsGraphicsPkgTokenSpaceGuid.PcdPowerOffHold
+  gMsGraphicsPkgTokenSpaceGuid.PcdSmallAssetMaxScreenWidth
+
+[BuildOptions.AARCH64]
+  MSFT:*_*_AARCH64_DLINK_FLAGS = /include:_fltused
+
+[BuildOptions]
+  MSFT:*_*_X64_DLINK_FLAGS = /include:_fltused

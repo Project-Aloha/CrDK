@@ -1,0 +1,17 @@
+## Inactive data-only UART final evidence core. SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UartHandoffLib
+  FILE_GUID = C9204613-90E8-47F6-A57A-6C2DDDCEB43D
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UartHandoffLib
+[Sources]
+  UartHandoff.c
+  Fv.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib

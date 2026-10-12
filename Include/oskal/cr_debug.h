@@ -8,7 +8,7 @@
 // OS Independent debug print lib
 #ifdef _KERNEL_MODE
 #include <ntddk.h>
-#include "trace.h"
+#include <trace.h>
 
 /* COPY THEY FOLLOWING BLOCK TO TRACE.h */
 // In WPP_CONTROL_GUIDS:
@@ -78,3 +78,17 @@
       ##__VA_ARGS__, __FILE__, __LINE__)
 
 #endif // _KERNEL_MODE
+
+/* Shared hardware libraries must not assume UEFI PrintLib formats. */
+#ifdef _KERNEL_MODE
+#ifndef CR_LOG_CHAR8_STR_FMT
+#define CR_LOG_CHAR8_STR_FMT "%s"
+#endif
+#define CR_LOG_STATUS_FMT "%!STATUS!"
+#define CR_LOG_HEX64_FMT "%I64x"
+#define CR_LOG_UINT64_FMT "%I64u"
+#else
+#define CR_LOG_STATUS_FMT "%r"
+#define CR_LOG_HEX64_FMT "%Lx"
+#define CR_LOG_UINT64_FMT "%Lu"
+#endif

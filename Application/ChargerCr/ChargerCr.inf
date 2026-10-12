@@ -1,0 +1,29 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ChargerCr
+  FILE_GUID = 69DD5901-1A28-4D95-8E0C-79A3AE25D885
+  MODULE_TYPE = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT = ChargerCrEntryPoint
+[Sources]
+  ChargerCr.c
+  ChargerUi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CompilerIntrinsicsLib
+  DebugLib
+  MemoryAllocationLib
+  TimerLib
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid ## CONSUMES
+  gEfiDisplayPowerStateProtocolGuid ## CONSUMES
+  gEfiCrButtonStateProtocolGuid ## CONSUMES
+  gEfiBatteryChargerCrProtocolGuid ## SOMETIMES_CONSUMES

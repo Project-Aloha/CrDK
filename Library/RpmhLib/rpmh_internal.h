@@ -30,6 +30,13 @@
 #define RPMH_TCS_CMD_STATUS_ISSUED_BIT BIT(8)
 #define RPMH_TCS_CMD_STATUS_COMPLETED_BIT BIT(16)
 
+/* State, not a sampled Busy bit, decides the exact request's final owner. */
+enum {
+  RpmhTcsFree, RpmhTcsProgramming, RpmhTcsWaiting, RpmhTcsRetiring,
+  RpmhTcsCompleted, RpmhTcsConsuming, RpmhTcsFailed,
+  RpmhTcsAbandonedWaiting, RpmhTcsAbandonedRetiring
+};
+
 #define TCS_AMC_MODE_TRIGGER BIT(24)
 #define TCS_AMC_MODE_ENABLE BIT(16)
 

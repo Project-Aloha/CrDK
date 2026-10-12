@@ -1,0 +1,26 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BatteryChargerCrDxe
+  FILE_GUID = 839321fb-8a4a-44f3-b6b0-731d741db991
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = BatteryChargerCrEntryPoint
+  UNLOAD_IMAGE = BatteryChargerCrUnload
+[Sources]
+  BatteryChargerCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BatteryChargerCrLib
+  DebugLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiPmicGlinkCrProtocolGuid ## CONSUMES
+  gEfiBatteryChargerCrProtocolGuid ## PRODUCES
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiPmicGlinkCrProtocolGuid

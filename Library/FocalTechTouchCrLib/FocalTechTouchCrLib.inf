@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = FocalTechTouchCrLib
+  FILE_GUID = 74A2B105-D6BF-4C57-9011-CEAF98876256
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = FocalTechTouchCrLib
+[Sources]
+  FocalTechTouch.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

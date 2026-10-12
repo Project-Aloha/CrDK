@@ -11,14 +11,132 @@
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Library/gpio.h>
+#include <Library/GpioSdLib.h>
+#include <Library/GpioPinLeaseLib.h>
 #include <Library/pdc.h>
 #include <oskal/cr_debug.h>
 
 #include <Protocol/EFIGpioCrProtocol.h>
 #include <Protocol/EFIRpmhCrProtocol.h>
 
+extern EFI_GPIO_CR_PROTOCOL gGpioCrProtocol;
 STATIC GpioDeviceContext *mGpioContext = NULL;
 STATIC PdcDeviceContext  *mPdcContext  = NULL;
+STATIC CONST CR_TARGET_SD_CONTEXT *mSdTarget;
+STATIC VOID *mSdOwner;
+STATIC CR_GPIO_SD_SNAPSHOT mSdSnapshot;
+STATIC BOOLEAN mSdTouched, mSdIrqClaim;
+STATIC CR_GPIO_PIN_LEASE_BANK mPinLeases;
+STATIC BOOLEAN mPinIrqClaim[GPIO_PINS_MAX];
+STATIC BOOLEAN SdPin(UINT16 Pin) {
+  return mSdTarget && (Pin == mSdTarget->Gpio.CdPin ||
+    (Pin >= mSdTarget->Gpio.FirstPad && Pin < mSdTarget->Gpio.FirstPad + 3));
+}
+STATIC EFI_STATUS EFIAPI AcquireSd(EFI_GPIO_CR_PROTOCOL *This, VOID *Owner,
+  BOOLEAN *Owned) {
+  if (!This || !Owner || !Owned) return EFI_INVALID_PARAMETER;
+  *Owned = FALSE;
+  if (!CrTargetSdValid(mSdTarget)) return EFI_UNSUPPORTED;
+  CR_INTERRUPT_GUARD Guard = {0};
+  EFI_STATUS S = CrInterruptGuardAcquire(&Guard); if (S != EFI_SUCCESS) return S;
+  if ((mSdOwner && mSdOwner != Owner) || mSdIrqClaim) S = EFI_ACCESS_DENIED;
+  else {
+    S = CrGpioSdQualifyProfile(mGpioContext,&mSdTarget->Gpio);
+    BOOLEAN Enabled = FALSE;
+    if (S == EFI_SUCCESS) S = GpioCheckInterruptEnabled(mGpioContext,(UINT16)mSdTarget->Gpio.CdPin,&Enabled);
+    if (S == EFI_SUCCESS && Enabled) S = EFI_ACCESS_DENIED;
+    if (S == EFI_SUCCESS) {
+      mSdOwner = Owner; *Owned = TRUE;
+      S = CrGpioSdSnapshotProfile(mGpioContext,&mSdTarget->Gpio,&mSdSnapshot);
+      if (S == EFI_SUCCESS) { mSdTouched = TRUE; S = CrGpioSdConfigureCdProfile(mGpioContext,&mSdTarget->Gpio,&mSdSnapshot); }
+    }
+  }
+  CrInterruptGuardRelease(&Guard); return S;
+}
+STATIC EFI_STATUS EFIAPI SetSdActive(EFI_GPIO_CR_PROTOCOL *This, VOID *Owner,
+  BOOLEAN Active) {
+  if (!This || !Owner || Active > 1) return EFI_INVALID_PARAMETER;
+  if (!CrTargetSdValid(mSdTarget)) return EFI_UNSUPPORTED;
+  CR_INTERRUPT_GUARD Guard = {0}; EFI_STATUS S = CrInterruptGuardAcquire(&Guard);
+  if (S != EFI_SUCCESS) return S;
+  if (mSdOwner != Owner || !mSdSnapshot.Snapshot) S = EFI_ACCESS_DENIED;
+  else { mSdTouched = TRUE; S = CrGpioSdSetActiveProfile(mGpioContext,&mSdTarget->Gpio,Active); }
+  CrInterruptGuardRelease(&Guard); return S;
+}
+STATIC EFI_STATUS EFIAPI ReadSdCardDetect(EFI_GPIO_CR_PROTOCOL *This, VOID *Owner,
+  BOOLEAN *High) {
+  if (!This || !Owner || !High) return EFI_INVALID_PARAMETER;
+  if (!CrTargetSdValid(mSdTarget)) return EFI_UNSUPPORTED;
+  CR_INTERRUPT_GUARD Guard = {0}; EFI_STATUS S = CrInterruptGuardAcquire(&Guard);
+  if (S != EFI_SUCCESS) return S;
+  if (mSdOwner != Owner || !mSdSnapshot.Snapshot) S = EFI_ACCESS_DENIED;
+  else *High = GpioReadInputVal(mGpioContext,(UINT16)mSdTarget->Gpio.CdPin) == GPIO_VALUE_HIGH;
+  CrInterruptGuardRelease(&Guard); return S;
+}
+STATIC EFI_STATUS EFIAPI ReleaseSd(EFI_GPIO_CR_PROTOCOL *This, VOID *Owner) {
+  if (!This || !Owner) return EFI_INVALID_PARAMETER;
+  if (!CrTargetSdValid(mSdTarget)) return EFI_UNSUPPORTED;
+  CR_INTERRUPT_GUARD Guard = {0}; EFI_STATUS S = CrInterruptGuardAcquire(&Guard);
+  if (S != EFI_SUCCESS) return S;
+  if (mSdOwner && mSdOwner != Owner) S = EFI_ACCESS_DENIED;
+  else if (mSdOwner) {
+    if (mSdTouched) S = CrGpioSdRestoreProfile(mGpioContext,&mSdTarget->Gpio,&mSdSnapshot);
+    if (S == EFI_SUCCESS) {
+      mSdOwner = NULL; mSdTouched = FALSE;
+      mSdSnapshot.Snapshot = FALSE;
+    }
+  }
+  CrInterruptGuardRelease(&Guard); return S;
+}
+
+/* Ordinary pad owner operations share the interrupt exclusion used by SD. */
+STATIC EFI_STATUS EFIAPI AcquirePin(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,
+  CONST GpioConfigParams *Config,BOOLEAN *Owned) {
+  if(Owned) *Owned=FALSE;
+  if(This!=&gGpioCrProtocol||!Owner||!Config||!Owned||!mGpioContext||Config->PinNumber>=mGpioContext->PinCount)
+    return EFI_INVALID_PARAMETER;
+  if(SdPin(Config->PinNumber)) return EFI_UNSUPPORTED;
+  CR_INTERRUPT_GUARD Guard={0}; EFI_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if(Status!=EFI_SUCCESS) return Status;
+  Status=mPinIrqClaim[Config->PinNumber]?EFI_ACCESS_DENIED:
+    CrGpioPinLeaseAcquire(&mPinLeases,Owner,Config,Owned);
+  CrInterruptGuardRelease(&Guard);return Status;
+}
+STATIC EFI_STATUS EFIAPI SetPinValue(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,UINT16 Pin,UINT8 Value) {
+  if(This!=&gGpioCrProtocol||!Owner||Value>1) return EFI_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard={0}; EFI_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if(Status!=EFI_SUCCESS) return Status;
+  Status=CrGpioPinLeaseSetValue(&mPinLeases,Owner,Pin,Value);
+  CrInterruptGuardRelease(&Guard);return Status;
+}
+STATIC EFI_STATUS EFIAPI ReadPinValue(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,UINT16 Pin,UINT8 *Value) {
+  if(This!=&gGpioCrProtocol||!Owner||!Value) return EFI_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard={0}; EFI_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if(Status!=EFI_SUCCESS) return Status;
+  Status=CrGpioPinLeaseReadValue(&mPinLeases,Owner,Pin,Value);
+  CrInterruptGuardRelease(&Guard);return Status;
+}
+STATIC EFI_STATUS EFIAPI ReleasePin(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,UINT16 Pin) {
+  if(This!=&gGpioCrProtocol||!Owner) return EFI_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard={0}; EFI_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if(Status!=EFI_SUCCESS) return Status;
+  Status=CrGpioPinLeaseRelease(&mPinLeases,Owner,Pin);
+  CrInterruptGuardRelease(&Guard);return Status;
+}
+STATIC EFI_STATUS EFIAPI ArmPinFallingEdge(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,UINT16 Pin) {
+  if(This!=&gGpioCrProtocol||!Owner)return EFI_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard={0};EFI_STATUS S=CrInterruptGuardAcquire(&Guard);
+  if(S!=EFI_SUCCESS)return S;
+  S=CrGpioPinLeaseArmFallingEdge(&mPinLeases,Owner,Pin);
+  CrInterruptGuardRelease(&Guard);return S;
+}
+STATIC EFI_STATUS EFIAPI TakePinEdge(EFI_GPIO_CR_PROTOCOL *This,VOID *Owner,UINT16 Pin,BOOLEAN *Pending) {
+  if(This!=&gGpioCrProtocol||!Owner||!Pending)return EFI_INVALID_PARAMETER;
+  *Pending=FALSE;CR_INTERRUPT_GUARD Guard={0};EFI_STATUS S=CrInterruptGuardAcquire(&Guard);
+  if(S!=EFI_SUCCESS)return S;
+  S=CrGpioPinLeaseTakeEdge(&mPinLeases,Owner,Pin,Pending);
+  CrInterruptGuardRelease(&Guard);return S;
+}
 
 /* Protocol wrapper implementation */
 EFI_STATUS
@@ -39,12 +157,19 @@ EFIAPI ProtocolGpioSetIOValue(
   if (This == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+  CR_INTERRUPT_GUARD Guard = {0};
+  EFI_STATUS GuardStatus = CrInterruptGuardAcquire(&Guard);
+  if (GuardStatus != EFI_SUCCESS) return GuardStatus;
+  if ((SdPin(GpioIndex)&&mSdOwner) || CrGpioPinLeaseOwned(&mPinLeases,GpioIndex)) {
+    CrInterruptGuardRelease(&Guard); return EFI_ACCESS_DENIED;
+  }
   // Construct ConfigParams
   GpioConfigParams ConfigParams = {0};
   GpioInitConfigParams(&ConfigParams, GpioIndex);
   ConfigParams.OutputEnable = TRUE;
   ConfigParams.OutputValue  = (Value != 0) ? GPIO_VALUE_HIGH : GPIO_VALUE_LOW;
   GpioSetConfig(mGpioContext, &ConfigParams);
+  if (Guard.Active) CrInterruptGuardRelease(&Guard);
 
   return EFI_SUCCESS;
 }
@@ -67,7 +192,14 @@ EFIAPI ProtocolGpioConfig(
   if (This == NULL || ConfigParams == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+  CR_INTERRUPT_GUARD Guard = {0};
+  EFI_STATUS GuardStatus = CrInterruptGuardAcquire(&Guard);
+  if (GuardStatus != EFI_SUCCESS) return GuardStatus;
+  if ((SdPin(ConfigParams->PinNumber)&&mSdOwner) || CrGpioPinLeaseOwned(&mPinLeases,ConfigParams->PinNumber)) {
+    CrInterruptGuardRelease(&Guard); return EFI_ACCESS_DENIED;
+  }
   GpioSetConfig(mGpioContext, ConfigParams);
+  if (Guard.Active) CrInterruptGuardRelease(&Guard);
   return EFI_SUCCESS;
 }
 
@@ -96,6 +228,17 @@ EFIAPI ProtocolGpioRegisterGpioInterrupt(
   }
 
   // Register interrupt
+  {
+    CR_INTERRUPT_GUARD Guard = {0}; Status = CrInterruptGuardAcquire(&Guard);
+    if (Status != CR_SUCCESS) return Status;
+    if ((SdPin(GpioIndex)&&mSdOwner) || CrGpioPinLeaseOwned(&mPinLeases,GpioIndex)) {
+      CrInterruptGuardRelease(&Guard); return EFI_ACCESS_DENIED;
+    }
+    /* No unregister exists; retain even failed callback-registration claims. */
+    mPinIrqClaim[GpioIndex] = TRUE;
+    if (SdPin(GpioIndex)) mSdIrqClaim = TRUE;
+    CrInterruptGuardRelease(&Guard);
+  }
   Status = GpioRegisterGpioIrq(
       mGpioContext, mPdcContext, GpioIndex, GpioIrqHandler, HandlerParam,
       TriggerType);
@@ -118,6 +261,16 @@ EFI_GPIO_CR_PROTOCOL gGpioCrProtocol = {
     .ConfigGpio            = ProtocolGpioConfig,
     .GetGpioConfig         = ProtocolGpioGetConfig,
     .RegisterGpioInterrupt = ProtocolGpioRegisterGpioInterrupt,
+    .AcquireSd             = AcquireSd,
+    .SetSdActive           = SetSdActive,
+    .ReadSdCardDetect      = ReadSdCardDetect,
+    .ReleaseSd             = ReleaseSd,
+    .AcquirePin            = AcquirePin,
+    .SetPinValue           = SetPinValue,
+    .ReadPinValue          = ReadPinValue,
+    .ReleasePin            = ReleasePin,
+    .ArmPinFallingEdge     = ArmPinFallingEdge,
+    .TakePinEdge           = TakePinEdge,
 };
 
 // For test use.
@@ -131,6 +284,7 @@ EFI_GPIO_CR_PROTOCOL gGpioCrProtocol = {
 CR_STATUS
 GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
+  (VOID)SystemTable;
   EFI_STATUS Status = EFI_SUCCESS;
   CR_STATUS CleanupStatus;
 
@@ -142,17 +296,26 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
     return EFI_NOT_FOUND;
   }
 
-  // Init PDC
-  if (CR_ERROR(PdcLibInit(&mPdcContext)) || (mPdcContext == NULL)) {
-    log_err("PdcLibInit failed");
+  // GpioLibInit only resolves addresses in the actual immutable pin table.
+  // Qualify the optional SD profile before PDC/IRQ allocation or MMIO.
+  if (GpioLibInit(&mGpioContext) != CR_SUCCESS || mGpioContext == NULL)
     return EFI_DEVICE_ERROR;
+  Status = CrGpioPinLeaseInit(&mPinLeases,mGpioContext);
+  if (Status != EFI_SUCCESS) return Status;
+  CONST CR_DAL_DEVICE_INFO *SdInfo = NULL;
+  Status = CrDalGetDeviceInfo(CrDalDeviceSd,0,CR_DAL_DATA_REVISION_1,
+    sizeof(CR_TARGET_SD_CONTEXT),&SdInfo);
+  if (Status == EFI_NOT_FOUND) mSdTarget = NULL;
+  else {
+    if (Status != EFI_SUCCESS) return Status;
+    mSdTarget = CrDalGetSdContext();
+    if (!CrTargetSdValid(mSdTarget) || SdInfo->Data != mSdTarget ||
+        CrGpioSdQualifyProfile(mGpioContext,&mSdTarget->Gpio) != CR_SUCCESS)
+      return EFI_COMPROMISED_DATA;
   }
-
-  // Init Gpio
-  if (CR_ERROR(GpioLibInit(&mGpioContext)) || (mGpioContext == NULL)) {
-    log_err("GpioLibInit failed");
+  // Init PDC only after all present native target metadata is qualified.
+  if (CR_ERROR(PdcLibInit(&mPdcContext)) || mPdcContext == NULL)
     return EFI_DEVICE_ERROR;
-  }
 
   // Init Gpio interrupt
   Status = GpioInitIrq(mGpioContext);
@@ -293,47 +456,6 @@ GpioEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   }
 #endif
 
-// Protocol test cases (hdk8450)
-#if 1
-  {
-    EFI_GPIO_CR_PROTOCOL *GpioProtocol = NULL;
-    GpioConfigParams      ConfigParams = {0};
-    UINT16                Gpio4Test    = 8;
-
-    Status = gBS->LocateProtocol(
-        &gEfiGpioCrProtocolGuid, NULL, (VOID **)&GpioProtocol);
-    if (EFI_ERROR(Status) || GpioProtocol == NULL) {
-      log_err("Failed to locate Gpio CR Protocol, Status=0x%X", Status);
-      return Status;
-    }
-
-    // Init Config Params
-    Status = GpioProtocol->InitGpioConfigParams(GpioProtocol, &ConfigParams);
-    if (EFI_ERROR(Status)) {
-      log_err("InitGpioConfigParams failed, Status=0x%X", Status);
-      return Status;
-    }
-
-    // Blink 3 times
-    ConfigParams.PinNumber     = Gpio4Test;
-    ConfigParams.OutputEnable  = TRUE;
-    ConfigParams.OutputValue   = GPIO_VALUE_HIGH;
-    ConfigParams.FunctionSel   = GPIO_FUNC_NORMAL;
-    ConfigParams.DriveStrength = GPIO_DRIVE_STRENGTH_8MA;
-
-    for (UINT8 i = 0; i < 3 * 2; i++) {
-      log_info(
-          "Protocol: Set Gpio%d to %d", Gpio4Test, ConfigParams.OutputValue);
-      Status = GpioProtocol->ConfigGpio(GpioProtocol, &ConfigParams);
-      if (EFI_ERROR(Status)) {
-        log_err("ConfigGpio failed, Status=0x%X", Status);
-        return Status;
-      }
-      ConfigParams.OutputValue = !ConfigParams.OutputValue;
-      cr_sleep(500 * 1000); // 0.5s
-    }
-  }
-#endif
 
   return EFI_SUCCESS;
 

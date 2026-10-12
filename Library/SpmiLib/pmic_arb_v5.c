@@ -23,6 +23,8 @@ PmicArbInitApidV5(SpmiDeviceContext *Ctx, UINT32 Index) {
     log_err("SPMI: v5 only supports a single bus");
     return CR_INVALID_PARAMETER;
   }
+  if (!SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CORE,
+                     SPMI_PMIC_ARB_FEATURES,sizeof(UINT32))) return CR_INVALID_PARAMETER;
 
   Ctx->Bus.BaseApid = 0;
   Ctx->Bus.ApidCount =
@@ -67,7 +69,9 @@ PmicArbPpidToApidV5(SpmiDeviceContext *Ctx, UINT16 Ppid, UINT16 *Apid) {
     return CR_NOT_FOUND;
   }
 
-  *Apid = (UINT16)(ApidValid & ~SPMI_PMIC_ARB_APID_VALID);
+  UINT16 Result=(UINT16)(ApidValid & ~SPMI_PMIC_ARB_APID_VALID);
+  if (!SpmiApidValid(Ctx,Result)) return CR_INVALID_PARAMETER;
+  *Apid = Result;
   return CR_SUCCESS;
 }
 

@@ -16,6 +16,50 @@
 
 #include "pmic_arb.h"
 
+STATIC inline BOOLEAN SpmiRegionFits(IN CONST SpmiDeviceContext *Ctx,
+    IN SPMI_MEMORY_REGION_TYPE Type, IN UINT64 Offset, IN UINTN Length) {
+  if (Ctx==NULL || (UINT32)Type>=SPMI_MEMORY_REGION_TYPE_MAX || Length==0) return FALSE;
+  CONST SpmiMemoryRegion *Region=&Ctx->Regions[Type];
+  return Region->BaseAddress!=0 && (Region->BaseAddress&3U)==0 &&
+    Region->Size>=Length && Region->BaseAddress<=(UINTN)-1-Region->Size &&
+    Offset<=Region->Size-Length;
+}
+STATIC inline BOOLEAN SpmiAddressFits(IN CONST SpmiDeviceContext *Ctx,
+    IN UINTN Address, IN UINTN Length) {
+  if (Ctx==NULL || (Address&3U)!=0) return FALSE;
+  for (UINTN I=0;I<SPMI_MEMORY_REGION_TYPE_MAX;++I) {
+    if (Address>=Ctx->Regions[I].BaseAddress &&
+        SpmiRegionFits(Ctx,(SPMI_MEMORY_REGION_TYPE)I,
+                       Address-Ctx->Regions[I].BaseAddress,Length)) return TRUE;
+  }
+  return FALSE;
+}
+STATIC inline BOOLEAN SpmiApidValid(IN CONST SpmiDeviceContext *Ctx,IN UINT16 Apid) {
+  return Ctx!=NULL && Ctx->PmicArb.MaxPeriphs<=SPMI_PMIC_ARB_MAX_PERIPHS_V8 &&
+    Ctx->Bus.ApidCount!=0 && Ctx->Bus.BaseApid<Ctx->PmicArb.MaxPeriphs &&
+    Ctx->Bus.ApidCount<=Ctx->PmicArb.MaxPeriphs-Ctx->Bus.BaseApid &&
+    Apid>=Ctx->Bus.BaseApid && Apid<(UINT32)Ctx->Bus.BaseApid+Ctx->Bus.ApidCount;
+}
+STATIC inline BOOLEAN SpmiChannelFits(IN CONST SpmiDeviceContext *Ctx,IN BOOLEAN Write,
+    IN UINT32 Offset,IN UINTN Length) {
+  SPMI_MEMORY_REGION_TYPE Type=Ctx->Version==SPMI_ARB_VERSION_1 ?
+    SPMI_MEMORY_REGION_TYPE_CORE : (Write?SPMI_MEMORY_REGION_TYPE_CH_SLAVES:
+                                        SPMI_MEMORY_REGION_TYPE_OBSERVER);
+  UINTN Last=Write ? (Length>4?SPMI_PMIC_ARB_WDATA1:SPMI_PMIC_ARB_WDATA0) :
+                    (Length>4?SPMI_PMIC_ARB_RDATA1:SPMI_PMIC_ARB_RDATA0);
+  return (Offset&3U)==0 &&
+    (Write?Ctx->PmicArb.WriteAddr:Ctx->PmicArb.ReadAddr)==Ctx->Regions[Type].BaseAddress &&
+    SpmiRegionFits(Ctx,Type,(UINT64)Offset+Last,sizeof(UINT32));
+}
+STATIC inline BOOLEAN SpmiIrqApidFits(IN SpmiDeviceContext *Ctx,IN UINT16 Apid) {
+  CONST SpmiPmicArbOps *Ops=Ctx->PmicArb.Ops;
+  return SpmiApidValid(Ctx,Apid) && Ops!=NULL && Ops->GetAccEnable!=NULL &&
+    Ops->GetIrqStatus!=NULL && Ops->GetIrqClear!=NULL &&
+    SpmiAddressFits(Ctx,Ops->GetAccEnable(Ctx,Apid),sizeof(UINT32)) &&
+    SpmiAddressFits(Ctx,Ops->GetIrqStatus(Ctx,Apid),sizeof(UINT32)) &&
+    SpmiAddressFits(Ctx,Ops->GetIrqClear(Ctx,Apid),sizeof(UINT32));
+}
+
 typedef enum {
   SPMI_ARB_OP_EXT_WRITEL = 0,
   SPMI_ARB_OP_EXT_READL = 1,

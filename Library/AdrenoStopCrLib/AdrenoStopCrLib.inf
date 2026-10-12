@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AdrenoStopCrLib
+  FILE_GUID = 42FCB2D6-A9E7-4DB0-974C-9753C6F71D53
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoStopCrLib
+[Sources]
+  AdrenoStop.c
+  Sm8450Stop.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  SynchronizationLib
+  Sm8450GpuResourcesCrLib

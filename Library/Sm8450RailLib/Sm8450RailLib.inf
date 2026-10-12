@@ -1,0 +1,13 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = Sm8450RailLib
+  FILE_GUID = 6F5B1248-6100-49E6-99B2-754C498AEF66
+  MODULE_TYPE = BASE
+  LIBRARY_CLASS = Sm8450RailLib
+[Sources]
+  Sm8450Rail.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AdrenoPowerCrLib
+  FILE_GUID = E7C53077-906D-4E09-99E8-CB6A57138D46
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoPowerCrLib
+[Sources]
+  AdrenoPower.c
+  Sm8450Power.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]

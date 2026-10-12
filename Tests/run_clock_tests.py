@@ -22,8 +22,13 @@ with tempfile.TemporaryDirectory(prefix="crane-clock-test-") as tmp:
     for name, source in (
         ("clock-lib", "ClockLibTest.c"),
         ("clock-adapter", "ClockCrDxeTest.c"),
+        ("clock-target", "ClockTargetTest.c"),
     ):
         exe = Path(tmp) / name
-        subprocess.run(common + [str(crane / "Tests" / source),
+        extra = [str(crane / "Library/ClockExternalLib" / f) for f in
+                 ("ClockExternal.c", "ClockExternalPlan.c", "ClockExternalLease.c")] if name == "clock-adapter" else []
+        if name == "clock-adapter":
+            extra.append(str(crane / "Driver/ClockCrDxe/GpuBootAccess.c"))
+        subprocess.run(common + extra + [str(crane / "Tests" / source), str(crane / "Library/ClockLib/fixed_pll.c"),
                                  "-o", str(exe)], check=True)
         subprocess.run([str(exe)], check=True)

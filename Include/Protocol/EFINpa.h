@@ -1,9 +1,10 @@
 /** @file
  *  Qualcomm Node Power Architecture protocol ABI used by OEM DXE drivers.
  *
- *  This is the public protocol prefix needed by Crane adapters.  The field
- *  order follows Qualcomm's EFI_NPA_PROTOCOL through the batch-request ABI so
- *  consumers can safely call the OEM NpaDxe installed by platform firmware.
+ *  This is a protocol-layout reference for compatibility audits.  Crane
+ *  resource owners do not locate or call an OEM NpaDxe; their RPMh and
+ *  interconnect paths use the standalone Crane libraries instead.  The field
+ *  order follows Qualcomm's EFI_NPA_PROTOCOL through the batch-request ABI.
  *
  *  SPDX-License-Identifier: MIT
  */

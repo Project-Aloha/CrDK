@@ -21,6 +21,7 @@
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  PcdLib
   BaseMemoryLib
   CacheMaintenanceLib
   DebugLib
@@ -34,7 +35,12 @@
   SmmuLib
   CrDalLib
 
+[FixedPcd]
+  gCranePkgTokenSpaceGuid.PcdUsbLegacyPhysicalDmaHandoff
+  gCranePkgTokenSpaceGuid.PcdUfsLegacyCoherentDmaHandoff
+
 [Protocols]
+  gEfiDmaIdentityCrProtocolGuid
   gEfiCrDalProtocolGuid         ## CONSUMES
   gEdkiiIoMmuProtocolGuid       ## PRODUCES
   gEfiSmmuCrProtocolGuid        ## PRODUCES

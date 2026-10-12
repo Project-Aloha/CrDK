@@ -1,0 +1,28 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = SpmiLib
+  FILE_GUID = 9f264a0b-6a9c-4433-af18-03519c8bec37
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SpmiLib
+[Sources]
+  spmi.c
+  spmi_irq.c
+  pmic_arb_common.c
+  pmic_arb_v1.c
+  pmic_arb_v2.c
+  pmic_arb_v3.c
+  pmic_arb_v5.c
+  pmic_arb_v7.c
+  pmic_arb_v8.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  IoLib
+  OskInterruptLib
+  SynchronizationLib
+  TimerLib

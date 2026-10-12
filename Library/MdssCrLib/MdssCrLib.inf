@@ -1,0 +1,18 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssCrLib
+  FILE_GUID = 77D5B2D5-DF14-4724-8C46-BD4B66E5DCCB
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssCrLib
+[Sources]
+  Mdss.c
+  MdssHardware.c
+  MdssPresent.c
+  MdssRetire.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib

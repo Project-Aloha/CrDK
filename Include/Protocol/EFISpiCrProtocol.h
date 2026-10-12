@@ -1,9 +1,10 @@
 /** @file
- *  Crane adapter for a MU Qualcomm SPI protocol instance.
+ *  Retained Crane SPI adapter contract for source-level compatibility tests.
  *
- *  SPICrDxe forwards an existing PI host-controller protocol when available.
- *  Otherwise it translates supported PI transactions to MU's private SPIDxe
- *  ABI without programming GENI registers itself.
+ *  The active Crane and HDK8450 manifests do not package SPICrDxe. Its
+ *  implementation still translates supported PI transactions to MU's private
+ *  SPIDxe ABI, but it is not a native SPI implementation or a firmware
+ *  dependency.
  *
  *  SPDX-License-Identifier: MIT
  */

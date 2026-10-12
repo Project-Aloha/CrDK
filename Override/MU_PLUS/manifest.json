@@ -1,0 +1,516 @@
+{
+  "upstream_url": "https://github.com/microsoft/mu_plus",
+  "upstream_commit": "49625b8f6cabe7e4d9797d192c354b14af0490d1",
+  "license": {
+    "source": "LICENSE.txt",
+    "sha256": "d8f295a76b57091fd68b6df2ff718ebc6de6fadf247f2d431878561b1a64fcd5"
+  },
+  "modules": [
+    {
+      "upstream_inf": "HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf",
+      "defines": {
+        "BASE_NAME": "HidKeyboardDxe",
+        "FILE_GUID": "B5FD279E-779D-4831-ADEE-41CC49FAF652",
+        "ENTRY_POINT": "HIDKeyboardDriverEntryPoint",
+        "MODULE_TYPE": "UEFI_DRIVER"
+      },
+      "closure": [
+        "HidPkg/HidKeyboardDxe/ComponentName.c",
+        "HidPkg/HidKeyboardDxe/HidKbDxe.c",
+        "HidPkg/HidKeyboardDxe/HidKbDxe.h",
+        "HidPkg/HidKeyboardDxe/HidKbDxe.uni",
+        "HidPkg/HidKeyboardDxe/HidKbDxeExtra.uni",
+        "HidPkg/HidKeyboardDxe/HidKeyboard.c",
+        "HidPkg/HidKeyboardDxe/HidKeyboard.h",
+        "HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf"
+      ]
+    },
+    {
+      "upstream_inf": "HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf",
+      "defines": {
+        "BASE_NAME": "UsbKbHidDxe",
+        "FILE_GUID": "60291E5A-334E-4181-B506-8280BA6696F2",
+        "ENTRY_POINT": "UsbKbHidDriverBindingEntryPoint",
+        "MODULE_TYPE": "UEFI_DRIVER"
+      },
+      "closure": [
+        "HidPkg/UsbKbHidDxe/ComponentName.c",
+        "HidPkg/UsbKbHidDxe/UsbKbHidDxe.c",
+        "HidPkg/UsbKbHidDxe/UsbKbHidDxe.h",
+        "HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf",
+        "HidPkg/UsbKbHidDxe/UsbKbHidDxe.uni",
+        "HidPkg/UsbKbHidDxe/UsbKbHidDxeExtra.uni"
+      ]
+    },
+    {
+      "upstream_inf": "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf",
+      "defines": {
+        "BASE_NAME": "GopOverrideDxe",
+        "FILE_GUID": "27D4595D-D3AA-4008-9B02-881B0AC25F09",
+        "ENTRY_POINT": "DriverInit",
+        "MODULE_TYPE": "DXE_DRIVER"
+      },
+      "closure": [
+        "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c",
+        "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf"
+      ]
+    },
+    {
+      "upstream_inf": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf",
+      "defines": {
+        "BASE_NAME": "OnScreenKeyboardDxe",
+        "FILE_GUID": "917C56F2-2FE3-498F-AFFB-87AC0E19FE5E",
+        "ENTRY_POINT": "OSKDriverEntryPoint",
+        "MODULE_TYPE": "UEFI_DRIVER"
+      },
+      "closure": [
+        "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTransform.c",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTransform.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTypes.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/KeyMapping.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardProtocol.c",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardProtocol.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/Resources/KeyboardIcon_Medium.h",
+        "MsGraphicsPkg/OnScreenKeyboardDxe/Resources/KeyboardIcon_Small.h"
+      ]
+    },
+    {
+      "upstream_inf": "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
+      "defines": {
+        "BASE_NAME": "SimpleWindowManagerDxe",
+        "FILE_GUID": "8E747032-7D55-4D95-9A84-77F83370B3A4",
+        "ENTRY_POINT": "DriverInit",
+        "MODULE_TYPE": "UEFI_DRIVER"
+      },
+      "closure": [
+        "MsGraphicsPkg/SimpleWindowManagerDxe/Resources/MousePointer_Medium.h",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/Resources/MousePointer_Small.h",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerProtocol.c",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerProtocol.h",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerStrings.uni",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c",
+        "MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.h"
+      ]
+    },
+    {
+      "upstream_inf": "MsCorePkg/AcpiRGRT/AcpiRgrt.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/MsCorePkg/AcpiRGRT/AcpiRgrt.inf",
+      "defines": {
+        "BASE_NAME": "AcpiRgrt",
+        "FILE_GUID": "D118A4C4-DEB6-4B7A-B3EB-E071148C1C6C",
+        "ENTRY_POINT": "DriverEntry",
+        "MODULE_TYPE": "DXE_DRIVER"
+      },
+      "closure": [
+        "MsCorePkg/AcpiRGRT/AcpiRgrt.c",
+        "MsCorePkg/AcpiRGRT/AcpiRgrt.inf"
+      ]
+    },
+    {
+      "upstream_inf": "MsWheaPkg/HwErrBert/HwErrBert.inf",
+      "override_inf": "Platforms/CranePkg/Override/MU_PLUS/MsWheaPkg/HwErrBert/HwErrBert.inf",
+      "defines": {
+        "BASE_NAME": "HwErrorBert",
+        "FILE_GUID": "328AC7D1-6D2B-4F6B-8A2D-EA6302A62F60",
+        "ENTRY_POINT": "HwErrorBertEntry",
+        "MODULE_TYPE": "DXE_DRIVER"
+      },
+      "closure": [
+        "MsWheaPkg/HwErrBert/BertHelper.c",
+        "MsWheaPkg/HwErrBert/BertHelper.h",
+        "MsWheaPkg/HwErrBert/HwErrBert.inf",
+        "MsWheaPkg/HwErrBert/HwErrorBert.c"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "HidPkg/HidKeyboardDxe/ComponentName.c",
+      "upstream_sha256": "be8110c91e772c051fbd702ee2192c981d5c6adaa7188ee4da9f798802c10b69",
+      "pre_migration_sha256": "be8110c91e772c051fbd702ee2192c981d5c6adaa7188ee4da9f798802c10b69",
+      "fork_sha256": "be8110c91e772c051fbd702ee2192c981d5c6adaa7188ee4da9f798802c10b69",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKbDxe.c",
+      "upstream_sha256": "64ef93d18c82bd9df4a8111f2cebf2bd225e6962a82e608e231b23ec5cbdcaa9",
+      "pre_migration_sha256": "434c5ddd9b58c27349a8be71074a0fd54047842fb3bded52c6cb19309c6a25f9",
+      "fork_sha256": "434c5ddd9b58c27349a8be71074a0fd54047842fb3bded52c6cb19309c6a25f9",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKbDxe.h",
+      "upstream_sha256": "c44dae9cbd52f12f1ba75eb38b6ed1d3d297a72c4dded9fb39d0be96f13251d5",
+      "pre_migration_sha256": "5bb141c0f6a61a71bd260bc8456702187197607c3750aac3123a9bc86950a8b0",
+      "fork_sha256": "5bb141c0f6a61a71bd260bc8456702187197607c3750aac3123a9bc86950a8b0",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKbDxe.uni",
+      "upstream_sha256": "982b97236b95e73b1979a5f4850db1ed29b40d6504ae5089962e6378a4f45d36",
+      "pre_migration_sha256": "982b97236b95e73b1979a5f4850db1ed29b40d6504ae5089962e6378a4f45d36",
+      "fork_sha256": "982b97236b95e73b1979a5f4850db1ed29b40d6504ae5089962e6378a4f45d36",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKbDxeExtra.uni",
+      "upstream_sha256": "f0ed7d0c99182f2306931d7b9345bfc564826f6bae12eaa9beb04d3beeb47dd2",
+      "pre_migration_sha256": "f0ed7d0c99182f2306931d7b9345bfc564826f6bae12eaa9beb04d3beeb47dd2",
+      "fork_sha256": "f0ed7d0c99182f2306931d7b9345bfc564826f6bae12eaa9beb04d3beeb47dd2",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKeyboard.c",
+      "upstream_sha256": "981067f85c6a89ea9c8c096f39314017505a153b5f0e4e477b201357ca14f18b",
+      "pre_migration_sha256": "8c7687754ee6a2aa9b47079bd9a18b88cc58039cdf2b1623da144f34b37970f7",
+      "fork_sha256": "8c7687754ee6a2aa9b47079bd9a18b88cc58039cdf2b1623da144f34b37970f7",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKeyboard.h",
+      "upstream_sha256": "7fbb140ff6ea9ac6bdad0a7665039d187870cbbba707a5df585c5459ddbef2eb",
+      "pre_migration_sha256": "10ca75d91ff3a32cbde103dc611ceecd3c3cacbc56475e83486d3794ac990966",
+      "fork_sha256": "10ca75d91ff3a32cbde103dc611ceecd3c3cacbc56475e83486d3794ac990966",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/HidKeyboardDxe/HidKeyboardDxe.inf",
+      "upstream_sha256": "8542c9757b79c99ebd17fecad1a863d55a07615fc688ace5c6c206ce8d1afde5",
+      "pre_migration_sha256": "8542c9757b79c99ebd17fecad1a863d55a07615fc688ace5c6c206ce8d1afde5",
+      "fork_sha256": "8542c9757b79c99ebd17fecad1a863d55a07615fc688ace5c6c206ce8d1afde5",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/ComponentName.c",
+      "upstream_sha256": "11de66c102de045e26059dc55dca239f3d4d4ae2b1c2bb56fd0bd1a0f0b6ad03",
+      "pre_migration_sha256": "11de66c102de045e26059dc55dca239f3d4d4ae2b1c2bb56fd0bd1a0f0b6ad03",
+      "fork_sha256": "11de66c102de045e26059dc55dca239f3d4d4ae2b1c2bb56fd0bd1a0f0b6ad03",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/UsbKbHidDxe.c",
+      "upstream_sha256": "3e121f51d0425b9c19295876f41b42569e756210d034ea99f4c873002d75f1ec",
+      "pre_migration_sha256": "60a34db784fe35c3f66d8f3808025921dd05049bd4fbad6efcebf5f529d0bccb",
+      "fork_sha256": "60a34db784fe35c3f66d8f3808025921dd05049bd4fbad6efcebf5f529d0bccb",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/UsbKbHidDxe.h",
+      "upstream_sha256": "33599d2d6879531a80371bacbb4ef8c8d52a94484b371287091e89f0a6525853",
+      "pre_migration_sha256": "d1b0b1af66666dd41b8bd5cf3ffa9aee4212c20e64fb22bba2372259fc47dc31",
+      "fork_sha256": "d1b0b1af66666dd41b8bd5cf3ffa9aee4212c20e64fb22bba2372259fc47dc31",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf",
+      "upstream_sha256": "29bbebc0b35fdca1cfa5839810297dcd929e81d49e97a88bb9f67abd06181eae",
+      "pre_migration_sha256": "29bbebc0b35fdca1cfa5839810297dcd929e81d49e97a88bb9f67abd06181eae",
+      "fork_sha256": "ebe5477a7358d5241f8c4321e3e561887245d9451dba2f19df63aed728f018d7",
+      "functional_delta": false,
+      "relocation_delta": true
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/UsbKbHidDxe.uni",
+      "upstream_sha256": "4594a09edb98563cd946cf61908c0c2c8b78db0437df4132657fdc94a6fb2b7d",
+      "pre_migration_sha256": "4594a09edb98563cd946cf61908c0c2c8b78db0437df4132657fdc94a6fb2b7d",
+      "fork_sha256": "4594a09edb98563cd946cf61908c0c2c8b78db0437df4132657fdc94a6fb2b7d",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "HidPkg/UsbKbHidDxe/UsbKbHidDxeExtra.uni",
+      "upstream_sha256": "83483d56ae39db19756c6450ec6e90c71e69c5c4f36e45a045ee0f042c893ce7",
+      "pre_migration_sha256": "83483d56ae39db19756c6450ec6e90c71e69c5c4f36e45a045ee0f042c893ce7",
+      "fork_sha256": "83483d56ae39db19756c6450ec6e90c71e69c5c4f36e45a045ee0f042c893ce7",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsCorePkg/AcpiRGRT/AcpiRgrt.c",
+      "upstream_sha256": "aa3bd976c5d6bdb9926765e884d727f1441819a90a99704a7463f0ea2a7e698d",
+      "pre_migration_sha256": "61f449f4589eb8b625154d88a59068357f4281b413fa0c275c60e04417c90fb7",
+      "fork_sha256": "61f449f4589eb8b625154d88a59068357f4281b413fa0c275c60e04417c90fb7",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsCorePkg/AcpiRGRT/AcpiRgrt.inf",
+      "upstream_sha256": "6adedc92e5c149b4605d693090bee7f1c884d80d976164af0c9b37f0d337c79a",
+      "pre_migration_sha256": "6adedc92e5c149b4605d693090bee7f1c884d80d976164af0c9b37f0d337c79a",
+      "fork_sha256": "6adedc92e5c149b4605d693090bee7f1c884d80d976164af0c9b37f0d337c79a",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c",
+      "upstream_sha256": "f93c40a1ada8c63e1fa0017156d4b5148e46ac5008fd918c6abd4ecf59e921e3",
+      "pre_migration_sha256": "75b9ab8a7f7ff7403ffd99fb6d1a1fa1306c334212ef6b6727833577d603055b",
+      "fork_sha256": "75b9ab8a7f7ff7403ffd99fb6d1a1fa1306c334212ef6b6727833577d603055b",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf",
+      "upstream_sha256": "50e7bb420359d102e2fd04b310b7965de9c708dd70b56830fa435a5fac12dfa0",
+      "pre_migration_sha256": "572d8a5e82df599fd10c1b64feb040b3ba754016dc565f4430a06d171273a142",
+      "fork_sha256": "90ca79baada1171ee6747ab8a4885ea675d3779e33d2627b5924b3688a077351",
+      "functional_delta": true,
+      "relocation_delta": true
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTransform.c",
+      "upstream_sha256": "a48620abd302fe3068320d6deeb38c3270d89bf180ac0622c95e4b8a78c905e3",
+      "pre_migration_sha256": "a48620abd302fe3068320d6deeb38c3270d89bf180ac0622c95e4b8a78c905e3",
+      "fork_sha256": "a48620abd302fe3068320d6deeb38c3270d89bf180ac0622c95e4b8a78c905e3",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTransform.h",
+      "upstream_sha256": "70030287744b01911fdbb928dea910cacb62d5ae789855c900826c0e03aa34cb",
+      "pre_migration_sha256": "70030287744b01911fdbb928dea910cacb62d5ae789855c900826c0e03aa34cb",
+      "fork_sha256": "70030287744b01911fdbb928dea910cacb62d5ae789855c900826c0e03aa34cb",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/DisplayTypes.h",
+      "upstream_sha256": "546d0aa2060771fb63a8650b8d9500bf014c6fd31442e10efb1b79d1cdb55c60",
+      "pre_migration_sha256": "546d0aa2060771fb63a8650b8d9500bf014c6fd31442e10efb1b79d1cdb55c60",
+      "fork_sha256": "546d0aa2060771fb63a8650b8d9500bf014c6fd31442e10efb1b79d1cdb55c60",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/KeyMapping.h",
+      "upstream_sha256": "908cbc81a121b1b7264dd89a7f241bf4528abe832f6ce9b6022159c1d1ebd326",
+      "pre_migration_sha256": "908cbc81a121b1b7264dd89a7f241bf4528abe832f6ce9b6022159c1d1ebd326",
+      "fork_sha256": "908cbc81a121b1b7264dd89a7f241bf4528abe832f6ce9b6022159c1d1ebd326",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h",
+      "upstream_sha256": "789ff67a7f2252a8a9dfa8c80c1659363e6216b38f41cbd4543ca4288436cc51",
+      "pre_migration_sha256": "789ff67a7f2252a8a9dfa8c80c1659363e6216b38f41cbd4543ca4288436cc51",
+      "fork_sha256": "789ff67a7f2252a8a9dfa8c80c1659363e6216b38f41cbd4543ca4288436cc51",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c",
+      "upstream_sha256": "4ef6bb286ecfad608eb97d66eee61ea4d05c2f42289d7de964a99c1a61f77b5b",
+      "pre_migration_sha256": "6d5a30380be0c4baad136bb4c5f6f82930d8bfd5c022fc6abc4a6137520d6968",
+      "fork_sha256": "6d5a30380be0c4baad136bb4c5f6f82930d8bfd5c022fc6abc4a6137520d6968",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf",
+      "upstream_sha256": "6d48936888acece6ce65ba3ed6adb9e6b164e41adf231c13b973dd20da2eb7de",
+      "pre_migration_sha256": "06b494261c01aad45ead99af9e9ee8fd8b9d24ab7a07ff45a67401a651b6b6a8",
+      "fork_sha256": "06b494261c01aad45ead99af9e9ee8fd8b9d24ab7a07ff45a67401a651b6b6a8",
+      "functional_delta": true,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardProtocol.c",
+      "upstream_sha256": "c187802521b7e1337e7bb83ec3061323652bfe74dc560ef6ee0988e97ec3b63d",
+      "pre_migration_sha256": "c187802521b7e1337e7bb83ec3061323652bfe74dc560ef6ee0988e97ec3b63d",
+      "fork_sha256": "c187802521b7e1337e7bb83ec3061323652bfe74dc560ef6ee0988e97ec3b63d",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardProtocol.h",
+      "upstream_sha256": "75eeee06a93507b3149c30442a9a5af4acab84128a7b767e3d8c732c9291669e",
+      "pre_migration_sha256": "75eeee06a93507b3149c30442a9a5af4acab84128a7b767e3d8c732c9291669e",
+      "fork_sha256": "75eeee06a93507b3149c30442a9a5af4acab84128a7b767e3d8c732c9291669e",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/Resources/KeyboardIcon_Medium.h",
+      "upstream_sha256": "af65e1072e534a7b666fe2f1270548ec19687582f3dec7994d27c880d0f3d485",
+      "pre_migration_sha256": "af65e1072e534a7b666fe2f1270548ec19687582f3dec7994d27c880d0f3d485",
+      "fork_sha256": "af65e1072e534a7b666fe2f1270548ec19687582f3dec7994d27c880d0f3d485",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/OnScreenKeyboardDxe/Resources/KeyboardIcon_Small.h",
+      "upstream_sha256": "0ba6be162448e5d544f0870b41c2b00822cd8e5908d57cb4917ede82f13a73dd",
+      "pre_migration_sha256": "0ba6be162448e5d544f0870b41c2b00822cd8e5908d57cb4917ede82f13a73dd",
+      "fork_sha256": "0ba6be162448e5d544f0870b41c2b00822cd8e5908d57cb4917ede82f13a73dd",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/Resources/MousePointer_Medium.h",
+      "upstream_sha256": "f7c4f28738cee863d478d04b3ddd6bf42f64de0fd2c94eb73280eb0d2d4135bd",
+      "pre_migration_sha256": "f7c4f28738cee863d478d04b3ddd6bf42f64de0fd2c94eb73280eb0d2d4135bd",
+      "fork_sha256": "f7c4f28738cee863d478d04b3ddd6bf42f64de0fd2c94eb73280eb0d2d4135bd",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/Resources/MousePointer_Small.h",
+      "upstream_sha256": "2024b4f3d7bb0bab18fb0a41972f98f40f4cc95fc956302bcf3390afd86ddc42",
+      "pre_migration_sha256": "2024b4f3d7bb0bab18fb0a41972f98f40f4cc95fc956302bcf3390afd86ddc42",
+      "fork_sha256": "2024b4f3d7bb0bab18fb0a41972f98f40f4cc95fc956302bcf3390afd86ddc42",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
+      "upstream_sha256": "d26ae3a4856037011ccf672863bb01d1475bf47c62f68ba9a6a7d0afaf76858c",
+      "pre_migration_sha256": "d26ae3a4856037011ccf672863bb01d1475bf47c62f68ba9a6a7d0afaf76858c",
+      "fork_sha256": "d26ae3a4856037011ccf672863bb01d1475bf47c62f68ba9a6a7d0afaf76858c",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerProtocol.c",
+      "upstream_sha256": "78668fd6960c954bd944a5dd75e1ef58a3f871cc425514891fe92a93b911eb20",
+      "pre_migration_sha256": "78668fd6960c954bd944a5dd75e1ef58a3f871cc425514891fe92a93b911eb20",
+      "fork_sha256": "78668fd6960c954bd944a5dd75e1ef58a3f871cc425514891fe92a93b911eb20",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerProtocol.h",
+      "upstream_sha256": "d4fc4eb20115177b7581dc22aed71ff19b6ffc13aa10b9413d7ef696aa9d8e67",
+      "pre_migration_sha256": "d4fc4eb20115177b7581dc22aed71ff19b6ffc13aa10b9413d7ef696aa9d8e67",
+      "fork_sha256": "d4fc4eb20115177b7581dc22aed71ff19b6ffc13aa10b9413d7ef696aa9d8e67",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerStrings.uni",
+      "upstream_sha256": "bb2cea68f7a7711c8cef41796749f732eecd10ce293b8c7b8155eab6a2652df1",
+      "pre_migration_sha256": "bb2cea68f7a7711c8cef41796749f732eecd10ce293b8c7b8155eab6a2652df1",
+      "fork_sha256": "bb2cea68f7a7711c8cef41796749f732eecd10ce293b8c7b8155eab6a2652df1",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c",
+      "upstream_sha256": "07d1d2209e9e8a5d85c5c0d4f9e8e31311efc980805146d666ebd4a22449758a",
+      "pre_migration_sha256": "07d1d2209e9e8a5d85c5c0d4f9e8e31311efc980805146d666ebd4a22449758a",
+      "fork_sha256": "07d1d2209e9e8a5d85c5c0d4f9e8e31311efc980805146d666ebd4a22449758a",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c",
+      "upstream_sha256": "a675be4db3977b18e70106cdf558102d1027c0614a5f374719f7b1831003762a",
+      "pre_migration_sha256": "509a3b1e7fa3aa656a8a7d7b85659d16b229eabcf495ae1ee73f4068f8168947",
+      "fork_sha256": "2306a5e31259a6a4f97892238b33aab53e11503a890b17a200827a51dc026fc7",
+      "functional_delta": true,
+      "relocation_delta": false,
+      "migration_fork_sha256": "509a3b1e7fa3aa656a8a7d7b85659d16b229eabcf495ae1ee73f4068f8168947"
+    },
+    {
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.h",
+      "upstream_sha256": "1d52ad7b5b3e444a80e29aaa2966721530a7869aac0b962540a7e157ec7ba0aa",
+      "pre_migration_sha256": "1d52ad7b5b3e444a80e29aaa2966721530a7869aac0b962540a7e157ec7ba0aa",
+      "fork_sha256": "1d52ad7b5b3e444a80e29aaa2966721530a7869aac0b962540a7e157ec7ba0aa",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsWheaPkg/HwErrBert/BertHelper.c",
+      "upstream_sha256": "137f5d14ca9ebf1cd8dd2b205bf5a1cc20eac5c861e2ffb8d6fe8bf1c7753a97",
+      "pre_migration_sha256": "137f5d14ca9ebf1cd8dd2b205bf5a1cc20eac5c861e2ffb8d6fe8bf1c7753a97",
+      "fork_sha256": "137f5d14ca9ebf1cd8dd2b205bf5a1cc20eac5c861e2ffb8d6fe8bf1c7753a97",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsWheaPkg/HwErrBert/BertHelper.h",
+      "upstream_sha256": "0be3c8c2fedf08e1242f76a87488c94bc48ece0e31d89e307c64973ed48feb07",
+      "pre_migration_sha256": "0be3c8c2fedf08e1242f76a87488c94bc48ece0e31d89e307c64973ed48feb07",
+      "fork_sha256": "0be3c8c2fedf08e1242f76a87488c94bc48ece0e31d89e307c64973ed48feb07",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsWheaPkg/HwErrBert/HwErrBert.inf",
+      "upstream_sha256": "e409e838084008e80c409e83ae07a0bcd424ebbd642c6aa6c1fe4d0ec089b549",
+      "pre_migration_sha256": "e409e838084008e80c409e83ae07a0bcd424ebbd642c6aa6c1fe4d0ec089b549",
+      "fork_sha256": "e409e838084008e80c409e83ae07a0bcd424ebbd642c6aa6c1fe4d0ec089b549",
+      "functional_delta": false,
+      "relocation_delta": false
+    },
+    {
+      "path": "MsWheaPkg/HwErrBert/HwErrorBert.c",
+      "upstream_sha256": "33543e04f3ba2886f4f511aebbfe61af33e224c694f4ba9ca2a209982c6619bd",
+      "pre_migration_sha256": "e6ae632d216fa86163795d5d65614730e0339dafaeb101e570a1d3b7048f1042",
+      "fork_sha256": "e6ae632d216fa86163795d5d65614730e0339dafaeb101e570a1d3b7048f1042",
+      "functional_delta": true,
+      "relocation_delta": false
+    }
+  ],
+  "patches": {
+    "relocation.patch": "73627cdf0a2ec64fb5a478ce9e48c45bd448fdd2a4eefd2895c0545edf3be667",
+    "upstream-functional.patch": "afc9558fd44d306b9887a5ae3ce96fecc8b2ba9bc09925b6dbd2c739cdc0f167",
+    "native79-swm-pointer-queue.patch": "de569c2a441e696095aeee5fd62f74d0733f9cff78e3edbcafd8813547039ab2"
+  },
+  "pcd_migration": {
+    "old": "gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid",
+    "new": "gCranePkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid",
+    "type": "VOID*",
+    "default": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "token": "0x00000006",
+    "registry_owner": "root"
+  },
+  "platform_updates": [
+    {
+      "checkpoint": "Native79",
+      "path": "MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c",
+      "before_sha256": "509a3b1e7fa3aa656a8a7d7b85659d16b229eabcf495ae1ee73f4068f8168947",
+      "after_sha256": "2306a5e31259a6a4f97892238b33aab53e11503a890b17a200827a51dc026fc7",
+      "patch": "patches/native79-swm-pointer-queue.patch",
+      "reason": "Coalesce absolute pointer motion without moving queued button edges; preserve newest FIFO entries on overflow.",
+      "test": "Platforms/CranePkg/Tests/run_swm_pointer_queue_tests.py"
+    }
+  ]
+}

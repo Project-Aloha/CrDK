@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = HdkUsbCrLib
+  FILE_GUID = 0d1531e2-d2bd-4fdd-b933-ff05508f6011
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = HdkUsbCrLib
+[Sources]
+  HdkUsb.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

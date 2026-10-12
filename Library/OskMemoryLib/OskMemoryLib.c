@@ -4,7 +4,6 @@
  *   SPDX-License-Identifier: MIT
  */
 
-#pragma once
 #include <oskal/cr_memory.h>
 
 #ifdef _KERNEL_MODE

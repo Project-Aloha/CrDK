@@ -1,0 +1,18 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Dwc3CrLib
+  FILE_GUID = 250777a0-ea67-43bb-8e86-b60a1cc98eaf
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = Dwc3CrLib
+[Sources]
+  Dwc3.c
+  Dwc3Power.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  TimerLib

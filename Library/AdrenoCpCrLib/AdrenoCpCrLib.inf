@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AdrenoCpCrLib
+  FILE_GUID = 1451308B-273D-4872-A5C4-33FA97D093EF
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoCpCrLib
+[Sources]
+  AdrenoCp.c
+  Sm8450Cp.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  SynchronizationLib

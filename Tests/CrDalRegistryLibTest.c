@@ -201,6 +201,13 @@ main (void)
   TestManifestValidation ();
   TestLookupContract ();
   TestEnumerationContract ();
+  /* Appended singleton dispatch accepts SD without changing previous IDs. */
+  CR_DAL_DEVICE_INFO D=mDevices[0];D.Type=CrDalDeviceSd;D.Instance=0;
+  CR_DAL_DEVICE_MANIFEST M=mManifest;M.Devices=&D;M.DeviceCount=1;
+  CONST CR_DAL_DEVICE_INFO *Out=NULL;
+  assert(CrDalDeviceSd==22&&CrDalRegistryValidate(&M)==EFI_SUCCESS);
+  assert(CrDalRegistryGetDeviceInfo(&M,CrDalDeviceSd,0,CR_DAL_DATA_REVISION_1,sizeof(mPayload),&Out)==EFI_SUCCESS&&Out==&D);
+
   puts ("CrDAL: manifest, duplicate, lifetime, version, size and enumeration checks passed");
   return 0;
 }

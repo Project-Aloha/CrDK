@@ -1,0 +1,256 @@
+{
+  "schema": 1,
+  "upstream_repository": "MU_BASECORE",
+  "upstream_revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "driver_guid": "CBD2E4D5-7068-4FF5-B462-9822B4AD8D60",
+  "driver_name": "VariableRuntimeDxe",
+  "scope": "Selected RuntimeDxe INF closure plus persistence interface and Null implementation; no SMM/StandaloneMm variants",
+  "files": [
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c",
+      "upstream_sha256": "61bbb1792860efe1a12e9def0c1dee282e3da08eda2fd813fb9b201be8cb09b1",
+      "local_sha256": "61bbb1792860efe1a12e9def0c1dee282e3da08eda2fd813fb9b201be8cb09b1",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c",
+      "staged_sha256": "61bbb1792860efe1a12e9def0c1dee282e3da08eda2fd813fb9b201be8cb09b1",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c",
+      "upstream_sha256": "d3f54133084849eff749d145b0ad0f735c18b2b1c862230446b3e20c74a3f1c7",
+      "local_sha256": "d3f54133084849eff749d145b0ad0f735c18b2b1c862230446b3e20c74a3f1c7",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c",
+      "staged_sha256": "d3f54133084849eff749d145b0ad0f735c18b2b1c862230446b3e20c74a3f1c7",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c",
+      "upstream_sha256": "b13e50767b58ff838430d314fc7ece14b50850d7e17f0a90de0fe2dc4d9a19cd",
+      "local_sha256": "c58a56c860fbf8f6aafe83cefcc4ebc1139ec37ddd8f8badae8de5d4cd94ed2d",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c",
+      "staged_sha256": "c58a56c860fbf8f6aafe83cefcc4ebc1139ec37ddd8f8badae8de5d4cd94ed2d",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePersistence.c",
+      "upstream_sha256": null,
+      "local_sha256": "c296109691c713bdf4fa119068c2e24ff3a083352ffb9ba62ed00a44d6b7d4a6",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePersistence.c",
+      "staged_sha256": "c296109691c713bdf4fa119068c2e24ff3a083352ffb9ba62ed00a44d6b7d4a6",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h",
+      "upstream_sha256": "4c5afa479f9aed99188d30b1e8ad089bbfdd89e533c76daa265f0cb2504ae56a",
+      "local_sha256": "46e49fb43e696c4d1ba0ae98b5a239f74c5dbabfaedee1688f5a8798ff6d4b7b",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h",
+      "staged_sha256": "46e49fb43e696c4d1ba0ae98b5a239f74c5dbabfaedee1688f5a8798ff6d4b7b",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableNonVolatile.c",
+      "upstream_sha256": "6980a85d5c5c7e26e253fbd4f434b9b0f0518f444b3fe280372d7dad71337f9b",
+      "local_sha256": "bba73ea926a95451810eb3f9d1c20163c09120c83046a015891825f3e1744bba",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableNonVolatile.c",
+      "staged_sha256": "bba73ea926a95451810eb3f9d1c20163c09120c83046a015891825f3e1744bba",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableNonVolatile.h",
+      "upstream_sha256": "ea75a94e120beccf4cbc3083f6438a9aa6be1c2fda4cf16eabcc011ea2a91f56",
+      "local_sha256": "c0c4a95dd8dd76e5ac4461c64a4012845b940478d212809a709fca9b5c094e2c",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableNonVolatile.h",
+      "staged_sha256": "c0c4a95dd8dd76e5ac4461c64a4012845b940478d212809a709fca9b5c094e2c",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableParsing.c",
+      "upstream_sha256": "d000f0932a95d1370b9db8da6692dad2793b5e437e25c367a461c9790cb123e4",
+      "local_sha256": "d000f0932a95d1370b9db8da6692dad2793b5e437e25c367a461c9790cb123e4",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableParsing.c",
+      "staged_sha256": "d000f0932a95d1370b9db8da6692dad2793b5e437e25c367a461c9790cb123e4",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableParsing.h",
+      "upstream_sha256": "bbf5a0e8efe245909511b57b19b55a848a7c0675bc08f03c7ac8601c2cd3721f",
+      "local_sha256": "bbf5a0e8efe245909511b57b19b55a848a7c0675bc08f03c7ac8601c2cd3721f",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableParsing.h",
+      "staged_sha256": "bbf5a0e8efe245909511b57b19b55a848a7c0675bc08f03c7ac8601c2cd3721f",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeCache.c",
+      "upstream_sha256": "a1443298def7e6d301ce95a273206c776d57dda3c14b764264ee102d42721bac",
+      "local_sha256": "a1443298def7e6d301ce95a273206c776d57dda3c14b764264ee102d42721bac",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeCache.c",
+      "staged_sha256": "a1443298def7e6d301ce95a273206c776d57dda3c14b764264ee102d42721bac",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeCache.h",
+      "upstream_sha256": "70e907a4da4cfc230f0d3b9446a3f38dc9b49a60f89dedc90b82d6c87f7ac556",
+      "local_sha256": "70e907a4da4cfc230f0d3b9446a3f38dc9b49a60f89dedc90b82d6c87f7ac556",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeCache.h",
+      "staged_sha256": "70e907a4da4cfc230f0d3b9446a3f38dc9b49a60f89dedc90b82d6c87f7ac556",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/PrivilegePolymorphic.h",
+      "upstream_sha256": "d2108696e1baab273b89a9474221ff00edc2d7b46b1fa9007c213cd437ec0e30",
+      "local_sha256": "d2108696e1baab273b89a9474221ff00edc2d7b46b1fa9007c213cd437ec0e30",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/PrivilegePolymorphic.h",
+      "staged_sha256": "d2108696e1baab273b89a9474221ff00edc2d7b46b1fa9007c213cd437ec0e30",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/Measurement.c",
+      "upstream_sha256": "99f8e98d3fbfd09677b2d60470f0a641bf12be2b4dc5d6c46c0d87765019bf1d",
+      "local_sha256": "99f8e98d3fbfd09677b2d60470f0a641bf12be2b4dc5d6c46c0d87765019bf1d",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/Measurement.c",
+      "staged_sha256": "99f8e98d3fbfd09677b2d60470f0a641bf12be2b4dc5d6c46c0d87765019bf1d",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c",
+      "upstream_sha256": "09eaaaf3e004b28fe6baacb9af77729e1a9ec11a501dbf291c0bc308f6e204f2",
+      "local_sha256": "09eaaaf3e004b28fe6baacb9af77729e1a9ec11a501dbf291c0bc308f6e204f2",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c",
+      "staged_sha256": "09eaaaf3e004b28fe6baacb9af77729e1a9ec11a501dbf291c0bc308f6e204f2",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VarCheck.c",
+      "upstream_sha256": "5899671204dad793ec120bb498754f914030a3382263782bed749bbda52a31f4",
+      "local_sha256": "5899671204dad793ec120bb498754f914030a3382263782bed749bbda52a31f4",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VarCheck.c",
+      "staged_sha256": "5899671204dad793ec120bb498754f914030a3382263782bed749bbda52a31f4",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableExLib.c",
+      "upstream_sha256": "15f2b04f31054578e0ec2bc61c6b5ce632d6b71a2e08367ccea50b6f3125bc5f",
+      "local_sha256": "15f2b04f31054578e0ec2bc61c6b5ce632d6b71a2e08367ccea50b6f3125bc5f",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableExLib.c",
+      "staged_sha256": "15f2b04f31054578e0ec2bc61c6b5ce632d6b71a2e08367ccea50b6f3125bc5f",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/SpeculationBarrierDxe.c",
+      "upstream_sha256": "522578b121778249846ab88780cf11f5e60ef8ed189aebd1c77a1f2917e1878b",
+      "local_sha256": "522578b121778249846ab88780cf11f5e60ef8ed189aebd1c77a1f2917e1878b",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/SpeculationBarrierDxe.c",
+      "staged_sha256": "522578b121778249846ab88780cf11f5e60ef8ed189aebd1c77a1f2917e1878b",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableLockRequestToLock.c",
+      "upstream_sha256": "ab7675c452463a67aafb3adfa9507c52216957892a1a6f36f4cb1463718ad255",
+      "local_sha256": "ab7675c452463a67aafb3adfa9507c52216957892a1a6f36f4cb1463718ad255",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableLockRequestToLock.c",
+      "staged_sha256": "ab7675c452463a67aafb3adfa9507c52216957892a1a6f36f4cb1463718ad255",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePolicyLockingCommon.h",
+      "upstream_sha256": "d154a2b8377ac69ffa8f59033fb38461b23f720fcc2955af5ad330897b722ff4",
+      "local_sha256": "d154a2b8377ac69ffa8f59033fb38461b23f720fcc2955af5ad330897b722ff4",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePolicyLockingCommon.h",
+      "staged_sha256": "d154a2b8377ac69ffa8f59033fb38461b23f720fcc2955af5ad330897b722ff4",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePolicyLockingCommon.c",
+      "upstream_sha256": "8a4cf34cd7316d0cce3b57685a9217bb90c33265d587973643bcf5819ab86fbb",
+      "local_sha256": "8a4cf34cd7316d0cce3b57685a9217bb90c33265d587973643bcf5819ab86fbb",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariablePolicyLockingCommon.c",
+      "staged_sha256": "8a4cf34cd7316d0cce3b57685a9217bb90c33265d587973643bcf5819ab86fbb",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxeExtra.uni",
+      "upstream_sha256": "1caa983010a9dd53dbdabaa765502d915f6717915702ca07ac5f673f0fb6570c",
+      "local_sha256": "1caa983010a9dd53dbdabaa765502d915f6717915702ca07ac5f673f0fb6570c",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxeExtra.uni",
+      "staged_sha256": "1caa983010a9dd53dbdabaa765502d915f6717915702ca07ac5f673f0fb6570c",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf",
+      "upstream_sha256": "6b0d0e2a633253cebd38ae368c7d14a4cdf98886322a5500243f7a72880148c6",
+      "local_sha256": "88ee540af627bed5ba861c7dbfea8e6bea3383d394b435b6ea1548e0670118a8",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf",
+      "staged_sha256": "2d9638baa816d876922f97840baf1100d8205132bdbd6ec177c9111f2a540cf4",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": true
+    },
+    {
+      "upstream_path": "MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.uni",
+      "upstream_sha256": "f558fdb3cc262177a04480007c11f5c50f9423643c3f28f9f4c81d368875e1af",
+      "local_sha256": "f558fdb3cc262177a04480007c11f5c50f9423643c3f28f9f4c81d368875e1af",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.uni",
+      "staged_sha256": "f558fdb3cc262177a04480007c11f5c50f9423643c3f28f9f4c81d368875e1af",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Include/Library/VariablePersistenceLib.h",
+      "upstream_sha256": null,
+      "local_sha256": "f99a5230b582ee2c478807897d5e6dcd465a98177ec72917b22fe3200c5ac151",
+      "staged_path": "Platforms/CranePkg/Include/Library/VariablePersistenceLib.h",
+      "staged_sha256": "f99a5230b582ee2c478807897d5e6dcd465a98177ec72917b22fe3200c5ac151",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.c",
+      "upstream_sha256": null,
+      "local_sha256": "c78a07d02dcaafd10a09068563705d5af712aad004c26c163b669c4e8c275757",
+      "staged_path": "Platforms/CranePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.c",
+      "staged_sha256": "c78a07d02dcaafd10a09068563705d5af712aad004c26c163b669c4e8c275757",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": false
+    },
+    {
+      "upstream_path": "MdeModulePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf",
+      "upstream_sha256": null,
+      "local_sha256": "c1f955b6e2ee9066968732933079331eb7ce90fbc417af2262dae925e1e8276f",
+      "staged_path": "Platforms/CranePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf",
+      "staged_sha256": "f9130ea5f595a81a779426b9697b6eee5739641176fc5fdbf25c5bb3d623e58b",
+      "modified_from_upstream": true,
+      "relocation_changed_bytes": true
+    },
+    {
+      "upstream_path": "License.txt",
+      "upstream_sha256": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+      "local_sha256": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+      "staged_path": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Universal/Variable/RuntimeDxe/LICENSE.txt",
+      "staged_sha256": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+      "modified_from_upstream": false,
+      "relocation_changed_bytes": false
+    }
+  ],
+  "local_patch": ".tmp/waipio-continuation/nv-override71/official-local.patch",
+  "local_patch_sha256": "e57c31ad5783cc44899f240dd55a787a25d1e9042fb31d08a159c80f73e66125",
+  "official_tree_mutated": false
+}

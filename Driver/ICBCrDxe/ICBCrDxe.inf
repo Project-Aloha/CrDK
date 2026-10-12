@@ -1,5 +1,5 @@
 ## @file
-#  Adapter to the packaged Qualcomm NPA ICB owner.
+#  Standalone Linux-style Qualcomm SM8450 interconnect/BCM voter.
 #
 #  SPDX-License-Identifier: MIT
 ##
@@ -11,6 +11,7 @@
   MODULE_TYPE                    = DXE_DRIVER
   VERSION_STRING                 = 1.0
   ENTRY_POINT                    = InterconnectEntryPoint
+  UNLOAD_IMAGE                   = InterconnectUnload
 
 [Sources]
   ICBCrDxe.c
@@ -24,15 +25,16 @@
   BaseMemoryLib
   CrDalLib
   DebugLib
+  ICBLib
+  RpmhLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
 
 [Protocols]
   gEfiCrDalProtocolGuid         ## CONSUMES
-  gEfiNpaProtocolGuid           ## CONSUMES
-  gEfiICBProtocolGuid           ## CONSUMES
+  gEfiCmdDBCrProtocolGuid       ## CONSUMES
   gEfiInterconnectCrProtocolGuid ## PRODUCES
 
 [Depex]
-  gEfiCrDalProtocolGuid AND gEfiNpaProtocolGuid AND gEfiICBProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiCmdDBCrProtocolGuid

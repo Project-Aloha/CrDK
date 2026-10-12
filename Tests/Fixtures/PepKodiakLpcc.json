@@ -1,0 +1,7 @@
+{
+  "source": "https://github.com/Project-Aloha/SurfaceDuoACPI",
+  "path": "7325/src/dsdt.dsl",
+  "source_sha256": "0671aa1c36702546e82c52981717821a593caa2b1d271464a72e5c4e4089c3f1",
+  "fixture_sha256": "ca0c2755e64d19d24c2c35164a62a56904e4b88959da718227cb2f48becb7d98",
+  "scope": "LPCC, APCC and LPXC literals only; no executable AML or board platform"
+}

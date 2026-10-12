@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssDpCrLib
+  FILE_GUID = 17590e86-1935-4472-8198-ce381980e763
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssDpCrLib
+[Sources]
+  DpAux.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

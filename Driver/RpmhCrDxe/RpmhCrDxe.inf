@@ -24,19 +24,21 @@
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
 
 [LibraryClasses]
+  BaseLib
   CrDalLib
   DebugLib
+  RpmhLib
+  RpmhArcVoteLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
 
 [Protocols]
   gEfiCrDalProtocolGuid     ## CONSUMES
-  gEfiNpaProtocolGuid       ## CONSUMES
-  gQcomPmicVregProtocolGuid ## CONSUMES
+  gEfiCmdDBCrProtocolGuid   ## CONSUMES
   gEfiRpmhCrProtocolGuid    ## PRODUCES
 [Depex]
-  gEfiCrDalProtocolGuid AND gEfiNpaProtocolGuid AND gQcomPmicVregProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiCmdDBCrProtocolGuid

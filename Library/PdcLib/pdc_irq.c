@@ -1,94 +1,118 @@
+/* Native convenience routes retain exact ownership through failed cleanup.
+ * SPDX-License-Identifier: MIT */
 #include "pdc_internal.h"
 
 #ifndef _KERNEL_MODE
+typedef struct {
+  PdcDeviceContext *Context;
+  UINT16 Pin;
+  CR_INTERRUPT_TRIGGER_TYPE Type;
+  CR_INTERRUPT_CONFIG Interrupt;
+  CR_INTERRUPT_HANDLER Handler;
+  VOID *Param;
+  PDC_INTERRUPT_REGISTERS Registers;
+  UINT32 OldType,OldEnable,OldSpi;
+  BOOLEAN Changed,Ready;
+} PDC_INTERRUPT_OWNER;
+STATIC PDC_INTERRUPT_OWNER mPdcOwners[MAX_INTERRUPT_ENTRIES];
 
-CR_STATUS PdcRegisterInterrupt(
-    PdcDeviceContext *Ctx, UINT16 PdcPinNumber,
-    CR_INTERRUPT_HANDLER InterruptHandler, VOID *Param,
-    CR_INTERRUPT_TRIGGER_TYPE Type)
-{
-  CR_STATUS Status = CR_SUCCESS;
-  UINT16    GicIrq = 0;
-  Status           = PdcGetGicIrqFromPdcPin(Ctx, PdcPinNumber, &GicIrq);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to get GIC IRQ from PDC Pin %d, Status=0x%X",
-        __FUNCTION__, PdcPinNumber, Status);
-    return Status;
+STATIC VOID Dispatch(VOID *Parameter) {
+  PDC_INTERRUPT_OWNER *Owner=Parameter;
+  if (Owner->Ready) Owner->Handler(Owner->Param);
+}
+STATIC VOID Restore(PDC_INTERRUPT_OWNER *Owner) {
+  if (!Owner->Changed) return;
+  PDC_INTERRUPT_REGISTERS *R=&Owner->Registers;
+  UINT32 Value=CrMmioRead32(R->ConfigAddress);
+  CrMmioWrite32(R->ConfigAddress,(Value&~7U)|Owner->OldType);
+  if (R->SpiMask!=0) {
+    Value=CrMmioRead32(R->SpiAddress);
+    CrMmioWrite32(R->SpiAddress,(Value&~R->SpiMask)|Owner->OldSpi);
   }
+  Value=CrMmioRead32(R->EnableAddress);
+  CrMmioWrite32(R->EnableAddress,(Value&~R->EnableMask)|Owner->OldEnable);
+}
+STATIC VOID Retire(PDC_INTERRUPT_OWNER *Owner) {
+  --Owner->Context->ActiveInterrupts;
+  *Owner=(PDC_INTERRUPT_OWNER){0};
+}
 
-  // Set up Pdc and get gic type
-  CR_INTERRUPT_TRIGGER_TYPE GicType;
-  Status = PdcGicSetType(Ctx, PdcPinNumber, Type, &GicType);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to set PDC GIC type for PDC Pin %d, Status=0x%X",
-        __FUNCTION__, PdcPinNumber, Status);
-    return Status;
+CR_STATUS PdcRegisterInterrupt(PdcDeviceContext *Ctx,UINT16 Pin,
+    CR_INTERRUPT_HANDLER Handler,VOID *Parameter,CR_INTERRUPT_TRIGGER_TYPE Type) {
+  if (Handler==NULL) return CR_INVALID_PARAMETER;
+  PDC_INTERRUPT_REGISTERS Registers;
+  CR_STATUS Status=PdcValidateInterrupt(Ctx,Pin,Type,&Registers);
+  if (CR_ERROR(Status)) return Status;
+  UINT16 Gic;
+  Status=PdcGetGicIrqFromPdcPin(Ctx,Pin,&Gic);
+  if (CR_ERROR(Status)) return Status;
+  CR_INTERRUPT_GUARD Guard;
+  Status=CrInterruptGuardAcquire(&Guard);
+  if (CR_ERROR(Status)) return Status;
+  PDC_INTERRUPT_OWNER *Owner=NULL;
+  for (UINTN I=0;I<MAX_INTERRUPT_ENTRIES;++I) {
+    if (mPdcOwners[I].Context!=NULL &&
+        (mPdcOwners[I].Interrupt.InterruptNumber==Gic ||
+         (mPdcOwners[I].Context==Ctx && mPdcOwners[I].Pin==Pin))) {
+      Status=CR_BUSY;goto Exit;
+    }
+    if (mPdcOwners[I].Context==NULL && Owner==NULL) Owner=&mPdcOwners[I];
   }
-
-  // Enable Pdc Interrupt
-  PdcEnableInterrupt(Ctx, PdcPinNumber, TRUE);
-
-  // Register directly to interrupt controller
-  log_info(
-      CR_LOG_CHAR8_STR_FMT
-      ": Registering interrupt for PDC Pin %d (GIC IRQ %d) with type %d",
-      __FUNCTION__, PdcPinNumber, GicIrq, GicType);
-
-  CR_INTERRUPT_CONFIG InterruptConfig = {
-      .InterruptNumber = GicIrq,
-      .Handler         = InterruptHandler,
-      .Param           = Param,
-      .TriggerType     = GicType,
-  };
-  Status = CrRegisterInterrupt(&InterruptConfig);
+  if (Owner==NULL) {Status=CR_OUT_OF_RESOURCES;goto Exit;}
+  *Owner=(PDC_INTERRUPT_OWNER){.Context=Ctx,.Pin=Pin,.Type=Type,
+      .Handler=Handler,.Param=Parameter,.Registers=Registers,
+      .Interrupt={.InterruptNumber=Gic,.Handler=Dispatch,.Param=Owner,
+                  .TriggerType=Registers.GicType}};
+  ++Ctx->ActiveInterrupts;
+  // Claim GIC ownership before touching PDC, so a foreign owner is untouched.
+  // HIGH priority excludes native dispatch until the complete route is ready.
+  Status=CrRegisterInterrupt(&Owner->Interrupt);
   if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to register interrupt for PDC Pin %d (GIC IRQ %d), "
-        "Status=0x%X",
-        __FUNCTION__, PdcPinNumber, GicIrq, Status);
-    return Status;
+    if (!CrInterruptIsRegistered(&Owner->Interrupt)) Retire(Owner);
+    // A retained callback is gated off and can only be retired by this owner.
+    goto Exit;
   }
-
+  Owner->OldType=CrMmioRead32(Registers.ConfigAddress)&7U;
+  Owner->OldEnable=CrMmioRead32(Registers.EnableAddress)&Registers.EnableMask;
+  if (Registers.SpiMask!=0)
+    Owner->OldSpi=CrMmioRead32(Registers.SpiAddress)&Registers.SpiMask;
+  Owner->Changed=TRUE;
+  Status=PdcEnableInterrupt(Ctx,Pin,FALSE);
+  if (!CR_ERROR(Status)) Status=PdcGicSetType(Ctx,Pin,Type,NULL);
+  if (!CR_ERROR(Status)) Status=PdcEnableInterrupt(Ctx,Pin,TRUE);
+  if (!CR_ERROR(Status)) {Owner->Ready=TRUE;goto Exit;}
+  CR_STATUS Cleanup=CrUnregisterInterrupt(&Owner->Interrupt);
+  if (CR_ERROR(Cleanup)) {Status=Cleanup;goto Exit;}
+  Restore(Owner);Retire(Owner);
+Exit:
+  CrInterruptGuardRelease(&Guard);
   return Status;
 }
 
-CR_STATUS
-PdcUnregisterInterrupt(
-    PdcDeviceContext *Ctx, UINT16 PdcPinNumber, CR_INTERRUPT_TRIGGER_TYPE Type)
-{
-  CR_STATUS Status = CR_SUCCESS;
-  UINT16    GicIrq = 0;
-  Status           = PdcGetGicIrqFromPdcPin(Ctx, PdcPinNumber, &GicIrq);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to get GIC IRQ from PDC Pin %d, Status=0x%X",
-        __FUNCTION__, PdcPinNumber, Status);
-    return Status;
+CR_STATUS PdcUnregisterInterrupt(PdcDeviceContext *Ctx,UINT16 Pin,
+                                 CR_INTERRUPT_TRIGGER_TYPE Type) {
+  if (Ctx==NULL || (UINT32)Type>CR_INTERRUPT_TRIGGER_EDGE_BOTH)
+    return CR_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard;
+  CR_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if (CR_ERROR(Status)) return Status;
+  PDC_INTERRUPT_OWNER *Owner=NULL;
+  for (UINTN I=0;I<MAX_INTERRUPT_ENTRIES;++I)
+    if (mPdcOwners[I].Context==Ctx && mPdcOwners[I].Pin==Pin) {Owner=&mPdcOwners[I];break;}
+  if (Owner==NULL) {Status=CR_NOT_FOUND;goto Exit;}
+  if (Owner->Type!=Type) {Status=CR_INVALID_PARAMETER;goto Exit;}
+  if (!CrInterruptIsRegistered(&Owner->Interrupt)) {Status=CR_BUSY;goto Exit;}
+  if (Owner->Changed) {
+    Status=PdcEnableInterrupt(Ctx,Pin,FALSE);
+    if (CR_ERROR(Status)) goto Exit;
   }
-
-  // Disable Pdc Interrupt
-  PdcEnableInterrupt(Ctx, PdcPinNumber, FALSE);
-
-  // Unregister directly from interrupt control ler
-  CR_INTERRUPT_CONFIG InterruptConfig = {
-      .InterruptNumber = GicIrq,
-  };
-  Status = CrUnregisterInterrupt(&InterruptConfig);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to unregister interrupt for PDC Pin %d (GIC IRQ %d), "
-        "Status=0x%X",
-        __FUNCTION__, PdcPinNumber, GicIrq, Status);
-    return Status;
-  }
+  Status=CrUnregisterInterrupt(&Owner->Interrupt);
+  if (CR_ERROR(Status)) goto Exit;
+  // Synchronous OSKAL retirement precedes release of caller callback storage.
+  Owner->Ready=FALSE;
+  Restore(Owner);Retire(Owner);
+Exit:
+  CrInterruptGuardRelease(&Guard);
   return Status;
 }
-
 #endif

@@ -1,0 +1,21 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = SmemLib
+  FILE_GUID = DB167785-DF49-46C9-97B8-F00C55D7A014
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SmemLib
+
+[Sources]
+  smem.c
+  smem_mutex.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  IoLib
+  TimerLib

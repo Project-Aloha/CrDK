@@ -1,0 +1,17 @@
+[Defines]
+ INF_VERSION = 0x0001001B
+ BASE_NAME = MdssDpu2dCrLib
+ FILE_GUID = AAE1A503-AEA2-47EF-858D-DFCF3DB932F1
+ MODULE_TYPE = BASE
+ VERSION_STRING = 1.0
+ LIBRARY_CLASS = MdssDpu2dCrLib
+[Sources]
+ MdssDpuFetch.c
+ MdssDpuCursor.c
+[Packages]
+ MdePkg/MdePkg.dec
+ CranePkg/CranePkg.dec
+[LibraryClasses]
+ MdssCrLib
+ BaseMemoryLib
+ CompilerIntrinsicsLib

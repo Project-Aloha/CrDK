@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AudioGraphCrLib
+  FILE_GUID = 209494D3-A10D-4E33-9665-68D37D47693F
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AudioGraphCrLib
+[Sources]
+  AudioGraph.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  AudioCalCrLib
+  AudioGprCrLib

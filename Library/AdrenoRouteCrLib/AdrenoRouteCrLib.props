@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)..\AdrenoStopCrLib\AdrenoStopCrLib.props" />
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)Route.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Handoff.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Boot.c" />
+  </ItemGroup>
+</Project>

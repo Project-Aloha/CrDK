@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Hdk8350BootDisplayCrLib
+  FILE_GUID = 94f0ce11-f76e-42e5-96d0-899599e6d695
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = Hdk8350BootDisplayCrLib
+[Sources]
+  Hdk8350BootDisplay.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib

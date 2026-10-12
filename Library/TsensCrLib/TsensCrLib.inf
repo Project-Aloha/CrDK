@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = TsensCrLib
+  FILE_GUID = 4AA11B80-A478-4B7D-9C92-641019514096
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = TsensCrLib
+[Sources]
+  Tsens.c
+[Packages]
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

@@ -15,7 +15,9 @@
 
 typedef enum {
   PCIE_GPIO_INPUT,
-  PCIE_GPIO_OUTPUT
+  PCIE_GPIO_OUTPUT,
+  /* Apply mux/pull/drive while preserving the existing direction and latch. */
+  PCIE_GPIO_PRESERVE
 } PCIE_GPIO_DIRECTION;
 
 typedef enum {
@@ -36,10 +38,14 @@ typedef VOID (*PCIE_MMIO_WRITE8)(
 typedef VOID (*PCIE_MMIO_WRITE16)(
     IN VOID *Context, IN UINT64 Address, IN UINT16 Value);
 typedef VOID (*PCIE_DELAY_US)(IN VOID *Context, IN UINT32 Microseconds);
+/** Optional monotonic microsecond clock, used only for diagnostic timestamps. */
+typedef UINT64 (*PCIE_GET_TIME_US)(IN VOID *Context);
 typedef CR_STATUS (*PCIE_SET_CLOCK)(
     IN VOID *Context, IN CONST PcieTargetClock *Clock, IN BOOLEAN Enable);
 typedef CR_STATUS (*PCIE_SET_RESET)(
     IN VOID *Context, IN CONST PcieTargetReset *Reset, IN BOOLEAN Assert);
+typedef CR_STATUS (*PCIE_SET_CLOCK_PARENT)(
+    IN VOID *Context, IN CONST PcieTargetPhy *Phy, IN UINT32 Source);
 typedef CR_STATUS (*PCIE_SET_POWER_DOMAIN)(
     IN VOID *Context, IN CONST PcieTargetController *Controller,
     IN BOOLEAN Enable);
@@ -58,6 +64,15 @@ typedef CR_STATUS (*PCIE_SET_IOMMU)(
 typedef CR_STATUS (*PCIE_SET_GPIO)(
     IN VOID *Context, IN CONST PcieTargetGpio *Gpio,
     IN PCIE_GPIO_DIRECTION Direction, IN BOOLEAN Active);
+/** Optional read-only powered diagnostics: HDK board sequences also snapshot
+    while PERST is asserted; no resource or register mutation is permitted. */
+typedef VOID (*PCIE_DIAGNOSE_LINK)(
+    IN CONST struct _PcieIoOps *Io,
+    IN CONST PcieTargetController *Controller);
+/** Power a board endpoint while PERST is asserted; release after DMA fencing. */
+typedef CR_STATUS (*PCIE_SET_ENDPOINT_POWER)(
+    IN CONST struct _PcieIoOps *Io,
+    IN CONST PcieTargetController *Controller, IN BOOLEAN Enable);
 
 typedef struct _PcieIoOps {
   PCIE_MMIO_READ32        Read32;
@@ -77,6 +92,10 @@ typedef struct _PcieIoOps {
   PCIE_MMIO_READ16        Read16;
   PCIE_MMIO_WRITE8        Write8;
   PCIE_MMIO_WRITE16       Write16;
+  PCIE_SET_CLOCK_PARENT   SetClockParent;
+  PCIE_DIAGNOSE_LINK      DiagnoseLink;
+  PCIE_SET_ENDPOINT_POWER SetEndpointPower;
+  PCIE_GET_TIME_US        GetTimeUs;
 } PcieIoOps;
 
 typedef struct {
@@ -100,8 +119,15 @@ typedef struct {
   BOOLEAN                     ControllerResetsManaged;
   BOOLEAN                     PhyClocksEnabled;
   BOOLEAN                     PhyResetsManaged;
+  BOOLEAN                     AuxClockParentManaged;
   BOOLEAN                     InterconnectEnabled;
   BOOLEAN                     IommuAttached;
+  BOOLEAN                     EndpointPowerManaged;
+  /** Bit 0: assertion, bit 1: release, bit 2: LTSSM enable recorded. */
+  UINT8                       TimingValidMask;
+  UINT64                      PerstAssertTimeUs;
+  UINT64                      PerstReleaseTimeUs;
+  UINT64                      TrainingStartTimeUs;
 } PciePortRuntime;
 
 typedef struct {

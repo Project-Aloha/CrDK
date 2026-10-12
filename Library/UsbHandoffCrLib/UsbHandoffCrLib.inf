@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UsbHandoffCrLib
+  FILE_GUID = 7BB050EB-818B-457E-A031-95849523C3A4
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UsbHandoffCrLib
+[Sources]
+  UsbHandoff.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib

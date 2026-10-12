@@ -1,0 +1,96 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = MDSSCrDxe
+  # Keep the module file GUID distinct from gEfiMdpDsiProtocolGuid.  The
+  # previous collision made FV GUID reports identify the MDSS FFS as the
+  # protocol and obscured Apriori ordering audits.
+  FILE_GUID                     = 8f18e1c1-3f3b-4e39-8a95-4a31895f0f30
+  MODULE_TYPE                   = DXE_DRIVER
+  VERSION_STRING                = 1.0
+  ENTRY_POINT                   = MDSSCrDxeEntryPoint
+  UNLOAD_IMAGE                  = MDSSCrDxeUnload
+
+[Sources.common]
+  MDSSCrDxe.c
+  MdpPanel.c
+  MdpResources.c
+  MdpScanout.c
+  MdpDsiSequence.c
+  MdpDsiCommand.c
+  MdpExtendedPanel.c
+  MdpExtendedNative.c
+  MdpNativeResources.c
+  MdpNativeEvents.c
+  MdpCommandNative.c
+  MdpPanelPower.c
+  MdpSelectedPanel.c
+  MdpExtendedOutput.c
+  MdpExtendedEntry.c
+  MdpHdkExtendedProfile.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  ArmPkg/ArmPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  MdssCrLib
+  MdssDsiCrLib
+  MdssDualCrLib
+  MdssDsiCmdCrLib
+  MdssDscCrLib
+  OskInterruptLib
+  CrDalLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  DxeServicesLib
+  DxeServicesTableLib
+  FrameBufferBltLib
+  IoLib
+  MemoryAllocationLib
+  MemoryMapHelperLib
+  PcdLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiDevicePathProtocolGuid ## PRODUCES
+  gEfiCpuArchProtocolGuid ## CONSUMES
+  gEfiClockCrProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid ## CONSUMES
+  gEfiGpioCrProtocolGuid ## CONSUMES
+  gEfiInterconnectCrProtocolGuid ## CONSUMES
+  gEfiSmmuCrProtocolGuid ## CONSUMES
+  gEdkiiIoMmuProtocolGuid ## CONSUMES
+  gEfiGraphicsOutputProtocolGuid ## PRODUCES
+  gEfiDisplayPowerStateProtocolGuid ## PRODUCES
+  gEfiFirmwareVolume2ProtocolGuid ## SOMETIMES_CONSUMES
+  gEfiMdpDsiProtocolGuid ## PRODUCES
+  gEfiLt9611CrProtocolGuid ## CONSUMES
+  gEfiMdssHandoffProtocolGuid ## SOMETIMES_CONSUMES
+  gEfiClockExternalCrProtocolGuid ## SOMETIMES_CONSUMES
+  gEfiMdssPanelProfileCrProtocolGuid ## SOMETIMES_PRODUCES
+  gEfiLt9611PanelCrProtocolGuid ## SOMETIMES_CONSUMES
+
+[FixedPcd]
+  gCranePkgTokenSpaceGuid.PcdMdssPanelProfile
+  gCranePkgTokenSpaceGuid.PcdMdssHandoffEnable
+  gCranePkgTokenSpaceGuid.PcdMdssHdkExtendedProfileEnable
+  gMUCommonCrPkgTokenSpaceGuid.PcdMipiFrameBufferWidth
+  gMUCommonCrPkgTokenSpaceGuid.PcdMipiFrameBufferHeight
+
+[Guids]
+  gEfiEventExitBootServicesGuid ## CONSUMES
+
+[Depex]
+  gEfiCpuArchProtocolGuid AND gEfiClockCrProtocolGuid AND
+  gEfiRpmhCrProtocolGuid AND
+  gEfiGpioCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND
+  gEfiSmmuCrProtocolGuid AND gEdkiiIoMmuProtocolGuid

@@ -1,0 +1,49 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = UfsHcCrDxe
+  FILE_GUID                      = 5B8CE820-9F4F-4A9B-BE32-5F4C5C1D5A88
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UfsHcCrEntryPoint
+
+[Sources]
+  UfsHcCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  PcdLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  CrDalLib
+  DebugLib
+  IoLib
+  DevicePathLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[FixedPcd]
+  gCranePkgTokenSpaceGuid.PcdUfsLegacyCoherentDmaHandoff
+
+[Protocols]
+  gEfiCrDalProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEdkiiUfsHostControllerProtocolGuid
+  gEdkiiUfsHcPlatformProtocolGuid
+  gEfiClockCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiRpmhCrProtocolGuid
+  gEfiGpioCrProtocolGuid
+  gEfiSmmuCrProtocolGuid
+  gEdkiiIoMmuProtocolGuid
+
+[Depex]
+  gEfiCrDalProtocolGuid AND
+  gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND
+  gEfiRpmhCrProtocolGuid AND gEfiGpioCrProtocolGuid AND
+  gEfiSmmuCrProtocolGuid AND gEdkiiIoMmuProtocolGuid

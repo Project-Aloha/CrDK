@@ -1,0 +1,50 @@
+--- a/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c
++++ b/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c
+@@ -404,11 +404,42 @@
+   //
+   PreviousTPL = gBS->RaiseTPL (TPL_NOTIFY);
+ 
+-  // If queue input and output positions collide, there is a buffer overflow
+-  //
+-  if ((Queue->QueueInputPosition == Queue->QueueOutputPosition) && (FALSE == Queue->bQueueEmpty)) {
+-    DEBUG ((DEBUG_WARN, "WARN [SWM]: Pointer event %p queue overflow!\r\n", Queue));
+-    // Just throw the queue away and queue the next point
++  // Absolute pointer samples are positions, not relative deltas. Collapse
++  // pending motion within one button state, preserving the first sample of
++  // each state (press/release location) and the latest position. Requiring two
++  // preceding equal button states avoids moving an unconsumed button edge.
++  //
++  if (!Queue->bQueueEmpty) {
++    UINTN Count = (Queue->QueueInputPosition + POINTER_STATE_INPUT_QUEUE_SIZE -
++                   Queue->QueueOutputPosition) % POINTER_STATE_INPUT_QUEUE_SIZE;
++    if (Count == 0) {
++      Count = POINTER_STATE_INPUT_QUEUE_SIZE;
++    }
++    if (Count >= 2) {
++      UINTN Last = (Queue->QueueInputPosition + POINTER_STATE_INPUT_QUEUE_SIZE - 1) %
++                   POINTER_STATE_INPUT_QUEUE_SIZE;
++      UINTN Previous = (Last + POINTER_STATE_INPUT_QUEUE_SIZE - 1) %
++                       POINTER_STATE_INPUT_QUEUE_SIZE;
++      UINT32 Buttons = PointerState->ActiveButtons & 0x1;
++      if ((Queue->PointerStateQueue[Last].ActiveButtons == Buttons) &&
++          (Queue->PointerStateQueue[Previous].ActiveButtons == Buttons)) {
++        Queue->PointerStateQueue[Last].CurrentX = PointerState->CurrentX;
++        Queue->PointerStateQueue[Last].CurrentY = PointerState->CurrentY;
++        Queue->PointerStateQueue[Last].CurrentZ = 0;
++        SignalClient (Client);
++        gBS->RestoreTPL (PreviousTPL);
++        return EFI_SUCCESS;
++      }
++    }
++  }
++
++  // A stalled reader can still fill the FIFO with button transitions. Drop
++  // only the oldest sample and keep the ring full. Advancing just the writer
++  // would make the other pending samples disappear from the reader's range.
++  //
++  if ((Queue->QueueInputPosition == Queue->QueueOutputPosition) && !Queue->bQueueEmpty) {
++    Queue->QueueOutputPosition = (Queue->QueueOutputPosition + 1) % POINTER_STATE_INPUT_QUEUE_SIZE;
++    DEBUG ((DEBUG_VERBOSE, "SWM: full pointer queue %p; oldest sample replaced\n", Queue));
+   }
+ 
+   // Store pointer state data in the queue

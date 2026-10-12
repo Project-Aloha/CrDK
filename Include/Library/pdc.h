@@ -5,9 +5,9 @@
  */
 #pragma once
 
-#include <oskal/common.h>
-#include <oskal/cr_status.h>
 #include <oskal/cr_types.h>
+#include <oskal/cr_status.h>
+#include <oskal/common.h>
 #include <oskal/cr_interrupt.h>
 
 #define PDC_RANGE_COUNT_MAX 32
@@ -25,6 +25,8 @@ typedef struct {
   UINTN SPIConfigSize;
   UINT16 PdcRangeCount;
   PdcRange PdcRegion[PDC_RANGE_COUNT_MAX];
+  // Native convenience IRQ owners, including failed removal awaiting retry.
+  UINT16 ActiveInterrupts;
 } PdcDeviceContext;
 
 CR_STATUS

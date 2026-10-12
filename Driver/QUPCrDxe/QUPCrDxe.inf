@@ -15,6 +15,9 @@
 
 [LibraryClasses]
   BaseLib
+  DebugLib
+  DxeServicesTableLib
+  SynchronizationLib
   CrDalLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint

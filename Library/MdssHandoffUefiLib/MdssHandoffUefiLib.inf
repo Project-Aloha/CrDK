@@ -1,0 +1,21 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssHandoffUefiLib
+  FILE_GUID = A67199F3-6579-4B64-8B53-5C95CC597202
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssHandoffUefiLib|DXE_DRIVER
+[Sources]
+  MdssHandoffUefi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DxeServicesTableLib
+  UefiBootServicesTableLib
+  MdssHandoffCrLib
+[Protocols]
+  gEfiAcpiTableProtocolGuid

@@ -14,6 +14,7 @@
 
 [Sources]
   PciHostBridgeLib.c
+  PciClockDiagnostics.h
 
 [Packages]
   MdePkg/MdePkg.dec

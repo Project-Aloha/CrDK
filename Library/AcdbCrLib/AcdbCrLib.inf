@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AcdbCrLib
+  FILE_GUID = 9A4B5494-CE8E-44C4-84EA-4ACDB55D9071
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AcdbCrLib
+[Sources]
+  Acdb.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

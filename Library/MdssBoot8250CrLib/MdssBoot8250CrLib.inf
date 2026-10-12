@@ -1,0 +1,17 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssBoot8250CrLib
+  FILE_GUID = E25F4CFD-2357-4FE5-B613-CF7AEDC1ED19
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssBoot8250CrLib
+[Sources]
+  Io.c
+  Observe.c
+  Retire.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  CompilerIntrinsicsLib

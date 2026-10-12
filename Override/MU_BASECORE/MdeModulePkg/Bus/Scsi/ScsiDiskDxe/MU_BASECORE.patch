@@ -1,0 +1,325 @@
+--- /dev/null
++++ b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiBlockLimits.h
+@@ -0,0 +1,95 @@
++/** @file
++  Block Limits VPD wire layout for the Crane ScsiDisk adapter.
++
++  Derived from MdePkg/Include/IndustryStandard/Scsi.h.
++  Copyright (c) 2006 - 2020, Intel Corporation. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++  SBC Block Limits page B0 has a 60-byte payload plus its 4-byte header.
++  Maximum WRITE SAME length occupies bytes 36..43 (eight bytes). The pinned
++  MU header omits the upper four bytes. Keep the corrected wire layout local
++  so this driver requests the full page without modifying MU dependencies.
++**/
++#ifndef CR_SCSI_BLOCK_LIMITS_H_
++#define CR_SCSI_BLOCK_LIMITS_H_
++
++#include <Uefi.h>
++
++#pragma pack(1)
++typedef struct {
++  UINT8    Peripheral_Type      : 5;
++  UINT8    Peripheral_Qualifier : 3;
++  UINT8    PageCode;
++  UINT8    PageLength2;
++  UINT8    PageLength1;
++  UINT8    WriteSameNonZero     : 1;
++  UINT8    Reserved_4           : 7;
++  UINT8    MaximumCompareAndWriteLength;
++  UINT8    OptimalTransferLengthGranularity2;
++  UINT8    OptimalTransferLengthGranularity1;
++  UINT8    MaximumTransferLength4;
++  UINT8    MaximumTransferLength3;
++  UINT8    MaximumTransferLength2;
++  UINT8    MaximumTransferLength1;
++  UINT8    OptimalTransferLength4;
++  UINT8    OptimalTransferLength3;
++  UINT8    OptimalTransferLength2;
++  UINT8    OptimalTransferLength1;
++  UINT8    MaximumPrefetchXdreadXdwriteTransferLength4;
++  UINT8    MaximumPrefetchXdreadXdwriteTransferLength3;
++  UINT8    MaximumPrefetchXdreadXdwriteTransferLength2;
++  UINT8    MaximumPrefetchXdreadXdwriteTransferLength1;
++  UINT8    MaximumUnmapLbaCount4;
++  UINT8    MaximumUnmapLbaCount3;
++  UINT8    MaximumUnmapLbaCount2;
++  UINT8    MaximumUnmapLbaCount1;
++  UINT8    MaximumUnmapBlockDescriptorCount4;
++  UINT8    MaximumUnmapBlockDescriptorCount3;
++  UINT8    MaximumUnmapBlockDescriptorCount2;
++  UINT8    MaximumUnmapBlockDescriptorCount1;
++  UINT8    OptimalUnmapGranularity4;
++  UINT8    OptimalUnmapGranularity3;
++  UINT8    OptimalUnmapGranularity2;
++  UINT8    OptimalUnmapGranularity1;
++  UINT8    UnmapGranularityAlignment4     : 7;
++  UINT8    UnmapGranularityAlignmentValid : 1;
++  UINT8    UnmapGranularityAlignment3;
++  UINT8    UnmapGranularityAlignment2;
++  UINT8    UnmapGranularityAlignment1;
++  UINT8    MaximumWriteSameLength8;
++  UINT8    MaximumWriteSameLength7;
++  UINT8    MaximumWriteSameLength6;
++  UINT8    MaximumWriteSameLength5;
++  UINT8    MaximumWriteSameLength4;
++  UINT8    MaximumWriteSameLength3;
++  UINT8    MaximumWriteSameLength2;
++  UINT8    MaximumWriteSameLength1;
++  UINT8    MaximumAtomicTransferLength4;
++  UINT8    MaximumAtomicTransferLength3;
++  UINT8    MaximumAtomicTransferLength2;
++  UINT8    MaximumAtomicTransferLength1;
++  UINT8    AtomicAlignment4;
++  UINT8    AtomicAlignment3;
++  UINT8    AtomicAlignment2;
++  UINT8    AtomicAlignment1;
++  UINT8    AtomicTransferLengthGranularity4;
++  UINT8    AtomicTransferLengthGranularity3;
++  UINT8    AtomicTransferLengthGranularity2;
++  UINT8    AtomicTransferLengthGranularity1;
++  UINT8    MaximumAtomicTransferLengthWithAtomicBoundary4;
++  UINT8    MaximumAtomicTransferLengthWithAtomicBoundary3;
++  UINT8    MaximumAtomicTransferLengthWithAtomicBoundary2;
++  UINT8    MaximumAtomicTransferLengthWithAtomicBoundary1;
++  UINT8    MaximumAtomicBoundarySize4;
++  UINT8    MaximumAtomicBoundarySize3;
++  UINT8    MaximumAtomicBoundarySize2;
++  UINT8    MaximumAtomicBoundarySize1;
++} CR_SCSI_BLOCK_LIMITS_VPD_PAGE;
++#pragma pack()
++
++STATIC_ASSERT (sizeof (CR_SCSI_BLOCK_LIMITS_VPD_PAGE) == 64, "Block Limits VPD size");
++STATIC_ASSERT (OFFSET_OF (CR_SCSI_BLOCK_LIMITS_VPD_PAGE, MaximumWriteSameLength4) == 40,
++               "WRITE SAME low word offset");
++STATIC_ASSERT (OFFSET_OF (CR_SCSI_BLOCK_LIMITS_VPD_PAGE, MaximumAtomicTransferLength4) == 44,
++               "Atomic transfer offset");
++#endif
+--- a/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c
++++ b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c
+@@ -215,44 +215,133 @@
+ {
+   EFI_STATUS                       Status;
+   EFI_SCSI_IO_SCSI_REQUEST_PACKET  CommandPacket;
+-  UINT8                            Cdb[6];
+-  UINT8                            DataBuffer[64];
+-
+-  if ((ScsiDiskDevice == NULL) || (ScsiDiskDevice->ScsiIo == NULL) || (WriteProtectionEnabled == NULL)) {
++  UINT8                            Cdb[10];
++  UINT8                            *DataBuffer;
++  UINT8                            *SenseData;
++  CONST UINT8                      DataBufferSize = 64;
++  CONST UINT8                      SenseBufferSize = 32;
++  UINT8                            Attempt;
++  UINT8                            UnitAttentionRetries;
++  UINT8                            HeaderLength;
++  UINT8                            SenseKey;
++  UINT8                            Asc;
++  UINT8                            Ascq;
++  BOOLEAN                          UnsupportedCommand;
++
++  if ((ScsiDiskDevice == NULL) || (ScsiDiskDevice->ScsiIo == NULL) ||
++      (ScsiDiskDevice->ScsiIo->ExecuteScsiCommand == NULL) || (WriteProtectionEnabled == NULL)) {
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  //
+-  // Initialize SCSI REQUEST_PACKET and 6-byte Cdb
+-  //
+-  ZeroMem (&CommandPacket, sizeof (CommandPacket));
+-  ZeroMem (Cdb, sizeof (Cdb));
+-
+-  // Initialize output parameter to default value
+   *WriteProtectionEnabled = FALSE;
+-
+-  Cdb[0] = ATA_CMD_MODE_SENSE6;
+-  Cdb[1] = BIT3;                         // Setting the bit for Disable Block Descriptor
+-  Cdb[2] = ATA_PAGE_CODE_RETURN_ALL_PAGES;
+-  Cdb[4] = sizeof (DataBuffer);
+-
+-  CommandPacket.Timeout          = SCSI_DISK_TIMEOUT;
+-  CommandPacket.Cdb              = Cdb;
+-  CommandPacket.CdbLength        = (UINT8)sizeof (Cdb);
+-  CommandPacket.InDataBuffer     = &DataBuffer;
+-  CommandPacket.InTransferLength = sizeof (DataBuffer);
+-
+-  Status = ScsiDiskDevice->ScsiIo->ExecuteScsiCommand (ScsiDiskDevice->ScsiIo, &CommandPacket, NULL);
+-
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  // Mode Sense 6 Byte Command returns the Write Protection status in the 3rd byte
+-  // Bit 7 of the 3rd byte indicates the Write Protection status
+-  // See SCSI Block Commands - 3 section 6.3.1 and SCSI-2 Spec, 8.3.3.
+-  *WriteProtectionEnabled = (DataBuffer[2] & BIT7) != 0;
+-  return EFI_SUCCESS;
++  DataBuffer = AllocateAlignedBuffer (ScsiDiskDevice, DataBufferSize);
++  if (DataBuffer == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++  SenseData = AllocateAlignedBuffer (ScsiDiskDevice, SenseBufferSize);
++  if (SenseData == NULL) {
++    FreeAlignedBuffer (DataBuffer, DataBufferSize);
++    return EFI_OUT_OF_RESOURCES;
++  }
++  // UFS supports MODE SENSE(10); older devices may require MODE SENSE(6).
++  for (Attempt = 0; Attempt < 2; Attempt++) {
++    UnitAttentionRetries = 0;
++RetryCommand:
++    ZeroMem (&CommandPacket, sizeof (CommandPacket));
++    ZeroMem (Cdb, sizeof (Cdb));
++    ZeroMem (DataBuffer, DataBufferSize);
++    ZeroMem (SenseData, SenseBufferSize);
++    HeaderLength = (Attempt == 0) ? 8 : 4;
++    Cdb[0] = (Attempt == 0) ? EFI_SCSI_OP_MODE_SEN10 : ATA_CMD_MODE_SENSE6;
++    Cdb[1] = BIT3; // Disable block descriptors.
++    Cdb[2] = ATA_PAGE_CODE_RETURN_ALL_PAGES;
++    Cdb[(Attempt == 0) ? 8 : 4] = DataBufferSize;
++
++    CommandPacket.Timeout          = SCSI_DISK_TIMEOUT;
++    CommandPacket.Cdb              = Cdb;
++    CommandPacket.CdbLength        = (Attempt == 0) ? 10 : 6;
++    CommandPacket.DataDirection    = EFI_SCSI_IO_DATA_DIRECTION_READ;
++    CommandPacket.InDataBuffer     = DataBuffer;
++    CommandPacket.InTransferLength = DataBufferSize;
++    CommandPacket.SenseData        = SenseData;
++    CommandPacket.SenseDataLength  = SenseBufferSize;
++
++    Status = ScsiDiskDevice->ScsiIo->ExecuteScsiCommand (ScsiDiskDevice->ScsiIo, &CommandPacket, NULL);
++    if ((Status == EFI_SUCCESS) &&
++        ((CommandPacket.HostAdapterStatus == EFI_SCSI_IO_STATUS_HOST_ADAPTER_OK) ||
++         (CommandPacket.HostAdapterStatus == EFI_SCSI_IO_STATUS_HOST_ADAPTER_DATA_OVERRUN_UNDERRUN)) &&
++        (CommandPacket.TargetStatus == EFI_SCSI_IO_STATUS_TARGET_GOOD))
++    {
++      if ((CommandPacket.InTransferLength < HeaderLength) ||
++          (CommandPacket.InTransferLength > DataBufferSize) ||
++          ((Attempt == 0) && (((UINT16)DataBuffer[0] << 8) | DataBuffer[1]) < 6) ||
++          ((Attempt != 0) && (DataBuffer[0] < 3)))
++      {
++        DEBUG ((DEBUG_ERROR, "ScsiDisk: MODE SENSE(%u) invalid response length=%u\n",
++                CommandPacket.CdbLength, CommandPacket.InTransferLength));
++        Status = EFI_DEVICE_ERROR;
++        goto Exit;
++      }
++
++      *WriteProtectionEnabled = (DataBuffer[(Attempt == 0) ? 3 : 2] & BIT7) != 0;
++      Status = EFI_SUCCESS;
++      goto Exit;
++    }
++
++    // Fall back only on an unsupported opcode, never on a transport failure.
++    SenseKey = 0;
++    Asc      = 0;
++    Ascq     = 0;
++    if ((CommandPacket.SenseDataLength >= 14) && (CommandPacket.SenseDataLength <= SenseBufferSize) &&
++        (((SenseData[0] & 0x7f) == 0x70) || ((SenseData[0] & 0x7f) == 0x71)) &&
++        (SenseData[7] >= 6))
++    {
++      SenseKey = SenseData[2] & 0x0f;
++      Asc      = SenseData[12];
++      Ascq     = SenseData[13];
++    } else if ((CommandPacket.SenseDataLength >= 8) && (CommandPacket.SenseDataLength <= SenseBufferSize) &&
++               (((SenseData[0] & 0x7f) == 0x72) || ((SenseData[0] & 0x7f) == 0x73)))
++    {
++      SenseKey = SenseData[1] & 0x0f;
++      Asc      = SenseData[2];
++      Ascq     = SenseData[3];
++    }
++
++    // A reset/power-on UNIT ATTENTION consumes this command, not its opcode.
++    // Retry the same MODE SENSE up to three times, as Linux scsi_mode_sense
++    // does for valid sense, and never retry a failed host transport.
++    if ((CommandPacket.HostAdapterStatus == EFI_SCSI_IO_STATUS_HOST_ADAPTER_OK) &&
++        ((Status == EFI_SUCCESS) || (Status == EFI_DEVICE_ERROR)) &&
++        (CommandPacket.TargetStatus == EFI_SCSI_IO_STATUS_TARGET_CHECK_CONDITION) &&
++        (SenseKey == EFI_SCSI_SK_UNIT_ATTENTION) && (UnitAttentionRetries < 2))
++    {
++      UnitAttentionRetries++;
++      DEBUG ((DEBUG_WARN, "ScsiDisk: MODE SENSE(%u) Unit Attention %x/%x; retry %u\n",
++              CommandPacket.CdbLength, Asc, Ascq, UnitAttentionRetries));
++      goto RetryCommand;
++    }
++
++    UnsupportedCommand =
++      (CommandPacket.HostAdapterStatus == EFI_SCSI_IO_STATUS_HOST_ADAPTER_OK) &&
++      (((Status == EFI_UNSUPPORTED) && (CommandPacket.TargetStatus == EFI_SCSI_IO_STATUS_TARGET_GOOD)) ||
++       (((Status == EFI_SUCCESS) || (Status == EFI_DEVICE_ERROR)) &&
++        (CommandPacket.TargetStatus == EFI_SCSI_IO_STATUS_TARGET_CHECK_CONDITION) &&
++        (SenseKey == EFI_SCSI_SK_ILLEGAL_REQUEST) && (Asc == 0x20) && (Ascq == 0)));
++    if ((Attempt == 0) && UnsupportedCommand) {
++      continue;
++    }
++
++    DEBUG ((DEBUG_ERROR, "ScsiDisk: MODE SENSE(%u) failed: %r host=0x%x target=0x%x sense=%x/%x/%x length=%u\n",
++            CommandPacket.CdbLength, Status, CommandPacket.HostAdapterStatus,
++            CommandPacket.TargetStatus, SenseKey, Asc, Ascq, CommandPacket.InTransferLength));
++    Status = EFI_ERROR (Status) ? Status : EFI_DEVICE_ERROR;
++    goto Exit;
++  }
++  Status = EFI_UNSUPPORTED;
++Exit:
++  FreeAlignedBuffer (SenseData, SenseBufferSize);
++  FreeAlignedBuffer (DataBuffer, DataBufferSize);
++  return Status;
+ }
+ 
+ /**
+@@ -2609,7 +2698,7 @@
+   UINT8                                  MaxRetry;
+   UINT8                                  Index;
+   EFI_SCSI_SUPPORTED_VPD_PAGES_VPD_PAGE  *SupportedVpdPages;
+-  EFI_SCSI_BLOCK_LIMITS_VPD_PAGE         *BlockLimits;
++  CR_SCSI_BLOCK_LIMITS_VPD_PAGE         *BlockLimits;
+   UINTN                                  PageLength;
+ 
+   InquiryDataLength = sizeof (EFI_SCSI_INQUIRY_DATA);
+@@ -2718,15 +2807,15 @@
+         // Query the Block Limits VPD page
+         //
+         if (Index < PageLength) {
+-          BlockLimits = AllocateAlignedBuffer (ScsiDiskDevice, sizeof (EFI_SCSI_BLOCK_LIMITS_VPD_PAGE));
++          BlockLimits = AllocateAlignedBuffer (ScsiDiskDevice, sizeof (CR_SCSI_BLOCK_LIMITS_VPD_PAGE));
+           if (BlockLimits == NULL) {
+             FreeAlignedBuffer (SupportedVpdPages, sizeof (EFI_SCSI_SUPPORTED_VPD_PAGES_VPD_PAGE));
+             *NeedRetry = FALSE;
+             return EFI_DEVICE_ERROR;
+           }
+ 
+-          ZeroMem (BlockLimits, sizeof (EFI_SCSI_BLOCK_LIMITS_VPD_PAGE));
+-          InquiryDataLength = sizeof (EFI_SCSI_BLOCK_LIMITS_VPD_PAGE);
++          ZeroMem (BlockLimits, sizeof (CR_SCSI_BLOCK_LIMITS_VPD_PAGE));
++          InquiryDataLength = sizeof (CR_SCSI_BLOCK_LIMITS_VPD_PAGE);
+           SenseDataLength   = 0;
+           Status            = ScsiInquiryCommandEx (
+                                 ScsiDiskDevice->ScsiIo,
+@@ -2779,7 +2868,7 @@
+             ScsiDiskDevice->BlockLimitsVpdSupported = TRUE;
+           }
+ 
+-          FreeAlignedBuffer (BlockLimits, sizeof (EFI_SCSI_BLOCK_LIMITS_VPD_PAGE));
++          FreeAlignedBuffer (BlockLimits, sizeof (CR_SCSI_BLOCK_LIMITS_VPD_PAGE));
+         }
+       }
+ 
+--- a/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.h
++++ b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.h
+@@ -11,6 +11,7 @@
+ #define _SCSI_DISK_H_
+ 
+ #include <Uefi.h>
++#include "ScsiBlockLimits.h"
+ 
+ #include <Protocol/ScsiIo.h>
+ #include <Protocol/ComponentName.h>
+--- a/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
++++ b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
+@@ -32,6 +32,7 @@
+ [Sources]
+   ComponentName.c
+   ScsiDisk.c
++  ScsiBlockLimits.h
+   ScsiDisk.h
+ 
+ [Packages]

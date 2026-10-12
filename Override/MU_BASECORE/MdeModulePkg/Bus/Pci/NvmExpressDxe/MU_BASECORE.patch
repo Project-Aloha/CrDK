@@ -1,0 +1,2867 @@
+--- a/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.c
++++ b/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.c
+@@ -42,6 +42,143 @@
+   0x10100
+ };
+ 
++// Failed and active lifecycle owners stay reachable before public PassThru.
++STATIC LIST_ENTRY mRetainedControllers = INITIALIZE_LIST_HEAD_VARIABLE (mRetainedControllers);
++
++STATIC NVME_CONTROLLER_PRIVATE_DATA *
++NvmeFindRetainedController (EFI_HANDLE Controller)
++{
++  LIST_ENTRY *Link;
++  NVME_CONTROLLER_PRIVATE_DATA *Private;
++  for (Link = GetFirstNode (&mRetainedControllers);
++       !IsNull (&mRetainedControllers, Link);
++       Link = GetNextNode (&mRetainedControllers, Link)) {
++    Private = BASE_CR (Link, NVME_CONTROLLER_PRIVATE_DATA, RetainedControllerLink);
++    if (Private->ControllerHandle == Controller) return Private;
++  }
++  return NULL;
++}
++
++STATIC VOID
++NvmeRetainController (NVME_CONTROLLER_PRIVATE_DATA *Private)
++{
++  Private->AdmissionBlocked = TRUE;
++  Private->ControllerFailed = TRUE;
++  if (!Private->RetainedController) {
++    InsertTailList (&mRetainedControllers, &Private->RetainedControllerLink);
++    Private->RetainedController = TRUE;
++  }
++}
++
++// Lifecycle ownership spans service notifications without blocking the owner's
++// normal Identify/getter calls. Its keyed registry also prevents a second Start.
++STATIC EFI_STATUS
++NvmeBeginLifecycle (NVME_CONTROLLER_PRIVATE_DATA *Private)
++{
++  EFI_TPL OldTpl;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->LifecycleInProgress != 0 || Private->RecoveryInProgress || Private->CallbackInProgress) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  Private->LifecycleInProgress++;
++  if (!Private->RetainedController) {
++    InsertTailList (&mRetainedControllers, &Private->RetainedControllerLink);
++    Private->RetainedController = TRUE;
++  }
++  gBS->RestoreTPL (OldTpl);
++  return EFI_SUCCESS;
++}
++
++STATIC VOID
++NvmeEndLifecycle (NVME_CONTROLLER_PRIVATE_DATA *Private)
++{
++  EFI_TPL OldTpl;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  ASSERT (Private->LifecycleInProgress != 0);
++  Private->LifecycleInProgress--;
++  if (!Private->ControllerFailed && Private->RetainedController) {
++    RemoveEntryList (&Private->RetainedControllerLink);
++    Private->RetainedController = FALSE;
++  }
++  gBS->RestoreTPL (OldTpl);
++}
++
++STATIC EFI_STATUS
++NvmeDisposeControllerOwned (NVME_CONTROLLER_PRIVATE_DATA *Private, BOOLEAN LifecycleOwner)
++{
++  EFI_STATUS Status;
++  if (Private->RecoveryInProgress || Private->CallbackInProgress ||
++      (!LifecycleOwner && Private->LifecycleInProgress != 0) || Private->ChildCount != 0) return EFI_NOT_READY;
++  Status = NvmeQuiesceController (Private);
++  if (EFI_ERROR (Status)) goto Retain;
++  Private->CallbackInProgress = TRUE;
++  // An outer synchronous stack still owns attached request records.
++  if (!IsListEmpty (&Private->DmaRequests)) { Status = EFI_NOT_READY; goto Retain; }
++  Status = NvmExpressDriverCleanUpQueues (Private);
++  if (EFI_ERROR (Status)) goto Retain;
++  if (Private->TimerEvent != NULL) {
++    Status = gBS->CloseEvent (Private->TimerEvent);
++    if (EFI_ERROR (Status)) goto Retain;
++    Private->TimerEvent = NULL;
++  }
++  if (Private->PassThruInstalled) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Private->ControllerHandle, &gEfiNvmExpressPassThruProtocolGuid,
++                    &Private->Passthru, NULL);
++    if (EFI_ERROR (Status)) goto Retain;
++    Private->PassThruInstalled = FALSE;
++  }
++  if (Private->PciIoOpened) {
++    Status = gBS->CloseProtocol (Private->ControllerHandle, &gEfiPciIoProtocolGuid,
++                                Private->DriverBindingHandle, Private->ControllerHandle);
++    if (EFI_ERROR (Status)) goto Retain;
++    Private->PciIoOpened = FALSE;
++  }
++  if (Private->DevicePathOpened) {
++    Status = gBS->CloseProtocol (Private->ControllerHandle, &gEfiDevicePathProtocolGuid,
++                                Private->DriverBindingHandle, Private->ControllerHandle);
++    if (EFI_ERROR (Status)) goto Retain;
++    Private->DevicePathOpened = FALSE;
++  }
++  if (Private->ShutdownRegistered) {
++    NvmeUnregisterShutdownNotification ();
++    Private->ShutdownRegistered = FALSE;
++  }
++  if (Private->RetainedController) {
++    RemoveEntryList (&Private->RetainedControllerLink);
++    Private->RetainedController = FALSE;
++  }
++  if (Private->ControllerData != NULL) FreePool (Private->ControllerData);
++  FreePool (Private);
++  return EFI_SUCCESS;
++Retain:
++  Private->CallbackInProgress = FALSE;
++  NvmeRetainController (Private);
++  return Status;
++}
++
++STATIC EFI_STATUS
++NvmeDisposeController (NVME_CONTROLLER_PRIVATE_DATA *Private)
++{
++  return NvmeDisposeControllerOwned (Private, FALSE);
++}
++
++STATIC EFI_STATUS
++NvmeUnregisterNamespace (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN EFI_HANDLE Handle,
++  IN BOOLEAN LifecycleOwner
++  );
++
++EFI_STATUS
++UnregisterNvmeNamespace (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN EFI_HANDLE Handle
++  );
++
+ /**
+   Check if the specified Nvm Express device namespace is active, and create child handles
+   for them with BlockIo and DiskInfo protocol instances.
+@@ -55,8 +192,8 @@
+   @return Others             Some error occurs when enumerating the namespaces.
+ 
+ **/
+-EFI_STATUS
+-EnumerateNvmeDevNamespace (
++STATIC EFI_STATUS
++NvmeEnumerateNamespaceOwned (
+   IN NVME_CONTROLLER_PRIVATE_DATA  *Private,
+   UINT32                           NamespaceId
+   )
+@@ -277,6 +414,9 @@
+       goto Exit;
+     }
+ 
++    Device->RegisteredChild = TRUE;
++    Private->ChildCount++;
++
+     // MU_CHANGE [BEGIN] - Request Number of Queues from Controller
+     if (NVME_SUPPORT_BLOCKIO2 (Private)) {
+       // We have multiple data queues, so we can support the BlockIo2 protocol
+@@ -288,19 +428,7 @@
+                       );
+ 
+       if (EFI_ERROR (Status)) {
+-        gBS->UninstallMultipleProtocolInterfaces (
+-               Device->DeviceHandle,
+-               &gEfiDevicePathProtocolGuid,
+-               Device->DevicePath,
+-               &gEfiBlockIoProtocolGuid,
+-               &Device->BlockIo,
+-               &gEfiDiskInfoProtocolGuid,
+-               &Device->DiskInfo,
+-               NULL
+-               );
+-
+         DEBUG ((DEBUG_ERROR, "%a: Failed to install BlockIo2 protocol. Error %r\n", __func__, Status));
+-        ASSERT_EFI_ERROR (Status);
+         goto Exit;
+       }
+     }
+@@ -318,39 +446,11 @@
+                       &Device->StorageSecurity
+                       );
+       if (EFI_ERROR (Status)) {
+-        gBS->UninstallMultipleProtocolInterfaces (
+-               Device->DeviceHandle,
+-               &gEfiDevicePathProtocolGuid,
+-               Device->DevicePath,
+-               &gEfiBlockIoProtocolGuid,
+-               &Device->BlockIo,
+-               // &gEfiBlockIo2ProtocolGuid, // MU_CHANGE - Request Number of Queues from Controller
+-               // &Device->BlockIo2, // MU_CHANGE - Request Number of Queues from Controller
+-               &gEfiDiskInfoProtocolGuid,
+-               &Device->DiskInfo,
+-               &gMediaSanitizeProtocolGuid,
+-               &Device->MediaSanitize,
+-               NULL
+-               );
+-
+-        // MU_CHANGE [BEGIN] - Request Number of Queues from Controller
+-        if (NVME_SUPPORT_BLOCKIO2 (Private)) {
+-          // We have multiple data queues, so we need to uninstall the BlockIo2 protocol
+-          gBS->UninstallMultipleProtocolInterfaces (
+-                 Device->DeviceHandle,
+-                 &gEfiBlockIo2ProtocolGuid,
+-                 &Device->BlockIo2,
+-                 NULL
+-                 );
+-        }
+-
+-        // MU_CHANGE [END] - Request Number of Queues from Controller
+-
+         goto Exit;
+       }
+     }
+ 
+-    gBS->OpenProtocol (
++    Status = gBS->OpenProtocol (
+            Private->ControllerHandle,
+            &gEfiNvmExpressPassThruProtocolGuid,
+            (VOID **)&DummyInterface,
+@@ -359,6 +459,9 @@
+            EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
+            );
+ 
++    if (EFI_ERROR (Status)) goto Exit;
++    Device->ControllerRelationshipOpen = TRUE;
++
+     //
+     // Dump NvmExpress Identify Namespace Data
+     //
+@@ -403,6 +506,17 @@
+     FreePool (NewDevicePathNode);
+   }
+ 
++  if (EFI_ERROR (Status) && (Device != NULL) && Device->RegisteredChild) {
++    EFI_DRIVER_BINDING_PROTOCOL Binding;
++    EFI_STATUS Cleanup;
++    ZeroMem (&Binding, sizeof (Binding));
++    Binding.DriverBindingHandle = Private->DriverBindingHandle;
++    Cleanup = NvmeUnregisterNamespace (&Binding, Private->ControllerHandle, Device->DeviceHandle, TRUE);
++    if (EFI_ERROR (Cleanup)) NvmeRetainController (Private);
++    // A successful rollback freed Device; a failed one keeps its public owner.
++    Device = NULL;
++  }
++
+   if (EFI_ERROR (Status) && (Device != NULL) && (Device->DevicePath != NULL)) {
+     FreePool (Device->DevicePath);
+   }
+@@ -411,6 +525,20 @@
+     FreePool (Device);
+   }
+ 
++  return Status;
++}
++
++EFI_STATUS
++EnumerateNvmeDevNamespace (
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private,
++  UINT32 NamespaceId
++  )
++{
++  EFI_STATUS Status;
++  Status = NvmeBeginLifecycle (Private);
++  if (EFI_ERROR (Status)) return Status;
++  Status = NvmeEnumerateNamespaceOwned (Private, NamespaceId);
++  NvmeEndLifecycle (Private);
+   return Status;
+ }
+ 
+@@ -431,8 +559,8 @@
+   @return Others              Some error occurs when enumerating the namespaces.
+ 
+ **/
+-EFI_STATUS
+-DiscoverAllNamespaces (
++STATIC EFI_STATUS
++NvmeDiscoverNamespacesOwned (
+   IN NVME_CONTROLLER_PRIVATE_DATA  *Private,
+   IN UINT32                        FilterNsId
+   )
+@@ -462,7 +590,7 @@
+ 
+     // MU_CHANGE [END] - NVMe namespace filtering
+ 
+-    Status = EnumerateNvmeDevNamespace (
++    Status = NvmeEnumerateNamespaceOwned (
+                Private,
+                NamespaceId
+                );
+@@ -482,6 +610,20 @@
+   return EFI_SUCCESS;
+ }
+ 
++EFI_STATUS
++DiscoverAllNamespaces (
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private,
++  IN UINT32 FilterNsId
++  )
++{
++  EFI_STATUS Status;
++  Status = NvmeBeginLifecycle (Private);
++  if (EFI_ERROR (Status)) return Status;
++  Status = NvmeDiscoverNamespacesOwned (Private, FilterNsId);
++  NvmeEndLifecycle (Private);
++  return Status;
++}
++
+ /**
+   Unregisters a Nvm Express device namespace.
+ 
+@@ -496,26 +638,27 @@
+   @return Others                Some error occurs when unregistering the namespace.
+ 
+ **/
+-EFI_STATUS
+-UnregisterNvmeNamespace (
+-  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN  EFI_HANDLE                   Controller,
+-  IN  EFI_HANDLE                   Handle
++STATIC EFI_STATUS
++NvmeUnregisterNamespace (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN EFI_HANDLE Handle,
++  IN BOOLEAN LifecycleOwner
+   )
+ {
+   EFI_STATUS                             Status;
+-  EFI_STATUS                             BlockIo2Status; // MU_CHANGE - Request Number of Queues from Controller
+   EFI_BLOCK_IO_PROTOCOL                  *BlockIo;
+   NVME_DEVICE_PRIVATE_DATA               *Device;
++  NVME_CONTROLLER_PRIVATE_DATA           *Private;
+   EFI_STORAGE_SECURITY_COMMAND_PROTOCOL  *StorageSecurity;
+-  BOOLEAN                                IsEmpty;
++  EFI_BLOCK_IO2_PROTOCOL                 *BlockIo2;
++  BOOLEAN                                HadRelationship;
+   EFI_TPL                                OldTpl;
+   VOID                                   *DummyInterface;
+ 
+-  // MU_CHANGE [BEGIN] - Request Number of Queues from Controller
+-  BlockIo        = NULL;
+-  BlockIo2Status = EFI_SUCCESS;
+-  // MU_CHANGE [END] - Request Number of Queues from Controller
++  BlockIo = NULL;
++  BlockIo2 = NULL;
++  StorageSecurity = NULL;
+ 
+   Status = gBS->OpenProtocol (
+                   Handle,
+@@ -530,111 +673,90 @@
+   }
+ 
+   Device = NVME_DEVICE_PRIVATE_DATA_FROM_BLOCK_IO (BlockIo);
+-
+-  //
+-  // Wait for the device's asynchronous I/O queue to become empty.
+-  //
+-  while (TRUE) {
+-    OldTpl  = gBS->RaiseTPL (TPL_NOTIFY);
+-    IsEmpty = IsListEmpty (&Device->AsyncQueue);
++  Private = Device->Controller;
++
++  // A live child owns callbacks and request storage. Never poll indefinitely,
++  // or let a nested client callback uninstall the child currently completing.
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->RecoveryInProgress || Private->CallbackInProgress ||
++      (!LifecycleOwner && Private->LifecycleInProgress != 0) || !IsListEmpty (&Device->AsyncQueue)) {
+     gBS->RestoreTPL (OldTpl);
+-
+-    if (IsEmpty) {
+-      break;
+-    }
+-
+-    gBS->Stall (100);
+-  }
+-
+-  //
+-  // Close the child handle
+-  //
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiNvmExpressPassThruProtocolGuid,
+-         This->DriverBindingHandle,
+-         Handle
+-         );
+-
+-  // MU_CHANGE [BEGIN] - Request Number of Queues from Controller
+-  //
+-  // If BlockIo2 is installed, uninstall it.
+-  //
+-  if (NVME_SUPPORT_BLOCKIO2 (Device->Controller)) {
+-    BlockIo2Status = gBS->UninstallMultipleProtocolInterfaces (
+-                            Handle,
+-                            &gEfiBlockIo2ProtocolGuid,
+-                            &Device->BlockIo2,
+-                            NULL
+-                            );
+-
+-    if (EFI_ERROR (BlockIo2Status)) {
+-      DEBUG ((DEBUG_ERROR, "%a: Failed to uninstall BlockIo2 protocol\n", __func__));
+-    }
+-  }
+-
+-  // MU_CHANGE [END] - Request Number of Queues from Controller
+-  //
+-  // The Nvm Express driver installs the BlockIo and DiskInfo in the DriverBindingStart().
+-  // Here should uninstall both of them.
+-  //
+-  Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  Handle,
+-                  &gEfiDevicePathProtocolGuid,
+-                  Device->DevicePath,
+-                  &gEfiBlockIoProtocolGuid,
+-                  &Device->BlockIo,
+-                  // &gEfiBlockIo2ProtocolGuid, // MU_CHANGE - Request Number of Queues from Controller
+-                  // &Device->BlockIo2, // MU_CHANGE - Request Number of Queues from Controller
+-                  &gEfiDiskInfoProtocolGuid,
+-                  &Device->DiskInfo,
+-                  &gMediaSanitizeProtocolGuid,
+-                  &Device->MediaSanitize,
+-                  NULL
+-                  );
+-
+-  if (EFI_ERROR (Status) || EFI_ERROR (BlockIo2Status)) {
+-    // MU_CHANGE - Request Number of Queues from Controller
+-    gBS->OpenProtocol (
+-           Controller,
+-           &gEfiNvmExpressPassThruProtocolGuid,
+-           (VOID **)&DummyInterface,
+-           This->DriverBindingHandle,
+-           Handle,
+-           EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
+-           );
+-    return Status;
+-  }
+-
+-  //
+-  // If Storage Security Command Protocol is installed, then uninstall this protocol.
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Handle,
+-                  &gEfiStorageSecurityCommandProtocolGuid,
+-                  (VOID **)&StorageSecurity,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-
+-  if (!EFI_ERROR (Status)) {
+-    Status = gBS->UninstallProtocolInterface (
++    return EFI_NOT_READY;
++  }
++  Private->CallbackInProgress = TRUE;
++  gBS->RestoreTPL (OldTpl);
++
++  // Query installed optional interfaces rather than a mutable queue count.
++  Status = gBS->OpenProtocol (Handle, &gEfiBlockIo2ProtocolGuid, (VOID **)&BlockIo2,
++                             This->DriverBindingHandle, Controller, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
++  if (EFI_ERROR (Status) && Status != EFI_UNSUPPORTED && Status != EFI_NOT_FOUND) goto Done;
++  Status = gBS->OpenProtocol (Handle, &gEfiStorageSecurityCommandProtocolGuid,
++                             (VOID **)&StorageSecurity, This->DriverBindingHandle,
++                             Controller, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
++  if (EFI_ERROR (Status) && Status != EFI_UNSUPPORTED && Status != EFI_NOT_FOUND) goto Done;
++  HadRelationship = Device->ControllerRelationshipOpen;
++  if (HadRelationship) {
++    Status = gBS->CloseProtocol (Controller, &gEfiNvmExpressPassThruProtocolGuid,
++                                This->DriverBindingHandle, Handle);
++    if (EFI_ERROR (Status)) goto Done;
++    Device->ControllerRelationshipOpen = FALSE;
++  }
++
++  // UninstallMultiple rolls every interface back on failure. BlockIo remains
++  // available to locate the same owner for retry, including optional failures.
++  if (BlockIo2 != NULL && StorageSecurity != NULL) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
+                     Handle,
+-                    &gEfiStorageSecurityCommandProtocolGuid,
+-                    &Device->StorageSecurity
+-                    );
+-    if (EFI_ERROR (Status)) {
+-      gBS->OpenProtocol (
+-             Controller,
+-             &gEfiNvmExpressPassThruProtocolGuid,
+-             (VOID **)&DummyInterface,
+-             This->DriverBindingHandle,
+-             Handle,
+-             EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
+-             );
+-      return Status;
+-    }
++                    &gEfiDevicePathProtocolGuid, Device->DevicePath,
++                    &gEfiBlockIoProtocolGuid, &Device->BlockIo,
++                    &gEfiDiskInfoProtocolGuid, &Device->DiskInfo,
++                    &gMediaSanitizeProtocolGuid, &Device->MediaSanitize,
++                    &gEfiBlockIo2ProtocolGuid, &Device->BlockIo2,
++                    &gEfiStorageSecurityCommandProtocolGuid, &Device->StorageSecurity,
++                    NULL);
++  } else if (BlockIo2 != NULL) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Handle,
++                    &gEfiDevicePathProtocolGuid, Device->DevicePath,
++                    &gEfiBlockIoProtocolGuid, &Device->BlockIo,
++                    &gEfiDiskInfoProtocolGuid, &Device->DiskInfo,
++                    &gMediaSanitizeProtocolGuid, &Device->MediaSanitize,
++                    &gEfiBlockIo2ProtocolGuid, &Device->BlockIo2,
++                    NULL);
++  } else if (StorageSecurity != NULL) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Handle,
++                    &gEfiDevicePathProtocolGuid, Device->DevicePath,
++                    &gEfiBlockIoProtocolGuid, &Device->BlockIo,
++                    &gEfiDiskInfoProtocolGuid, &Device->DiskInfo,
++                    &gMediaSanitizeProtocolGuid, &Device->MediaSanitize,
++                    &gEfiStorageSecurityCommandProtocolGuid, &Device->StorageSecurity,
++                    NULL);
++  } else {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Handle,
++                    &gEfiDevicePathProtocolGuid, Device->DevicePath,
++                    &gEfiBlockIoProtocolGuid, &Device->BlockIo,
++                    &gEfiDiskInfoProtocolGuid, &Device->DiskInfo,
++                    &gMediaSanitizeProtocolGuid, &Device->MediaSanitize,
++                    NULL);
++  }
++
++  if (EFI_ERROR (Status)) {
++    if (HadRelationship) {
++      EFI_STATUS OpenStatus;
++      OpenStatus = gBS->OpenProtocol (Controller, &gEfiNvmExpressPassThruProtocolGuid,
++                                     (VOID **)&DummyInterface, This->DriverBindingHandle,
++                                     Handle, EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER);
++      Device->ControllerRelationshipOpen = !EFI_ERROR (OpenStatus);
++      if (EFI_ERROR (OpenStatus)) NvmeRetainController (Device->Controller);
++    }
++    goto Done;
++  }
++  if (Device->RegisteredChild) {
++    ASSERT (Device->Controller->ChildCount != 0);
++    Device->Controller->ChildCount--;
++    Device->RegisteredChild = FALSE;
+   }
+ 
+   if (Device->DevicePath != NULL) {
+@@ -646,8 +768,20 @@
+   }
+ 
+   FreePool (Device);
+-
+-  return EFI_SUCCESS;
++  Status = EFI_SUCCESS;
++Done:
++  Private->CallbackInProgress = FALSE;
++  return Status;
++}
++
++EFI_STATUS
++UnregisterNvmeNamespace (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN EFI_HANDLE Handle
++  )
++{
++  return NvmeUnregisterNamespace (This, Controller, Handle, FALSE);
+ }
+ 
+ /**
+@@ -671,170 +805,132 @@
+   UINT16                        QueueId;
+   UINT32                        Data;
+   LIST_ENTRY                    *Link;
+-  LIST_ENTRY                    *NextLink;
+   NVME_PASS_THRU_ASYNC_REQ      *AsyncRequest;
+   NVME_BLKIO2_SUBTASK           *Subtask;
+   NVME_BLKIO2_REQUEST           *BlkIo2Request;
+   EFI_BLOCK_IO2_TOKEN           *Token;
+   BOOLEAN                       HasNewItem;
++  BOOLEAN                       LastSubtaskSubmitted;
+   EFI_STATUS                    Status;
+   // MU_CHANGE - Support alternative hardware queue sizes in NVME driver
+   UINT16  QueueSize = PcdGetBool (PcdSupportAlternativeQueueSize) ?
+                       NVME_ALTERNATIVE_MAX_QUEUE_SIZE : NVME_ASYNC_CCQ_SIZE;
+ 
+   Private    = (NVME_CONTROLLER_PRIVATE_DATA *)Context;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed) return;
+   QueueId    = 2;
+-  Cq         = Private->CqBuffer[QueueId] + Private->CqHdbl[QueueId].Cqh;
+   HasNewItem = FALSE;
+   PciIo      = Private->PciIo;
+ 
+   //
+   // Submit asynchronous subtasks to the NVMe Submission Queue
+   //
+-  for (Link = GetFirstNode (&Private->UnsubmittedSubtasks);
+-       !IsNull (&Private->UnsubmittedSubtasks, Link);
+-       Link = NextLink)
+-  {
+-    NextLink      = GetNextNode (&Private->UnsubmittedSubtasks, Link);
++  while (!IsListEmpty (&Private->UnsubmittedSubtasks)) {
++    Link          = GetFirstNode (&Private->UnsubmittedSubtasks);
+     Subtask       = NVME_BLKIO2_SUBTASK_FROM_LINK (Link);
+     BlkIo2Request = Subtask->BlockIo2Request;
+     Token         = BlkIo2Request->Token;
+     RemoveEntryList (Link);
+     BlkIo2Request->UnsubmittedSubtaskNum--;
+-
+-    //
+-    // If any previous subtask fails, do not process subsequent ones.
+-    //
++    // Pin the parent request while PassThru may synchronously cancel siblings.
++    InsertTailList (&BlkIo2Request->SubtasksQueue, Link);
++    LastSubtaskSubmitted = BlkIo2Request->LastSubtaskSubmitted;
++    if (Subtask->IsLast) BlkIo2Request->LastSubtaskSubmitted = TRUE;
++
+     if (Token->TransactionStatus != EFI_SUCCESS) {
+-      if (IsListEmpty (&BlkIo2Request->SubtasksQueue) &&
+-          BlkIo2Request->LastSubtaskSubmitted &&
+-          (BlkIo2Request->UnsubmittedSubtaskNum == 0))
+-      {
+-        //
+-        // Remove the BlockIo2 request from the device asynchronous queue.
+-        //
+-        RemoveEntryList (&BlkIo2Request->Link);
+-        FreePool (BlkIo2Request);
+-        gBS->SignalEvent (Token->Event);
+-      }
+-
+-      FreePool (Subtask->CommandPacket->NvmeCmd);
+-      FreePool (Subtask->CommandPacket->NvmeCompletion);
+-      FreePool (Subtask->CommandPacket);
+-      FreePool (Subtask);
+-
++      Status = EFI_DEVICE_ERROR;
++    } else {
++      Status = Private->Passthru.PassThru (&Private->Passthru,
++                                          Subtask->NamespaceId,
++                                          Subtask->CommandPacket,
++                                          Subtask->Event);
++    }
++    if (Status == EFI_SUCCESS) {
++      // RestoreTPL inside PassThru can already have completed/freed this task.
++      if (Private->ControllerFailed || Private->AdmissionBlocked) return;
+       continue;
+     }
+-
+-    Status = Private->Passthru.PassThru (
+-                                 &Private->Passthru,
+-                                 Subtask->NamespaceId,
+-                                 Subtask->CommandPacket,
+-                                 Subtask->Event
+-                                 );
+     if (Status == EFI_NOT_READY) {
++      BlkIo2Request->LastSubtaskSubmitted = LastSubtaskSubmitted;
++      RemoveEntryList (Link);
+       InsertHeadList (&Private->UnsubmittedSubtasks, Link);
+       BlkIo2Request->UnsubmittedSubtaskNum++;
+       break;
+-    } else if (EFI_ERROR (Status)) {
+-      Token->TransactionStatus = EFI_DEVICE_ERROR;
+-
+-      if (IsListEmpty (&BlkIo2Request->SubtasksQueue) &&
+-          Subtask->IsLast)
+-      {
+-        //
+-        // Remove the BlockIo2 request from the device asynchronous queue.
+-        //
+-        RemoveEntryList (&BlkIo2Request->Link);
+-        FreePool (BlkIo2Request);
+-        gBS->SignalEvent (Token->Event);
++    }
++    if (EFI_ERROR (Status)) {
++      if (Token->TransactionStatus == EFI_SUCCESS) Token->TransactionStatus = EFI_DEVICE_ERROR;
++      Subtask->CommandPacket->NvmeCompletion->DW3 |= 1U << 17;
++      // The actual BlockIo2 callback closes its event and frees all task storage
++      // before publishing the final token. No saved Link/Token survives it.
++      Private->CallbackInProgress = TRUE;
++      gBS->SignalEvent (Subtask->Event);
++      Private->CallbackInProgress = FALSE;
++      if (Private->ControllerFailed || Private->AdmissionBlocked) {
++        (VOID)NvmeQuiesceController (Private);
++        return;
+       }
+-
+-      FreePool (Subtask->CommandPacket->NvmeCmd);
+-      FreePool (Subtask->CommandPacket->NvmeCompletion);
+-      FreePool (Subtask->CommandPacket);
+-      FreePool (Subtask);
+-    } else {
+-      InsertTailList (&BlkIo2Request->SubtasksQueue, Link);
+-      if (Subtask->IsLast) {
+-        BlkIo2Request->LastSubtaskSubmitted = TRUE;
++    }
++  }
++
++  if (Private->ControllerFailed || Private->AdmissionBlocked) return;
++  Cq = Private->CqBuffer[QueueId] + Private->CqHdbl[QueueId].Cqh;
++  while (Cq->Pt != Private->Pt[QueueId]) {
++    EFI_EVENT CallerEvent;
++    EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET *Packet;
++    NVME_CQ Completion;
++    MemoryFence ();
++    CopyMem (&Completion, Cq, sizeof (Completion));
++    AsyncRequest = NULL;
++    if (Completion.Sqid == QueueId) {
++      for (Link = GetFirstNode (&Private->AsyncPassThruQueue);
++           !IsNull (&Private->AsyncPassThruQueue, Link);
++           Link = GetNextNode (&Private->AsyncPassThruQueue, Link)) {
++        NVME_PASS_THRU_ASYNC_REQ *Candidate = NVME_PASS_THRU_ASYNC_REQ_FROM_THIS (Link);
++        if (Candidate->CommandId == Completion.Cid) { AsyncRequest = Candidate; break; }
+       }
+     }
+-  }
+-
+-  while (Cq->Pt != Private->Pt[QueueId]) {
+-    ASSERT (Cq->Sqid == QueueId);
+-
+-    HasNewItem = TRUE;
+-
+-    //
+-    // Find the command with given Command Id.
+-    //
+-    for (Link = GetFirstNode (&Private->AsyncPassThruQueue);
+-         !IsNull (&Private->AsyncPassThruQueue, Link);
+-         Link = NextLink)
+-    {
+-      NextLink     = GetNextNode (&Private->AsyncPassThruQueue, Link);
+-      AsyncRequest = NVME_PASS_THRU_ASYNC_REQ_FROM_THIS (Link);
+-      if (AsyncRequest->CommandId == Cq->Cid) {
+-        //
+-        // Copy the Respose Queue entry for this command to the callers
+-        // response buffer.
+-        //
+-        CopyMem (
+-          AsyncRequest->Packet->NvmeCompletion,
+-          Cq,
+-          sizeof (EFI_NVM_EXPRESS_COMPLETION)
+-          );
+-
+-        //
+-        // Free the resources allocated before cmd submission
+-        //
+-        if (AsyncRequest->MapData != NULL) {
+-          PciIo->Unmap (PciIo, AsyncRequest->MapData);
+-        }
+-
+-        if (AsyncRequest->MapMeta != NULL) {
+-          PciIo->Unmap (PciIo, AsyncRequest->MapMeta);
+-        }
+-
+-        if (AsyncRequest->MapPrpList != NULL) {
+-          PciIo->Unmap (PciIo, AsyncRequest->MapPrpList);
+-        }
+-
+-        if (AsyncRequest->PrpListHost != NULL) {
+-          PciIo->FreeBuffer (
+-                   PciIo,
+-                   AsyncRequest->PrpListNo,
+-                   AsyncRequest->PrpListHost
+-                   );
+-        }
+-
+-        RemoveEntryList (Link);
+-        gBS->SignalEvent (AsyncRequest->CallerEvent);
+-        FreePool (AsyncRequest);
+-
+-        //
+-        // Update submission queue head.
+-        //
+-        Private->AsyncSqHead = Cq->Sqhd;
+-        break;
+-      }
+-    }
+-
++    if (AsyncRequest == NULL) {
++      Private->AdmissionBlocked = TRUE;
++      Private->ControllerFailed = TRUE;
++      (VOID)NvmeQuiesceController (Private);
++      return;
++    }
++    Private->CallbackInProgress = TRUE;
++    Packet = AsyncRequest->Packet;
++    CallerEvent = AsyncRequest->CallerEvent;
++    CopyMem (Packet->NvmeCompletion, &Completion, sizeof (Completion));
++    AsyncRequest->DmaRequest->Completed = TRUE;
++    Status = NvmeReleaseRequest (Private, AsyncRequest->DmaRequest,
++                                Completion.Sct == 0 && Completion.Sc == 0);
++    if (EFI_ERROR (Status)) {
++      // BlockIo2 derives its token status from this completion's SC/SCT.
++      Packet->NvmeCompletion->DW3 |= 1U << 17;
++      Private->AdmissionBlocked = TRUE;
++      Private->ControllerFailed = TRUE;
++    }
++    RemoveEntryList (&AsyncRequest->Link);
++    FreePool (AsyncRequest);
++    Private->AsyncSqHead = Completion.Sqhd;
+     Private->CqHdbl[QueueId].Cqh++;
+-    // MU_CHANGE - Support alternative hardware queue sizes in NVME driver
+     if (Private->CqHdbl[QueueId].Cqh > MIN (QueueSize, Private->Cap.Mqes)) {
+       Private->CqHdbl[QueueId].Cqh = 0;
+-      Private->Pt[QueueId]        ^= 1;
+-    }
+-
++      Private->Pt[QueueId] ^= 1;
++    }
++    HasNewItem = TRUE;
++    // Complete/detach the owner and advance bookkeeping before client code.
++    gBS->SignalEvent (CallerEvent);
++    Private->CallbackInProgress = FALSE;
++    if (Private->ControllerFailed || Private->AdmissionBlocked) {
++      (VOID)NvmeQuiesceController (Private);
++      return;
++    }
+     Cq = Private->CqBuffer[QueueId] + Private->CqHdbl[QueueId].Cqh;
+   }
+ 
+   if (HasNewItem) {
+     Data = ReadUnaligned32 ((UINT32 *)&Private->CqHdbl[QueueId]);
+-    PciIo->Mem.Write (
++    Status = PciIo->Mem.Write (
+                  PciIo,
+                  EfiPciIoWidthUint32,
+                  NVME_BAR,
+@@ -842,6 +938,10 @@
+                  1,
+                  &Data
+                  );
++    if (EFI_ERROR (Status)) {
++      Private->ControllerFailed = TRUE;
++      (VOID)NvmeQuiesceController (Private);
++    }
+   }
+ }
+ 
+@@ -1020,76 +1120,57 @@
+ EFI_STATUS
+ EFIAPI
+ NvmExpressDriverCleanUpQueues (
+-  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private
+   )
+ {
+-  EFI_STATUS  Status;
+-  EFI_STATUS  ReturnStatus;
+-  UINTN       QueuePairPageCount;
+-
+-  ReturnStatus = EFI_SUCCESS;
+-
+-  if (Private == NULL) {
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  //
+-  // Admin Queue Clean-up
+-  //
++  EFI_STATUS Status, FirstError = EFI_SUCCESS;
++  BOOLEAN CallbackWasActive;
++  if (Private == NULL) return EFI_INVALID_PARAMETER;
++  if (!Private->ControllerStopped || !IsListEmpty (&Private->DmaRequests)) return EFI_NOT_READY;
++  CallbackWasActive = Private->CallbackInProgress;
++  Private->CallbackInProgress = TRUE;
++  // A failed Unmap retains the exact mapping and its common backing.
+   if (Private->Mapping != NULL) {
+     Status = Private->PciIo->Unmap (Private->PciIo, Private->Mapping);
+-    if (EFI_ERROR (Status)) {
+-      ReturnStatus = Status;
+-      DEBUG ((DEBUG_ERROR, "%a: Unmap Admin Queue Mapping failed %r\n", __func__, Status));
+-      ASSERT_EFI_ERROR (Status);
+-    }
+-
+-    Private->Mapping = NULL;
+-  }
+-
+-  if (Private->Buffer != NULL) {
+-    QueuePairPageCount = NVME_SQ_SIZE_IN_PAGES (Private, 0) + NVME_CQ_SIZE_IN_PAGES (Private, 0);
+-    Status             = Private->PciIo->FreeBuffer (Private->PciIo, QueuePairPageCount, Private->Buffer);
+-
+-    if (EFI_ERROR (Status)) {
+-      ReturnStatus = Status;
+-      DEBUG ((DEBUG_ERROR, "%a: FreeBuffer Buffer failed %r\n", __func__, Status));
+-      ASSERT_EFI_ERROR (Status);
+-    }
+-
+-    Private->Buffer = NULL;
+-  }
+-
+-  //
+-  // I/O Queue Clean-up
+-  //
++    if (EFI_ERROR (Status)) FirstError = Status;
++    else Private->Mapping = NULL;
++  }
++  if (Private->Buffer != NULL && Private->Mapping == NULL) {
++    Status = Private->PciIo->FreeBuffer (Private->PciIo, Private->AdminQueuePages, Private->Buffer);
++    if (EFI_ERROR (Status)) { if (!EFI_ERROR (FirstError)) FirstError = Status; }
++    else {
++      Private->Buffer = NULL;
++      Private->BufferPciAddr = NULL;
++      Private->AdminQueuePages = 0;
++      Private->SqBuffer[0] = NULL;
++      Private->CqBuffer[0] = NULL;
++      Private->SqBufferPciAddr[0] = NULL;
++      Private->CqBufferPciAddr[0] = NULL;
++    }
++  }
+   if (Private->IoQueueMapping != NULL) {
+     Status = Private->PciIo->Unmap (Private->PciIo, Private->IoQueueMapping);
+-
+-    if (EFI_ERROR (Status)) {
+-      ReturnStatus = Status;
+-      DEBUG ((DEBUG_ERROR, "%a: Unmap IoQueueMapping failed %r\n", __func__, Status));
+-      ASSERT_EFI_ERROR (Status);
+-    }
+-
+-    Private->IoQueueMapping = NULL;
+-  }
+-
+-  if (Private->IoQueueBuffer != NULL) {
+-    // Using the first data queue size for the number of pages required for the data queues
+-    QueuePairPageCount = NVME_SQ_SIZE_IN_PAGES (Private, 1) + NVME_CQ_SIZE_IN_PAGES (Private, 1);
+-    Status             = Private->PciIo->FreeBuffer (Private->PciIo, QueuePairPageCount*Private->NumberOfIoQueuePairs, Private->IoQueueBuffer);
+-
+-    if (EFI_ERROR (Status)) {
+-      ReturnStatus = Status;
+-      DEBUG ((DEBUG_ERROR, "%a: FreeBuffer IoQueueBuffer failed %r\n", __func__, Status));
+-      ASSERT_EFI_ERROR (Status);
+-    }
+-
+-    Private->IoQueueBuffer = NULL;
+-  }
+-
+-  return ReturnStatus;
++    if (EFI_ERROR (Status)) { if (!EFI_ERROR (FirstError)) FirstError = Status; }
++    else Private->IoQueueMapping = NULL;
++  }
++  if (Private->IoQueueBuffer != NULL && Private->IoQueueMapping == NULL) {
++    Status = Private->PciIo->FreeBuffer (Private->PciIo, Private->IoQueuePages, Private->IoQueueBuffer);
++    if (EFI_ERROR (Status)) { if (!EFI_ERROR (FirstError)) FirstError = Status; }
++    else {
++      UINTN Index;
++      Private->IoQueueBuffer = NULL;
++      Private->IoQueueBufferPciAddr = NULL;
++      Private->IoQueuePages = 0;
++      for (Index = 1; Index < NVME_MAX_QUEUES; Index++) {
++        Private->SqBuffer[Index] = NULL;
++        Private->CqBuffer[Index] = NULL;
++        Private->SqBufferPciAddr[Index] = NULL;
++        Private->CqBufferPciAddr[Index] = NULL;
++      }
++    }
++  }
++  Private->CallbackInProgress = CallbackWasActive;
++  return FirstError;
+ }
+ 
+ // MU_CHANGE [END] - Allocate IO Queue Buffer
+@@ -1142,6 +1223,8 @@
+   NVME_CONTROLLER_PRIVATE_DATA  *Private;
+   EFI_DEVICE_PATH_PROTOCOL      *ParentDevicePath;
+   UINT32                        NamespaceId;
++  EFI_STATUS                    Failure, Cleanup;
++  NVME_CONTROLLER_PRIVATE_DATA  *Existing;
+   // MU_CHANGE [BEGIN] - Allocate IO Queue Buffer
+   // EFI_PHYSICAL_ADDRESS                MappedAddr;
+   // UINTN                               Bytes;
+@@ -1152,7 +1235,19 @@
+ 
+   DEBUG ((DEBUG_INFO, "NvmExpressDriverBindingStart: start\n"));
+ 
+-  Private          = NULL;
++  if (NvmeFindRetainedController (Controller) != NULL) return EFI_NOT_READY;
++  Private = AllocateZeroPool (sizeof (*Private));
++  if (Private == NULL) return EFI_OUT_OF_RESOURCES;
++  Private->Signature = NVME_CONTROLLER_PRIVATE_DATA_SIGNATURE;
++  Private->ControllerHandle = Controller;
++  Private->DriverBindingHandle = This->DriverBindingHandle;
++  Private->ControllerStopped = TRUE;
++  InitializeListHead (&Private->DmaRequests);
++  InitializeListHead (&Private->AsyncPassThruQueue);
++  InitializeListHead (&Private->UnsubmittedSubtasks);
++  InitializeListHead (&Private->RetainedControllerLink);
++  Status = NvmeBeginLifecycle (Private);
++  if (EFI_ERROR (Status)) { FreePool (Private); return Status; }
+   Passthru         = NULL;
+   ParentDevicePath = NULL;
+ 
+@@ -1164,9 +1259,8 @@
+                   Controller,
+                   EFI_OPEN_PROTOCOL_BY_DRIVER
+                   );
+-  if ((EFI_ERROR (Status)) && (Status != EFI_ALREADY_STARTED)) {
+-    return Status;
+-  }
++  if ((EFI_ERROR (Status)) && (Status != EFI_ALREADY_STARTED)) goto Exit;
++  Private->DevicePathOpened = !EFI_ERROR (Status);
+ 
+   Status = gBS->OpenProtocol (
+                   Controller,
+@@ -1177,22 +1271,14 @@
+                   EFI_OPEN_PROTOCOL_BY_DRIVER
+                   );
+ 
+-  if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
+-    return Status;
+-  }
++  if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) goto Exit;
++  Private->PciIoOpened = !EFI_ERROR (Status);
++  Private->PciIo = PciIo;
+ 
+   //
+   // Check EFI_ALREADY_STARTED to reuse the original NVME_CONTROLLER_PRIVATE_DATA.
+   //
+   if (Status != EFI_ALREADY_STARTED) {
+-    Private = AllocateZeroPool (sizeof (NVME_CONTROLLER_PRIVATE_DATA));
+-
+-    if (Private == NULL) {
+-      DEBUG ((DEBUG_ERROR, "NvmExpressDriverBindingStart: allocating pool for Nvme Private Data failed!\n"));
+-      Status = EFI_OUT_OF_RESOURCES;
+-      goto Exit;
+-    }
+-
+     //
+     // Save original PCI attributes
+     //
+@@ -1204,7 +1290,7 @@
+                       );
+ 
+     if (EFI_ERROR (Status)) {
+-      return Status;
++      goto Exit;
+     }
+ 
+     //
+@@ -1322,7 +1408,9 @@
+       goto Exit;
+     }
+ 
++    Private->PassThruInstalled = TRUE;
+     NvmeRegisterShutdownNotification ();
++    Private->ShutdownRegistered = TRUE;
+   } else {
+     Status = gBS->OpenProtocol (
+                     Controller,
+@@ -1336,7 +1424,21 @@
+       goto Exit;
+     }
+ 
+-    Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (Passthru);
++    Existing = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (Passthru);
++    // Transfer any newly acquired DevicePath relationship to the existing owner.
++    Existing->DevicePathOpened = Existing->DevicePathOpened || Private->DevicePathOpened;
++    Private->DevicePathOpened = FALSE;
++    if (Existing->AdmissionBlocked || Existing->RecoveryInProgress ||
++        Existing->CallbackInProgress || Existing->ControllerFailed) {
++      Status = EFI_DEVICE_ERROR;
++      goto Exit;
++    }
++    Status = NvmeBeginLifecycle (Existing);
++    if (EFI_ERROR (Status)) goto Exit;
++    // Both owners remain protected while the temporary Start owner is released.
++    NvmeEndLifecycle (Private);
++    FreePool (Private);
++    Private = Existing;
+   }
+ 
+   // MU_CHANGE [BEGIN] - NVMe namespace filtering
+@@ -1348,7 +1450,7 @@
+     // Enumerate all NVME namespaces in the controller
+     //
+     // MU_CHANGE [BEGIN] - NVMe namespace filtering
+-    Status = DiscoverAllNamespaces (
++    Status = NvmeDiscoverNamespacesOwned (
+                Private,
+                FilterNsId
+                );
+@@ -1368,7 +1470,7 @@
+       if ((FilterNsId == 0) ||
+           (NamespaceId == FilterNsId))
+       {
+-        Status = EnumerateNvmeDevNamespace (
++        Status = NvmeEnumerateNamespaceOwned (
+                    Private,
+                    NamespaceId
+                    );
+@@ -1378,55 +1480,20 @@
+     }
+   }
+ 
++  if (Private->ControllerFailed) { Status = EFI_DEVICE_ERROR; goto Exit; }
+   DEBUG ((DEBUG_INFO, "NvmExpressDriverBindingStart: end successfully\n"));
++  NvmeEndLifecycle (Private);
+   return EFI_SUCCESS;
+ 
+ Exit:
+-  // MU_CHANGE [BEGIN] - Allocate IO Queue Buffer
+-  // if ((Private != NULL) && (Private->Mapping != NULL)) {
+-  //   PciIo->Unmap (PciIo, Private->Mapping);
+-  // }
+-  //
+-  // if ((Private != NULL) && (Private->Buffer != NULL)) {
+-  //   PciIo->FreeBuffer (PciIo, 6, Private->Buffer);
+-  // }
+-
+-  Status = NvmExpressDriverCleanUpQueues (Private);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "%a: NvmExpressDriverCleanUpQueues failed %r\n", __func__, Status));
+-  }
+-
+-  // MU_CHANGE [END] - Allocate IO Queue Buffer
+-
+-  if ((Private != NULL) && (Private->ControllerData != NULL)) {
+-    FreePool (Private->ControllerData);
+-  }
+-
+-  if (Private != NULL) {
+-    if (Private->TimerEvent != NULL) {
+-      gBS->CloseEvent (Private->TimerEvent);
+-    }
+-
+-    FreePool (Private);
+-  }
+-
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiDevicePathProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  DEBUG ((DEBUG_INFO, "NvmExpressDriverBindingStart: end with %r\n", Status));
+-
+-  return Status;
++  Failure = Status;
++  Cleanup = NvmeDisposeControllerOwned (Private, TRUE);
++  if (EFI_ERROR (Cleanup)) {
++    NvmeRetainController (Private);
++    NvmeEndLifecycle (Private);
++    DEBUG ((DEBUG_ERROR, "%a: controller retained after %r (cleanup %r)\n", __func__, Failure, Cleanup));
++  }
++  return Failure;
+ }
+ 
+ /**
+@@ -1458,98 +1525,29 @@
+ EFI_STATUS
+ EFIAPI
+ NvmExpressDriverBindingStop (
+-  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN  EFI_HANDLE                   Controller,
+-  IN  UINTN                        NumberOfChildren,
+-  IN  EFI_HANDLE                   *ChildHandleBuffer
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN UINTN NumberOfChildren,
++  IN EFI_HANDLE *ChildHandleBuffer
+   )
+ {
+-  EFI_STATUS                          Status;
+-  BOOLEAN                             AllChildrenStopped;
+-  UINTN                               Index;
+-  NVME_CONTROLLER_PRIVATE_DATA        *Private;
+-  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL  *PassThru;
+-  BOOLEAN                             IsEmpty;
+-  EFI_TPL                             OldTpl;
+-
++  EFI_STATUS Status;
++  BOOLEAN AllChildrenStopped;
++  UINTN Index;
++  NVME_CONTROLLER_PRIVATE_DATA *Private;
++  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL *PassThru;
+   if (NumberOfChildren == 0) {
+-    Status = gBS->OpenProtocol (
+-                    Controller,
+-                    &gEfiNvmExpressPassThruProtocolGuid,
+-                    (VOID **)&PassThru,
+-                    This->DriverBindingHandle,
+-                    Controller,
+-                    EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                    );
+-
+-    if (!EFI_ERROR (Status)) {
++    Private = NvmeFindRetainedController (Controller);
++    if (Private == NULL) {
++      Status = gBS->OpenProtocol (Controller, &gEfiNvmExpressPassThruProtocolGuid,
++                                 (VOID **)&PassThru, This->DriverBindingHandle,
++                                 Controller, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
++      if (EFI_ERROR (Status)) return Status;
+       Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (PassThru);
+-
+-      //
+-      // Wait for the asynchronous PassThru queue to become empty.
+-      //
+-      while (TRUE) {
+-        OldTpl  = gBS->RaiseTPL (TPL_NOTIFY);
+-        IsEmpty = IsListEmpty (&Private->AsyncPassThruQueue) &&
+-                  IsListEmpty (&Private->UnsubmittedSubtasks);
+-        gBS->RestoreTPL (OldTpl);
+-
+-        if (IsEmpty) {
+-          break;
+-        }
+-
+-        gBS->Stall (100);
+-      }
+-
+-      gBS->UninstallMultipleProtocolInterfaces (
+-             Controller,
+-             &gEfiNvmExpressPassThruProtocolGuid,
+-             PassThru,
+-             NULL
+-             );
+-
+-      if (Private->TimerEvent != NULL) {
+-        gBS->CloseEvent (Private->TimerEvent);
+-      }
+-
+-      // MU_CHANGE [BEGIN] - Allocate IO Queue Buffer
+-      // if (Private->Mapping != NULL) {
+-      //   Private->PciIo->Unmap (Private->PciIo, Private->Mapping);
+-      // }
+-      //
+-      // if (Private->Buffer != NULL) {
+-      //   Private->PciIo->FreeBuffer (Private->PciIo, 6, Private->Buffer);
+-      // }
+-
+-      Status = NvmExpressDriverCleanUpQueues (Private);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_ERROR, "%a: NvmExpressDriverCleanUpQueues failed %r\n", __func__, Status));
+-      }
+-
+-      // MU_CHANGE [END] - Allocate IO Queue Buffer
+-
+-      FreePool (Private->ControllerData);
+-      FreePool (Private);
+-    }
+-
+-    gBS->CloseProtocol (
+-           Controller,
+-           &gEfiPciIoProtocolGuid,
+-           This->DriverBindingHandle,
+-           Controller
+-           );
+-    gBS->CloseProtocol (
+-           Controller,
+-           &gEfiDevicePathProtocolGuid,
+-           This->DriverBindingHandle,
+-           Controller
+-           );
+-
+-    NvmeUnregisterShutdownNotification ();
+-
+-    return EFI_SUCCESS;
+-  }
+-
++    }
++    // Disposal closes admission, obtains RDY0, and performs one cleanup pass.
++    return NvmeDisposeController (Private);
++  }
+   AllChildrenStopped = TRUE;
+ 
+   for (Index = 0; Index < NumberOfChildren; Index++) {
+@@ -1590,6 +1588,9 @@
+   UINTN                         Index;
+   EFI_COMPONENT_NAME_PROTOCOL   *ComponentName;
+   EFI_COMPONENT_NAME2_PROTOCOL  *ComponentName2;
++
++  // Registry-only failed Start owners still hold driver code and BY_DRIVER.
++  if (!IsListEmpty (&mRetainedControllers)) return EFI_ACCESS_DENIED;
+ 
+   //
+   // Get the list of the device handles managed by this driver.
+--- a/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.h
++++ b/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.h
+@@ -47,6 +47,7 @@
+ 
+ typedef struct _NVME_CONTROLLER_PRIVATE_DATA  NVME_CONTROLLER_PRIVATE_DATA;
+ typedef struct _NVME_DEVICE_PRIVATE_DATA      NVME_DEVICE_PRIVATE_DATA;
++typedef struct _NVME_DMA_REQUEST             NVME_DMA_REQUEST;
+ typedef struct _NVME_QUEUE_SIZE_DATA          NVME_QUEUE_SIZE_DATA; // MU_CHANGE - Allocate IO Queue Buffer
+ 
+ #include "NvmExpressBlockIo.h"
+@@ -278,6 +279,27 @@
+   EFI_EVENT      TimerEvent;
+   LIST_ENTRY     AsyncPassThruQueue;
+   LIST_ENTRY     UnsubmittedSubtasks;
++
++  // Owned DMA outlives caller packets on an unsuccessful stop or unmap.
++  LIST_ENTRY     DmaRequests;
++  LIST_ENTRY     RetainedControllerLink;
++  UINT64         DmaGeneration;
++  UINTN          AdminQueuePages;
++  UINTN          IoQueuePages;
++  UINTN          ChildCount;
++  UINTN          LifecycleInProgress;
++  BOOLEAN        AdmissionBlocked;
++  BOOLEAN        RecoveryInProgress;
++  BOOLEAN        ControllerFailed;
++  BOOLEAN        ControllerStopped;
++  BOOLEAN        CallbackInProgress;
++  BOOLEAN        TimeoutReported;
++  BOOLEAN        InternalTimeoutReported;
++  BOOLEAN        RetainedController;
++  BOOLEAN        PassThruInstalled;
++  BOOLEAN        ShutdownRegistered;
++  BOOLEAN        PciIoOpened;
++  BOOLEAN        DevicePathOpened;
+ };
+ 
+ #define NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU(a) \
+@@ -325,6 +347,8 @@
+   NVME_ADMIN_NAMESPACE_DATA                NamespaceData;
+ 
+   NVME_CONTROLLER_PRIVATE_DATA             *Controller;
++  BOOLEAN                                  ControllerRelationshipOpen;
++  BOOLEAN                                  RegisteredChild;
+ };
+ 
+ //
+@@ -406,6 +430,84 @@
+   CR (a, NVME_BLKIO2_SUBTASK, Link, NVME_BLKIO2_SUBTASK_SIGNATURE)
+ 
+ //
++// Every ordinary DMA mapping targets private staging, never caller storage.
++// An attached synchronous record survives sweeps until its PassThru returns.
++//
++struct _NVME_DMA_REQUEST {
++  LIST_ENTRY    Link;
++  VOID          *DataBuffer;
++  VOID          *MetadataBuffer;
++  VOID          *CallerData;
++  VOID          *CallerMetadata;
++  UINT32        DataLength;
++  UINT32        MetadataLength;
++  VOID          *MapData;
++  VOID          *MapMeta;
++  VOID          *MapPrpList;
++  VOID          *PrpListHost;
++  UINTN         PrpListNo;
++  UINT64        Generation;
++  BOOLEAN       Submitted;
++  BOOLEAN       Completed;
++  BOOLEAN       DeviceWrite;
++  BOOLEAN       Detached;
++};
++
++EFI_STATUS
++AbortAsyncPassThruTasks (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  );
++
++EFI_STATUS
++EFIAPI
++NvmExpressDriverCleanUpQueues (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  );
++
++EFI_STATUS
++NvmeRetireRequests (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  );
++
++EFI_STATUS
++NvmeReleaseRequest (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private,
++  IN NVME_DMA_REQUEST              *Request,
++  IN BOOLEAN                       Publish
++  );
++
++// HCI helpers used by the separately compiled recovery/diagnostic unit.
++EFI_STATUS
++NvmeDisableController (
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private
++  );
++
++EFI_STATUS
++ReadNvmeControllerConfiguration (
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private,
++  IN NVME_CC *Cc
++  );
++
++EFI_STATUS
++ReadNvmeControllerStatus (
++  IN NVME_CONTROLLER_PRIVATE_DATA *Private,
++  IN NVME_CSTS *Csts
++  );
++
++EFI_STATUS
++NvmeQuiesceController (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  );
++
++EFI_STATUS
++NvmePassThruInternal (
++  IN EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL                *This,
++  IN UINT32                                          NamespaceId,
++  IN EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET          *Packet,
++  IN EFI_EVENT                                       Event OPTIONAL
++  );
++
++//
+ // Nvme asynchronous passthru request.
+ //
+ #define NVME_PASS_THRU_ASYNC_REQ_SIG  SIGNATURE_32 ('N', 'P', 'A', 'R')
+@@ -416,11 +518,7 @@
+ 
+   EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET    *Packet;
+   UINT16                                      CommandId;
+-  VOID                                        *MapPrpList;
+-  UINTN                                       PrpListNo;
+-  VOID                                        *PrpListHost;
+-  VOID                                        *MapData;
+-  VOID                                        *MapMeta;
++  NVME_DMA_REQUEST                            *DmaRequest;
+   EFI_EVENT                                   CallerEvent;
+ } NVME_PASS_THRU_ASYNC_REQ;
+ 
+--- a/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressBlockIo.c
++++ b/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressBlockIo.c
+@@ -186,6 +186,12 @@
+ 
+   Status        = EFI_SUCCESS;
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   OrginalBlocks = Blocks;
+ 
+@@ -272,6 +278,12 @@
+ 
+   Status        = EFI_SUCCESS;
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   OrginalBlocks = Blocks;
+ 
+@@ -376,6 +388,8 @@
+   NVME_BLKIO2_REQUEST  *Request;
+   NVME_CQ              *Completion;
+   EFI_BLOCK_IO2_TOKEN  *Token;
++  EFI_EVENT            CallerEvent;
++  BOOLEAN              Last;
+ 
+   gBS->CloseEvent (Event);
+ 
+@@ -406,19 +420,22 @@
+   //
+   RemoveEntryList (&Subtask->Link);
+ 
+-  if (IsListEmpty (&Request->SubtasksQueue) && Request->LastSubtaskSubmitted) {
+-    //
+-    // Remove the BlockIo2 request from the device asynchronous queue.
+-    //
++  Last = IsListEmpty (&Request->SubtasksQueue) &&
++         Request->LastSubtaskSubmitted && (Request->UnsubmittedSubtaskNum == 0);
++  CallerEvent = Token->Event;
++  if (Last) {
+     RemoveEntryList (&Request->Link);
+     FreePool (Request);
+-    gBS->SignalEvent (Token->Event);
+   }
+ 
+   FreePool (Subtask->CommandPacket->NvmeCmd);
+   FreePool (Subtask->CommandPacket->NvmeCompletion);
+   FreePool (Subtask->CommandPacket);
+   FreePool (Subtask);
++  if (Last) {
++    gBS->SignalEvent (CallerEvent);
++  }
++
+ }
+ 
+ /**
+@@ -457,6 +474,12 @@
+   EFI_TPL                                   OldTpl;
+ 
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   Bytes         = Blocks * BlockSize;
+   CommandPacket = NULL;
+@@ -596,6 +619,12 @@
+   EFI_TPL                                   OldTpl;
+ 
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   Bytes         = Blocks * BlockSize;
+   CommandPacket = NULL;
+@@ -735,6 +764,12 @@
+ 
+   Status        = EFI_SUCCESS;
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   OrginalBlocks = Blocks;
+   BlkIo2Req     = AllocateZeroPool (sizeof (NVME_BLKIO2_REQUEST));
+@@ -863,6 +898,12 @@
+ 
+   Status        = EFI_SUCCESS;
+   Private       = Device->Controller;
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed)
++  {
++    return EFI_DEVICE_ERROR;
++  }
++
+   BlockSize     = Device->Media.BlockSize;
+   OrginalBlocks = Blocks;
+   BlkIo2Req     = AllocateZeroPool (sizeof (NVME_BLKIO2_REQUEST));
+@@ -1232,7 +1273,6 @@
+   EFI_STATUS                    Status;
+   NVME_DEVICE_PRIVATE_DATA      *Device;
+   NVME_CONTROLLER_PRIVATE_DATA  *Private;
+-  BOOLEAN                       IsEmpty;
+   EFI_TPL                       OldTpl;
+ 
+   if (This == NULL) {
+@@ -1242,22 +1282,7 @@
+   Device  = NVME_DEVICE_PRIVATE_DATA_FROM_BLOCK_IO2 (This);
+   Private = Device->Controller;
+ 
+-  //
+-  // Wait for the asynchronous PassThru queue to become empty.
+-  //
+-  while (TRUE) {
+-    OldTpl  = gBS->RaiseTPL (TPL_NOTIFY);
+-    IsEmpty = IsListEmpty (&Private->AsyncPassThruQueue) &&
+-              IsListEmpty (&Private->UnsubmittedSubtasks);
+-    gBS->RestoreTPL (OldTpl);
+-
+-    if (IsEmpty) {
+-      break;
+-    }
+-
+-    gBS->Stall (100);
+-  }
+-
++  // Central recovery blocks admission, stops DMA and aborts pending work.
+   OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
+ 
+   Status = NvmeControllerReset (Private); // MU_CHANGE - Allocate IO Queue Buffer
+--- a/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressHci.c
++++ b/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressHci.c
+@@ -431,6 +431,11 @@
+       );
+   }
+ 
++  if (!EFI_ERROR (Status)) {
++    Private->ControllerStopped = TRUE;
++    Private->DmaGeneration++;
++  }
++
+   DEBUG ((DEBUG_INFO, "NVMe controller is disabled with status [%r].\n", Status));
+   return Status;
+ }
+@@ -463,6 +468,7 @@
+   UINT32      Index;
+   UINT8       Timeout;
+ 
++  Private->ControllerStopped = FALSE;
+   EfiEventGroupSignal (&gNVMeEnableStartEventGroupGuid);
+ 
+   //
+@@ -567,7 +573,7 @@
+   Command.Cdw10 = 1;
+   Command.Flags = CDW10_VALID;
+ 
+-  Status = Private->Passthru.PassThru (
++  Status = (Private->RecoveryInProgress ? NvmePassThruInternal : Private->Passthru.PassThru) (
+                                &Private->Passthru,
+                                NVME_CONTROLLER_ID,
+                                &CommandPacket,
+@@ -619,7 +625,7 @@
+   CommandPacket.NvmeCmd->Cdw10 = 0;
+   CommandPacket.NvmeCmd->Flags = CDW10_VALID;
+ 
+-  Status = Private->Passthru.PassThru (
++  Status = (Private->RecoveryInProgress ? NvmePassThruInternal : Private->Passthru.PassThru) (
+                                &Private->Passthru,
+                                NamespaceId,
+                                &CommandPacket,
+@@ -692,7 +698,7 @@
+   DEBUG ((DEBUG_INFO, "Number of Data Queue Pairs Requested: %d\n", Ndqpr));
+ 
+   // Send the Set Features Command for Number of Queues
+-  Status = Private->Passthru.PassThru (
++  Status = (Private->RecoveryInProgress ? NvmePassThruInternal : Private->Passthru.PassThru) (
+                                &Private->Passthru,
+                                0,
+                                &CommandPacket,
+@@ -711,11 +717,14 @@
+   //
+   NumberOfQueuesAllocated.Uint32 = CommandPacket.NvmeCompletion->DW0;
+   DEBUG ((DEBUG_INFO, "Number of Data Queue Pairs Allocated By Controller: %d, \n", (NumberOfQueuesAllocated.Bits.Nsq + 1)));
+-  if ((NumberOfQueuesAllocated.Bits.Nsq + 1) > Ndqpr) {
+-    // This driver at maximum supports 2 pairs of data queues. So we will take the minimum of the requested and allocated values.
+-    Private->NumberOfIoQueuePairs = Ndqpr;
++  Private->NumberOfIoQueuePairs = MIN (Ndqpr,
++                                      MIN (NumberOfQueuesAllocated.Bits.Nsq + 1,
++                                           NumberOfQueuesAllocated.Bits.Ncq + 1));
++
++  if (NVME_SUPPORT_BLOCKIO2 (Private)) {
++    Private->Passthru.Mode->Attributes |= EFI_NVM_EXPRESS_PASS_THRU_ATTRIBUTES_NONBLOCKIO;
+   } else {
+-    Private->NumberOfIoQueuePairs = NumberOfQueuesAllocated.Bits.Nsq + 1;
++    Private->Passthru.Mode->Attributes &= ~EFI_NVM_EXPRESS_PASS_THRU_ATTRIBUTES_NONBLOCKIO;
+   }
+ 
+   DEBUG ((DEBUG_INFO, "Number of Data Queue Pairs Supported By Driver: %d, \n", Private->NumberOfIoQueuePairs));
+@@ -787,7 +796,7 @@
+     CopyMem (&CommandPacket.NvmeCmd->Cdw10, &CrIoCq, sizeof (NVME_ADMIN_CRIOCQ));
+     CommandPacket.NvmeCmd->Flags = CDW10_VALID | CDW11_VALID;
+ 
+-    Status = Private->Passthru.PassThru (
++    Status = (Private->RecoveryInProgress ? NvmePassThruInternal : Private->Passthru.PassThru) (
+                                  &Private->Passthru,
+                                  0,
+                                  &CommandPacket,
+@@ -870,7 +879,7 @@
+     CopyMem (&CommandPacket.NvmeCmd->Cdw10, &CrIoSq, sizeof (NVME_ADMIN_CRIOSQ));
+     CommandPacket.NvmeCmd->Flags = CDW10_VALID | CDW11_VALID;
+ 
+-    Status = Private->Passthru.PassThru (
++    Status = (Private->RecoveryInProgress ? NvmePassThruInternal : Private->Passthru.PassThru) (
+                                  &Private->Passthru,
+                                  0,
+                                  &CommandPacket,
+@@ -1035,8 +1044,9 @@
+   @retval Others                     A device error occurred while initializing the controller.
+ 
+ **/
+-EFI_STATUS
+-NvmeControllerInit (
++STATIC
++EFI_STATUS
++NvmeControllerInitBody (
+   IN NVME_CONTROLLER_PRIVATE_DATA  *Private
+   )
+ {
+@@ -1205,6 +1215,8 @@
+     return Status;
+   }
+ 
++  Private->AdminQueuePages = AdminQueuePairPageCount;
++
+   Bytes  = EFI_PAGES_TO_SIZE (AdminQueuePairPageCount);
+   Status = PciIo->Map (
+                     PciIo,
+@@ -1223,7 +1235,7 @@
+   // Disable the controller to wait for CSTS.RDY to become 0
+   // NVMe Base Specification 2.0e, Section 3.5 Controller Initialization
+   // MU_CHANGE [END] - Allocate IO Queue Buffer
+-  Status = NvmeDisableController (Private);
++  Status = NvmeQuiesceController (Private);
+ 
+   if (EFI_ERROR (Status)) {
+     return Status;
+@@ -1391,6 +1403,8 @@
+     return Status;
+   }
+ 
++  Private->IoQueuePages = IoQueuePairPageCount * Private->NumberOfIoQueuePairs;
++
+   Bytes  = EFI_PAGES_TO_SIZE (IoQueuePairPageCount * Private->NumberOfIoQueuePairs);
+   Status = PciIo->Map (
+                     PciIo,
+@@ -1412,6 +1426,48 @@
+ 
+   return Status;
+ }
++EFI_STATUS
++NvmeControllerInit (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  )
++{
++  EFI_STATUS  Status;
++  EFI_STATUS  StopStatus;
++
++  if (Private->RecoveryInProgress || Private->CallbackInProgress || Private->ControllerFailed) {
++    return EFI_NOT_READY;
++  }
++
++  Private->AdmissionBlocked   = TRUE;
++  Private->RecoveryInProgress = TRUE;
++
++  // Inherited hardware state has not been stopped by this owner yet.
++  Private->ControllerStopped = FALSE;
++  Status = NvmeControllerInitBody (Private);
++  if (EFI_ERROR (Status)) {
++    // A prior stop does not cover admin requests after a new enable attempt.
++    StopStatus = Private->ControllerFailed ? EFI_DEVICE_ERROR : NvmeQuiesceController (Private);
++    Private->ControllerFailed = TRUE;
++    DEBUG ((DEBUG_ERROR, "NvmExpressDxe: NvmeControllerInit failed: status=%r stop=%r generation=%lu\n",
++            Status, StopStatus, Private->DmaGeneration));
++  } else {
++    if (Private->TimerEvent != NULL) {
++      Status = gBS->SetTimer (Private->TimerEvent, TimerPeriodic, NVME_HC_ASYNC_TIMER);
++      if (EFI_ERROR (Status)) {
++        (VOID)NvmeQuiesceController (Private);
++        Private->ControllerFailed = TRUE;
++      }
++    }
++  }
++
++  Private->RecoveryInProgress = FALSE;
++  if (!EFI_ERROR (Status)) {
++    Private->AdmissionBlocked = FALSE;
++  }
++
++  return Status;
++}
++
+ 
+ // MU_CHANGE [BEGIN] - Allocate IO Queue Buffer
+ 
+@@ -1424,8 +1480,9 @@
+   @retval Others                     A device error occurred while resetting the controller.
+ 
+ **/
+-EFI_STATUS
+-NvmeControllerReset (
++STATIC
++EFI_STATUS
++NvmeControllerResetBody (
+   IN NVME_CONTROLLER_PRIVATE_DATA  *Private
+   )
+ {
+@@ -1437,6 +1494,7 @@
+   UINT8                Mn[41];
+   NVME_AQA             Aqa;
+   UINT32               NdqpBeforeReset;
++  UINT32               AttributesBeforeReset;
+ 
+   DEBUG ((DEBUG_INFO, "%a: Begin Controller Reset\n", __func__));
+ 
+@@ -1461,6 +1519,11 @@
+     return EFI_DEVICE_ERROR;
+   }
+ 
++  Status = NvmeQuiesceController (Private);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
+   for (Index = 0; Index < NVME_MAX_QUEUES; Index++) {
+     Private->Cid[Index]        = 0;
+     Private->Pt[Index]         = 0;
+@@ -1469,12 +1532,6 @@
+   }
+ 
+   Private->AsyncSqHead = 0;
+-
+-  Status = NvmeDisableController (Private);
+-
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+ 
+   Status = ReadNvmeAdminQueueAttributes (Private, &Aqa);
+   if (EFI_ERROR (Status)) {
+@@ -1551,7 +1608,8 @@
+   // The number of queues allocated is returned and stored in the controller private data structure
+   // using the NumberOfIoQueuePairs field.
+   //
+-  NdqpBeforeReset = Private->NumberOfIoQueuePairs;
++  NdqpBeforeReset       = Private->NumberOfIoQueuePairs;
++  AttributesBeforeReset = Private->Passthru.Mode->Attributes;
+   Status          = NvmeSetFeaturesNumberOfQueues (Private, NVME_MAX_QUEUES - 1);
+   if (EFI_ERROR (Status)) {
+     return Status;
+@@ -1561,7 +1619,9 @@
+     // This is a controller reset, so the number of data queues should not have changed.
+     // If the number of queues has changed, then the driver must be re-initialized.
+     DEBUG ((DEBUG_ERROR, "%a: Number of Data Queue Pairs mismatch: %d != %d\n", __func__, NdqpBeforeReset, Private->NumberOfIoQueuePairs));
+-    ASSERT (FALSE);
++    // Preserve the identity of allocated queues and installed child protocols.
++    Private->NumberOfIoQueuePairs     = NdqpBeforeReset;
++    Private->Passthru.Mode->Attributes = AttributesBeforeReset;
+     return EFI_DEVICE_ERROR;
+   }
+ 
+@@ -1575,6 +1635,47 @@
+ 
+   return Status;
+ }
++EFI_STATUS
++NvmeControllerReset (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  )
++{
++  EFI_STATUS  Status;
++  EFI_STATUS  StopStatus;
++
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress ||
++      Private->CallbackInProgress || Private->ControllerFailed) {
++    return EFI_NOT_READY;
++  }
++
++  Private->AdmissionBlocked   = TRUE;
++  Private->RecoveryInProgress = TRUE;
++
++  Status = NvmeControllerResetBody (Private);
++  if (EFI_ERROR (Status)) {
++    // A prior stop does not cover admin requests after a new enable attempt.
++    StopStatus = Private->ControllerFailed ? EFI_DEVICE_ERROR : NvmeQuiesceController (Private);
++    Private->ControllerFailed = TRUE;
++    DEBUG ((DEBUG_ERROR, "NvmExpressDxe: NvmeControllerReset failed: status=%r stop=%r generation=%lu\n",
++            Status, StopStatus, Private->DmaGeneration));
++  } else {
++    if (Private->TimerEvent != NULL) {
++      Status = gBS->SetTimer (Private->TimerEvent, TimerPeriodic, NVME_HC_ASYNC_TIMER);
++      if (EFI_ERROR (Status)) {
++        (VOID)NvmeQuiesceController (Private);
++        Private->ControllerFailed = TRUE;
++      }
++    }
++  }
++
++  Private->RecoveryInProgress = FALSE;
++  if (!EFI_ERROR (Status)) {
++    Private->AdmissionBlocked = FALSE;
++  }
++
++  return Status;
++}
++
+ 
+ // MU_CHANGE [END] - Allocate IO Queue Buffer
+ 
+--- a/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressPassthru.c
++++ b/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressPassthru.c
+@@ -310,8 +310,292 @@
+   return (VOID *)(UINTN)PrpListPhyAddr;
+ 
+ EXIT:
+-  PciIo->FreeBuffer (PciIo, *PrpListNo, *PrpListHost);
++  // The caller retains the exact map and backing on failure.
+   return NULL;
++}
++
++/** Retire only resources whose DMA has completed or crossed a stop generation. **/
++STATIC
++EFI_STATUS
++NvmeRetireRequestResources (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private,
++  IN NVME_DMA_REQUEST              *Request
++  )
++{
++  EFI_STATUS  Status;
++  EFI_STATUS  Result;
++  VOID        **Mappings[3];
++  UINTN       Index;
++
++  if (Request->Submitted && !Request->Completed &&
++      (Request->Generation == Private->DmaGeneration))
++  {
++    return EFI_NOT_READY;
++  }
++
++  Result      = EFI_SUCCESS;
++  Mappings[0] = &Request->MapData;
++  Mappings[1] = &Request->MapMeta;
++  Mappings[2] = &Request->MapPrpList;
++  for (Index = 0; Index < ARRAY_SIZE (Mappings); Index++) {
++    if (*Mappings[Index] != NULL) {
++      Status = Private->PciIo->Unmap (Private->PciIo, *Mappings[Index]);
++      if (EFI_ERROR (Status)) {
++        Result = Status;
++      } else {
++        *Mappings[Index] = NULL;
++      }
++    }
++  }
++
++  if ((Request->MapPrpList == NULL) && (Request->PrpListHost != NULL)) {
++    Status = Private->PciIo->FreeBuffer (Private->PciIo, Request->PrpListNo, Request->PrpListHost);
++    if (EFI_ERROR (Status)) {
++      Result = Status;
++    } else {
++      Request->PrpListHost = NULL;
++    }
++  }
++
++  return Result;
++}
++
++STATIC
++VOID
++NvmeFreeDetachedRequest (
++  IN NVME_DMA_REQUEST  *Request
++  )
++{
++  if (!Request->Detached) {
++    return;
++  }
++
++  if ((Request->MapData == NULL) && (Request->DataBuffer != NULL)) {
++    FreePool (Request->DataBuffer);
++    Request->DataBuffer = NULL;
++  }
++
++  if ((Request->MapMeta == NULL) && (Request->MetadataBuffer != NULL)) {
++    FreePool (Request->MetadataBuffer);
++    Request->MetadataBuffer = NULL;
++  }
++
++  if ((Request->MapData == NULL) && (Request->MapMeta == NULL) &&
++      (Request->MapPrpList == NULL) && (Request->PrpListHost == NULL))
++  {
++    RemoveEntryList (&Request->Link);
++    FreePool (Request);
++  }
++}
++
++EFI_STATUS
++NvmeReleaseRequest (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private,
++  IN NVME_DMA_REQUEST              *Request,
++  IN BOOLEAN                       Publish
++  )
++{
++  EFI_STATUS  Status;
++  BOOLEAN     CallbackWasActive;
++
++  CallbackWasActive = Private->CallbackInProgress;
++  Private->CallbackInProgress = TRUE;
++  Status = NvmeRetireRequestResources (Private, Request);
++  if (!EFI_ERROR (Status) && Publish && Request->Completed && Request->DeviceWrite) {
++    if (Request->CallerData != NULL) {
++      CopyMem (Request->CallerData, Request->DataBuffer, Request->DataLength);
++    }
++
++    if (Request->CallerMetadata != NULL) {
++      CopyMem (Request->CallerMetadata, Request->MetadataBuffer, Request->MetadataLength);
++    }
++  }
++
++  // Provider retry copyback can only target live, private staging after return.
++  Request->CallerData     = NULL;
++  Request->CallerMetadata = NULL;
++  Request->Detached       = TRUE;
++  if (!EFI_ERROR (Status)) {
++    NvmeFreeDetachedRequest (Request);
++  }
++
++  Private->CallbackInProgress = CallbackWasActive;
++  return Status;
++}
++
++EFI_STATUS
++NvmeRetireRequests (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  )
++{
++  LIST_ENTRY        *Link;
++  LIST_ENTRY        *Next;
++  NVME_DMA_REQUEST  *Request;
++  EFI_STATUS        Status;
++  EFI_STATUS        Result;
++
++  Result = EFI_SUCCESS;
++  for (Link = GetFirstNode (&Private->DmaRequests);
++       !IsNull (&Private->DmaRequests, Link); Link = Next)
++  {
++    Next    = GetNextNode (&Private->DmaRequests, Link);
++    Request = BASE_CR (Link, NVME_DMA_REQUEST, Link);
++    Status  = NvmeRetireRequestResources (Private, Request);
++    if (EFI_ERROR (Status)) {
++      Result = Status;
++    } else {
++      // An outer synchronous PassThru still owns its attached record/staging.
++      NvmeFreeDetachedRequest (Request);
++    }
++  }
++
++  return Result;
++}
++
++EFI_STATUS
++NvmeQuiesceController (
++  IN NVME_CONTROLLER_PRIVATE_DATA  *Private
++  )
++{
++  EFI_STATUS  StopStatus;
++  EFI_STATUS  AbortStatus;
++  EFI_STATUS  RetireStatus;
++  BOOLEAN     CallbackWasActive;
++
++  if (Private->CallbackInProgress) {
++    return EFI_NOT_READY;
++  }
++
++  CallbackWasActive = Private->CallbackInProgress;
++  Private->CallbackInProgress = TRUE;
++  Private->AdmissionBlocked = TRUE;
++  if (Private->TimerEvent != NULL) {
++    gBS->SetTimer (Private->TimerEvent, TimerCancel, 0);
++  }
++
++  StopStatus   = Private->ControllerStopped ? EFI_SUCCESS : NvmeDisableController (Private);
++  AbortStatus  = AbortAsyncPassThruTasks (Private);
++  RetireStatus = NvmeRetireRequests (Private);
++  if (EFI_ERROR (StopStatus) || EFI_ERROR (AbortStatus) || EFI_ERROR (RetireStatus)) {
++    Private->ControllerFailed = TRUE;
++  }
++
++  Private->CallbackInProgress = CallbackWasActive;
++  if (EFI_ERROR (StopStatus)) {
++    return StopStatus;
++  }
++
++  return EFI_ERROR (AbortStatus) ? AbortStatus : RetireStatus;
++}
++
++/** Capture the original request before recovery changes any queue state. **/
++STATIC
++VOID
++NvmeReportTimeout (
++  IN NVME_CONTROLLER_PRIVATE_DATA                      *Private,
++  IN EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET           *Packet,
++  IN NVME_DMA_REQUEST                                  *Request,
++  IN NVME_SQ                                           *Sq,
++  IN volatile NVME_CQ                                  *Cq,
++  IN UINT8                                             QueueId,
++  IN BOOLEAN                                           Internal
++  )
++{
++  NVME_CC     Cc;
++  NVME_CSTS   Csts;
++  EFI_STATUS  CcStatus;
++  EFI_STATUS  CstsStatus;
++  EFI_STATUS  LocationStatus;
++  EFI_STATUS  PciStatus;
++  UINT16      PciCommandStatus[2];
++  NVME_CQ     Completion;
++  NVME_SQ     Queued;
++  UINT32      AdminBases[4];
++  UINT32      QueuedMatches;
++  EFI_STATUS  AdminBaseStatus;
++  UINT16      SubmissionIndex;
++  UINT16      QueueEntries;
++  UINTN       Segment;
++  UINTN       Bus;
++  UINTN       Device;
++  UINTN       Function;
++
++  if (Private->TimeoutReported) {
++    if (!Internal || Private->InternalTimeoutReported) {
++      return;
++    }
++
++    Private->InternalTimeoutReported = TRUE;
++  } else {
++    Private->TimeoutReported = TRUE;
++  }
++
++  ZeroMem (&Cc, sizeof (Cc));
++  ZeroMem (&Csts, sizeof (Csts));
++  Segment = Bus = Device = Function = 0;
++  LocationStatus = EFI_UNSUPPORTED;
++  if (Private->PciIo->GetLocation != NULL) {
++    LocationStatus = Private->PciIo->GetLocation (Private->PciIo, &Segment, &Bus, &Device, &Function);
++  }
++
++  ZeroMem (PciCommandStatus, sizeof (PciCommandStatus));
++  PciStatus = Private->PciIo->Pci.Read (Private->PciIo, EfiPciIoWidthUint16,
++                                      PCI_COMMAND_OFFSET, ARRAY_SIZE (PciCommandStatus), PciCommandStatus);
++  CcStatus   = ReadNvmeControllerConfiguration (Private, &Cc);
++  CstsStatus = ReadNvmeControllerStatus (Private, &Csts);
++  MemoryFence ();
++  CopyMem (&Completion, (VOID *)Cq, sizeof (Completion));
++  QueueEntries = PcdGetBool (PcdSupportAlternativeQueueSize)
++                   ? (UINT16)(MIN (NVME_ALTERNATIVE_MAX_QUEUE_SIZE, Private->Cap.Mqes) + 1)
++                   : (UINT16)(MIN (NVME_ASYNC_CSQ_SIZE, Private->Cap.Mqes) + 1);
++  if (PcdGetBool (PcdSupportAlternativeQueueSize)) {
++    SubmissionIndex = (UINT16)((Private->SqTdbl[QueueId].Sqt + QueueEntries - 1) % QueueEntries);
++  } else {
++    SubmissionIndex = (UINT16)(Private->SqTdbl[QueueId].Sqt ^ 1U);
++  }
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: timeout: internal=%u recovering=%u generation=%lu PCI=%u:%u:%u.%u location=%r opc=%x qid=%u cid=%u nsid=%u\n",
++          Internal, Private->RecoveryInProgress, Request->Generation,
++          (UINT32)Segment, (UINT32)Bus, (UINT32)Device, (UINT32)Function, LocationStatus,
++          Sq->Opc, QueueId, Sq->Cid, Sq->Nsid));
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: PCI: command=%04x status=%04x read=%r CQE=%08x:%08x:%08x:%08x SQHD=%u\n",
++          PciCommandStatus[0], PciCommandStatus[1], PciStatus,
++          ReadUnaligned32 ((UINT32 *)&Completion), ReadUnaligned32 ((UINT32 *)((UINT8 *)&Completion + 4)),
++          ReadUnaligned32 ((UINT32 *)((UINT8 *)&Completion + 8)), ReadUnaligned32 ((UINT32 *)((UINT8 *)&Completion + 12)),
++          Completion.Sqhd));
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: data: caller=%p owned=%p length=%u PRP1=%lx PRP2=%lx metadata-caller=%p owned=%p length=%u MPTR=%lx PRPlist=%p pages=%lu\n",
++          Packet->TransferBuffer, Request->DataBuffer, Packet->TransferLength, Sq->Prp[0], Sq->Prp[1],
++          Packet->MetadataBuffer, Request->MetadataBuffer, Packet->MetadataLength, Sq->Mptr,
++          Request->PrpListHost, (UINT64)Request->PrpListNo));
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: queues: SQcpu=%p SQdma=%p tail=%u CQcpu=%p CQdma=%p head=%u phase=%u CQphase=%u CID=%u SQID=%u status=%x:%x CC=%08x(%r) CSTS=%08x(%r)\n",
++          Private->SqBuffer[QueueId], Private->SqBufferPciAddr[QueueId], Private->SqTdbl[QueueId].Sqt,
++          Private->CqBuffer[QueueId], Private->CqBufferPciAddr[QueueId], Private->CqHdbl[QueueId].Cqh,
++          Private->Pt[QueueId], Cq->Pt, Cq->Cid, Cq->Sqid, Cq->Sct, Cq->Sc,
++          ReadUnaligned32 ((UINT32 *)&Cc), CcStatus, ReadUnaligned32 ((UINT32 *)&Csts), CstsStatus));
++  // Compare the pinned hardware queue slot with the staged command. This
++  // observes visibility/corruption without cache operations or queue writes.
++  CopyMem (&Queued, Private->SqBuffer[QueueId] + SubmissionIndex, sizeof (Queued));
++  QueuedMatches = 1;
++  for (UINTN CompareIndex = 0; CompareIndex < sizeof (Queued); ++CompareIndex) {
++    if (((UINT8 *)&Queued)[CompareIndex] != ((UINT8 *)Sq)[CompareIndex]) {
++      QueuedMatches = 0;
++      break;
++    }
++  }
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: submitted slot=%u DW0=%08x NSID=%08x MPTR=%lx PRP1=%lx PRP2=%lx CDW10=%08x CDW11=%08x matches-staged=%u\n",
++          SubmissionIndex, ReadUnaligned32 ((UINT32 *)&Queued), Queued.Nsid,
++          Queued.Mptr, Queued.Prp[0], Queued.Prp[1], Queued.Payload.Raw.Cdw10,
++          Queued.Payload.Raw.Cdw11, QueuedMatches));
++  if (QueueId == 0) {
++    ZeroMem (AdminBases, sizeof (AdminBases));
++    AdminBaseStatus = Private->PciIo->Mem.Read (Private->PciIo, EfiPciIoWidthUint32,
++                                               NVME_BAR, NVME_ASQ_OFFSET,
++                                               ARRAY_SIZE (AdminBases), AdminBases);
++    DEBUG ((DEBUG_ERROR, "NvmExpressDxe: admin queue registers ASQ=%08x%08x ACQ=%08x%08x read=%r\n",
++            AdminBases[1], AdminBases[0], AdminBases[3], AdminBases[2], AdminBaseStatus));
++  }
++  DEBUG ((DEBUG_ERROR, "NvmExpressDxe: command: CDW10=%08x CDW11=%08x CDW12=%08x CDW13=%08x CDW14=%08x CDW15=%08x\n",
++          Sq->Payload.Raw.Cdw10, Sq->Payload.Raw.Cdw11, Sq->Payload.Raw.Cdw12,
++          Sq->Payload.Raw.Cdw13, Sq->Payload.Raw.Cdw14, Sq->Payload.Raw.Cdw15));
+ }
+ 
+ /**
+@@ -329,7 +613,6 @@
+   IN NVME_CONTROLLER_PRIVATE_DATA  *Private
+   )
+ {
+-  EFI_PCI_IO_PROTOCOL       *PciIo;
+   LIST_ENTRY                *Link;
+   LIST_ENTRY                *NextLink;
+   NVME_BLKIO2_SUBTASK       *Subtask;
+@@ -338,8 +621,13 @@
+   EFI_BLOCK_IO2_TOKEN       *Token;
+   EFI_TPL                   OldTpl;
+   EFI_STATUS                Status;
+-
+-  PciIo  = Private->PciIo;
++  EFI_STATUS                Result;
++  EFI_EVENT                 CallerEvent;
++  BOOLEAN                   CallbackWasActive;
++
++  CallbackWasActive = Private->CallbackInProgress;
++  Private->CallbackInProgress = TRUE;
++  Result = EFI_SUCCESS;
+   OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+ 
+   //
+@@ -376,39 +664,29 @@
+     NextLink     = GetNextNode (&Private->AsyncPassThruQueue, Link);
+     AsyncRequest = NVME_PASS_THRU_ASYNC_REQ_FROM_THIS (Link);
+ 
+-    if (AsyncRequest->MapData != NULL) {
+-      PciIo->Unmap (PciIo, AsyncRequest->MapData);
+-    }
+-
+-    if (AsyncRequest->MapMeta != NULL) {
+-      PciIo->Unmap (PciIo, AsyncRequest->MapMeta);
+-    }
+-
+-    if (AsyncRequest->MapPrpList != NULL) {
+-      PciIo->Unmap (PciIo, AsyncRequest->MapPrpList);
+-    }
+-
+-    if (AsyncRequest->PrpListHost != NULL) {
+-      PciIo->FreeBuffer (
+-               PciIo,
+-               AsyncRequest->PrpListNo,
+-               AsyncRequest->PrpListHost
+-               );
+-    }
+-
++    AsyncRequest->Packet->NvmeCompletion->DW3 |= (1U << 17);
++    Status = NvmeReleaseRequest (Private, AsyncRequest->DmaRequest, FALSE);
++    if (EFI_ERROR (Status)) {
++      Result = Status;
++    }
++
++    CallerEvent = AsyncRequest->CallerEvent;
++    AsyncRequest->Packet      = NULL;
++    AsyncRequest->CallerEvent = NULL;
+     RemoveEntryList (Link);
+-    gBS->SignalEvent (AsyncRequest->CallerEvent);
+     FreePool (AsyncRequest);
++    gBS->SignalEvent (CallerEvent);
+   }
+ 
+   if (IsListEmpty (&Private->AsyncPassThruQueue) &&
+       IsListEmpty (&Private->UnsubmittedSubtasks))
+   {
+-    Status = EFI_SUCCESS;
++    Status = Result;
+   } else {
+     Status = EFI_DEVICE_ERROR;
+   }
+ 
++  Private->CallbackInProgress = CallbackWasActive;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -446,19 +724,21 @@
+   @retval EFI_TIMEOUT                A timeout occurred while waiting for the NVM Express Command Packet to execute.
+ 
+ **/
++STATIC
+ EFI_STATUS
+-EFIAPI
+-NvmExpressPassThru (
++NvmePassThru (
+   IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL        *This,
+   IN     UINT32                                    NamespaceId,
+   IN OUT EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET  *Packet,
+-  IN     EFI_EVENT                                 Event OPTIONAL
++  IN     EFI_EVENT                                 Event OPTIONAL,
++  IN     BOOLEAN                                   Internal
+   )
+ {
+   NVME_CONTROLLER_PRIVATE_DATA   *Private;
+   EFI_STATUS                     Status;
+   EFI_STATUS                     PreviousStatus;
+   EFI_PCI_IO_PROTOCOL            *PciIo;
++  NVME_SQ                        Submission;
+   NVME_SQ                        *Sq;
+   volatile NVME_CQ               *Cq;
+   UINT16                         QueueId;
+@@ -468,18 +748,17 @@
+   EFI_EVENT                      TimerEvent;
+   EFI_PCI_IO_PROTOCOL_OPERATION  Flag;
+   EFI_PHYSICAL_ADDRESS           PhyAddr;
+-  VOID                           *MapData;
+-  VOID                           *MapMeta;
+-  VOID                           *MapPrpList;
+   UINTN                          MapLength;
+   UINT64                         *Prp;
+-  VOID                           *PrpListHost;
+-  UINTN                          PrpListNo;
+   UINT32                         Attributes;
+   UINT32                         IoAlign;
+   UINT32                         MaxTransLen;
+   UINT32                         Data;
+   NVME_PASS_THRU_ASYNC_REQ       *AsyncRequest;
++  NVME_DMA_REQUEST              *DmaRequest;
++  BOOLEAN                       Publish;
++  BOOLEAN                       CallbackWasActive;
++  EFI_STATUS                    CleanupStatus;
+   EFI_TPL                        OldTpl;
+ 
+   //
+@@ -509,6 +788,10 @@
+     return EFI_INVALID_PARAMETER;
+   }
+ 
++  if ((Attributes & EFI_NVM_EXPRESS_PASS_THRU_ATTRIBUTES_NONBLOCKIO) == 0) {
++    Event = NULL;
++  }
++
+   //
+   // Buffer alignment check for TransferBuffer & MetadataBuffer.
+   //
+@@ -522,6 +805,20 @@
+   }
+ 
+   Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (This);
++
++  if (Private->ControllerFailed || (Private->ControllerData == NULL)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (Private->CallbackInProgress ||
++      (!Internal && (Private->AdmissionBlocked || Private->RecoveryInProgress)))
++  {
++    return EFI_NOT_READY;
++  }
++
++  if (Internal && ((Event != NULL) || (Packet->QueueType != NVME_ADMIN_QUEUE))) {
++    return EFI_INVALID_PARAMETER;
++  }
+ 
+   //
+   // Check NamespaceId is valid or not.
+@@ -545,14 +842,12 @@
+   }
+ 
+   PciIo       = Private->PciIo;
+-  MapData     = NULL;
+-  MapMeta     = NULL;
+-  MapPrpList  = NULL;
+-  PrpListHost = NULL;
+-  PrpListNo   = 0;
+   Prp         = NULL;
+   TimerEvent  = NULL;
+   Status      = EFI_SUCCESS;
++  DmaRequest  = NULL;
++  AsyncRequest = NULL;
++  Publish = FALSE;
+ 
+   // MU_CHANGE [BEGIN] - Support alternative hardware queue sizes in NVME driver
+   if (PcdGetBool (PcdSupportAlternativeQueueSize)) {
+@@ -582,25 +877,16 @@
+     }
+   }
+ 
+-  Sq = Private->SqBuffer[QueueId] + Private->SqTdbl[QueueId].Sqt;
+-  Cq = Private->CqBuffer[QueueId] + Private->CqHdbl[QueueId].Cqh;
++  // Staging can yield; do not construct into a hardware-owned queue slot.
++  Sq = &Submission;
+ 
+   if (Packet->NvmeCmd->Nsid != NamespaceId) {
+     return EFI_INVALID_PARAMETER;
+   }
+-
+-  // MU_CHANGE - Support alternative hardware queue sizes in NVME driver
+-  //
+-  // Nvme DXE driver polls phase bit for CQe completion.
+-  // Explicitly assign phase bit with the bit before completion.
+-  // A flipped phase bit will be assigned by device upon CQe completes.
+-  //
+-  Cq->Pt = Private->Pt[QueueId];
+ 
+   ZeroMem (Sq, sizeof (NVME_SQ));
+   Sq->Opc  = (UINT8)Packet->NvmeCmd->Cdw0.Opcode;
+   Sq->Fuse = (UINT8)Packet->NvmeCmd->Cdw0.FusedOperation;
+-  Sq->Cid  = Private->Cid[QueueId]++;
+   Sq->Nsid = Packet->NvmeCmd->Nsid;
+ 
+   //
+@@ -610,6 +896,36 @@
+   if (Sq->Psdt != 0) {
+     DEBUG ((DEBUG_ERROR, "NvmExpressPassThru: doesn't support SGL mechanism\n"));
+     return EFI_UNSUPPORTED;
++  }
++
++  // Pin controller and queue lifetime before any setup service can yield.
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  DmaRequest = AllocateZeroPool (sizeof (*DmaRequest));
++  if (DmaRequest != NULL) {
++    DmaRequest->Generation = Private->DmaGeneration;
++    InsertTailList (&Private->DmaRequests, &DmaRequest->Link);
++  }
++
++  gBS->RestoreTPL (OldTpl);
++  if (DmaRequest == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++  if ((Event != NULL) && (QueueId != 0)) {
++    AsyncRequest = AllocateZeroPool (sizeof (*AsyncRequest));
++    if (AsyncRequest == NULL) {
++      Status = EFI_OUT_OF_RESOURCES;
++      goto EXIT;
++    }
++  } else {
++    Status = gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &TimerEvent);
++    if (EFI_ERROR (Status)) {
++      goto EXIT;
++    }
++
++    Status = gBS->SetTimer (TimerEvent, TimerRelative, Packet->CommandTimeout);
++    if (EFI_ERROR (Status)) {
++      goto EXIT;
++    }
+   }
+ 
+   Sq->Prp[0] = (UINT64)(UINTN)Packet->TransferBuffer;
+@@ -625,7 +941,8 @@
+     //
+     if (!Private->CreateIoQueue) {
+       DEBUG ((DEBUG_ERROR, "NvmExpressPassThru: Does not support external IO queues creation request.\n"));
+-      return EFI_UNSUPPORTED;
++      Status = EFI_UNSUPPORTED;
++      goto EXIT;
+     }
+   } else if ((Sq->Opc & (BIT0 | BIT1)) != 0) {
+     //
+@@ -634,7 +951,8 @@
+     if (((Packet->TransferLength != 0) && (Packet->TransferBuffer == NULL)) ||
+         ((Packet->TransferLength == 0) && (Packet->TransferBuffer != NULL)))
+     {
+-      return EFI_INVALID_PARAMETER;
++      Status = EFI_INVALID_PARAMETER;
++      goto EXIT;
+     }
+ 
+     if ((Sq->Opc & BIT0) != 0) {
+@@ -643,18 +961,37 @@
+       Flag = EfiPciIoOperationBusMasterWrite;
+     }
+ 
++    DmaRequest->DeviceWrite = (BOOLEAN)(Flag == EfiPciIoOperationBusMasterWrite);
++    if ((Packet->MetadataLength != 0) && (Packet->MetadataBuffer == NULL)) {
++      Status = EFI_INVALID_PARAMETER;
++      goto EXIT;
++    }
++
+     if ((Packet->TransferLength != 0) && (Packet->TransferBuffer != NULL)) {
++      DmaRequest->DataBuffer = AllocateZeroPool (Packet->TransferLength);
++      if (DmaRequest->DataBuffer == NULL) {
++        Status = EFI_OUT_OF_RESOURCES;
++        goto EXIT;
++      }
++
++      DmaRequest->DataLength = Packet->TransferLength;
++      DmaRequest->CallerData = Packet->TransferBuffer;
++      if (!DmaRequest->DeviceWrite) {
++        CopyMem (DmaRequest->DataBuffer, Packet->TransferBuffer, Packet->TransferLength);
++      }
++
+       MapLength = Packet->TransferLength;
+       Status    = PciIo->Map (
+                            PciIo,
+                            Flag,
+-                           Packet->TransferBuffer,
++                           DmaRequest->DataBuffer,
+                            &MapLength,
+                            &PhyAddr,
+-                           &MapData
++                           &DmaRequest->MapData
+                            );
+       if (EFI_ERROR (Status) || (Packet->TransferLength != MapLength)) {
+-        return EFI_OUT_OF_RESOURCES;
++        Status = EFI_OUT_OF_RESOURCES;
++        goto EXIT;
+       }
+ 
+       Sq->Prp[0] = PhyAddr;
+@@ -662,22 +999,30 @@
+     }
+ 
+     if ((Packet->MetadataLength != 0) && (Packet->MetadataBuffer != NULL)) {
++      DmaRequest->MetadataBuffer = AllocateZeroPool (Packet->MetadataLength);
++      if (DmaRequest->MetadataBuffer == NULL) {
++        Status = EFI_OUT_OF_RESOURCES;
++        goto EXIT;
++      }
++
++      DmaRequest->MetadataLength = Packet->MetadataLength;
++      DmaRequest->CallerMetadata = Packet->MetadataBuffer;
++      if (!DmaRequest->DeviceWrite) {
++        CopyMem (DmaRequest->MetadataBuffer, Packet->MetadataBuffer, Packet->MetadataLength);
++      }
++
+       MapLength = Packet->MetadataLength;
+       Status    = PciIo->Map (
+                            PciIo,
+                            Flag,
+-                           Packet->MetadataBuffer,
++                           DmaRequest->MetadataBuffer,
+                            &MapLength,
+                            &PhyAddr,
+-                           &MapMeta
++                           &DmaRequest->MapMeta
+                            );
+       if (EFI_ERROR (Status) || (Packet->MetadataLength != MapLength)) {
+-        PciIo->Unmap (
+-                 PciIo,
+-                 MapData
+-                 );
+-
+-        return EFI_OUT_OF_RESOURCES;
++        Status = EFI_OUT_OF_RESOURCES;
++        goto EXIT;
+       }
+ 
+       Sq->Mptr = PhyAddr;
+@@ -696,7 +1041,7 @@
+     // Create PrpList for remaining data buffer.
+     //
+     PhyAddr = (Sq->Prp[0] + EFI_PAGE_SIZE) & ~(EFI_PAGE_SIZE - 1);
+-    Prp     = NvmeCreatePrpList (PciIo, PhyAddr, EFI_SIZE_TO_PAGES (Offset + Bytes) - 1, &PrpListHost, &PrpListNo, &MapPrpList);
++    Prp     = NvmeCreatePrpList (PciIo, PhyAddr, EFI_SIZE_TO_PAGES (Offset + Bytes) - 1, &DmaRequest->PrpListHost, &DmaRequest->PrpListNo, &DmaRequest->MapPrpList);
+     if (Prp == NULL) {
+       Status = EFI_OUT_OF_RESOURCES;
+       goto EXIT;
+@@ -737,6 +1082,43 @@
+ 
+   if (Packet->NvmeCmd->Flags & CDW15_VALID) {
+     Sq->Payload.Raw.Cdw15 = Packet->NvmeCmd->Cdw15;
++  }
++
++  // Setup services may yield to Stop/reset before this final submission point.
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->ControllerFailed || Private->CallbackInProgress ||
++      (!Internal && (Private->AdmissionBlocked || Private->RecoveryInProgress)) ||
++      (DmaRequest->Generation != Private->DmaGeneration) ||
++      (Private->SqBuffer[QueueId] == NULL) || (Private->CqBuffer[QueueId] == NULL))
++  {
++    Status = Private->ControllerFailed ? EFI_DEVICE_ERROR : EFI_NOT_READY;
++    gBS->RestoreTPL (OldTpl);
++    goto EXIT;
++  }
++
++  if ((QueueId == 2) &&
++      ((Private->SqTdbl[QueueId].Sqt + 1) % QueueSize == Private->AsyncSqHead))
++  {
++    Status = EFI_NOT_READY;
++    gBS->RestoreTPL (OldTpl);
++    goto EXIT;
++  }
++
++  Sq->Cid = Private->Cid[QueueId]++;
++  CopyMem (Private->SqBuffer[QueueId] + Private->SqTdbl[QueueId].Sqt, Sq, sizeof (*Sq));
++  Cq = Private->CqBuffer[QueueId] + Private->CqHdbl[QueueId].Cqh;
++  if (QueueId != 2) {
++    Cq->Pt = Private->Pt[QueueId];
++  }
++
++  // Publish the fully initialized async owner before the attempted doorbell.
++  if (AsyncRequest != NULL) {
++    AsyncRequest->Signature   = NVME_PASS_THRU_ASYNC_REQ_SIG;
++    AsyncRequest->Packet      = Packet;
++    AsyncRequest->CommandId   = Sq->Cid;
++    AsyncRequest->CallerEvent = Event;
++    AsyncRequest->DmaRequest  = DmaRequest;
++    InsertTailList (&Private->AsyncPassThruQueue, &AsyncRequest->Link);
+   }
+ 
+   // MU_CHANGE [BEGIN] - Support alternative hardware queue sizes in NVME driver
+@@ -756,6 +1138,8 @@
+ 
+   // MU_CHANGE [END] - Support alternative hardware queue sizes in NVME driver
+ 
++  DmaRequest->Submitted = TRUE;
++  MemoryFence ();
+   Data   = ReadUnaligned32 ((UINT32 *)&Private->SqTdbl[QueueId]);
+   Status = PciIo->Mem.Write (
+                         PciIo,
+@@ -767,63 +1151,49 @@
+                         );
+ 
+   if (EFI_ERROR (Status)) {
++    if (AsyncRequest != NULL) {
++      RemoveEntryList (&AsyncRequest->Link);
++    }
++
++    gBS->RestoreTPL (OldTpl);
+     goto EXIT;
+   }
+ 
+-  //
+-  // For non-blocking requests, return directly if the command is placed
+-  // in the submission queue.
+-  //
+-  if ((Event != NULL) && (QueueId != 0)) {
+-    AsyncRequest = AllocateZeroPool (sizeof (NVME_PASS_THRU_ASYNC_REQ));
+-    if (AsyncRequest == NULL) {
++  if (AsyncRequest != NULL) {
++    // Restoring TPL may immediately complete/free the request. Touch no owner.
++    gBS->RestoreTPL (OldTpl);
++    return EFI_SUCCESS;
++  }
++
++  gBS->RestoreTPL (OldTpl);
++
++  //
++  // Wait for completion queue to get filled in.
++  //
++  Status = EFI_TIMEOUT;
++  while (EFI_ERROR (gBS->CheckEvent (TimerEvent))) {
++    if (Private->ControllerFailed || (DmaRequest->Generation != Private->DmaGeneration) ||
++        (!Internal && (Private->AdmissionBlocked || Private->RecoveryInProgress)))
++    {
+       Status = EFI_DEVICE_ERROR;
+       goto EXIT;
+     }
+ 
+-    AsyncRequest->Signature   = NVME_PASS_THRU_ASYNC_REQ_SIG;
+-    AsyncRequest->Packet      = Packet;
+-    AsyncRequest->CommandId   = Sq->Cid;
+-    AsyncRequest->CallerEvent = Event;
+-    AsyncRequest->MapData     = MapData;
+-    AsyncRequest->MapMeta     = MapMeta;
+-    AsyncRequest->MapPrpList  = MapPrpList;
+-    AsyncRequest->PrpListNo   = PrpListNo;
+-    AsyncRequest->PrpListHost = PrpListHost;
+-
+-    OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+-    InsertTailList (&Private->AsyncPassThruQueue, &AsyncRequest->Link);
+-    gBS->RestoreTPL (OldTpl);
+-
+-    return EFI_SUCCESS;
+-  }
+-
+-  Status = gBS->CreateEvent (
+-                  EVT_TIMER,
+-                  TPL_CALLBACK,
+-                  NULL,
+-                  NULL,
+-                  &TimerEvent
+-                  );
+-  if (EFI_ERROR (Status)) {
++    if (Cq->Pt != Private->Pt[QueueId]) {
++      MemoryFence ();
++      if ((Cq->Cid == Sq->Cid) && (Cq->Sqid == QueueId)) {
++        DmaRequest->Completed = TRUE;
++        Status = EFI_SUCCESS;
++        break;
++      }
++    }
++  }
++
++  if (Private->ControllerFailed || (DmaRequest->Generation != Private->DmaGeneration) ||
++      (!Internal && (Private->AdmissionBlocked || Private->RecoveryInProgress)))
++  {
++    Status = EFI_DEVICE_ERROR;
+     goto EXIT;
+-  }
+-
+-  Status = gBS->SetTimer (TimerEvent, TimerRelative, Packet->CommandTimeout);
+-
+-  if (EFI_ERROR (Status)) {
+-    goto EXIT;
+-  }
+-
+-  //
+-  // Wait for completion queue to get filled in.
+-  //
+-  Status = EFI_TIMEOUT;
+-  while (EFI_ERROR (gBS->CheckEvent (TimerEvent))) {
+-    if (Cq->Pt != Private->Pt[QueueId]) {
+-      Status = EFI_SUCCESS;
+-      break;
+-    }
+   }
+ 
+   //
+@@ -831,7 +1201,8 @@
+   //
+   if (Status != EFI_TIMEOUT) {
+     if ((Cq->Sct == 0) && (Cq->Sc == 0)) {
+-      Status = EFI_SUCCESS;
++      Status  = EFI_SUCCESS;
++      Publish = TRUE;
+     } else {
+       Status = EFI_DEVICE_ERROR;
+       //
+@@ -848,41 +1219,15 @@
+     CopyMem (Packet->NvmeCompletion, (VOID *)Cq, sizeof (EFI_NVM_EXPRESS_COMPLETION));
+   } else {
+     ReportStatusCode ((EFI_ERROR_MAJOR | EFI_ERROR_CODE), (EFI_IO_BUS_SCSI | EFI_IOB_EC_INTERFACE_ERROR));
+-
+-    //
+-    // Timeout occurs for an NVMe command. Reset the controller to abort the
+-    // outstanding commands.
+-    //
++    NvmeReportTimeout (Private, Packet, DmaRequest, Sq, Cq, QueueId, Internal);
+     DEBUG ((DEBUG_ERROR, "NvmExpressPassThru: Timeout occurs for an NVMe command.\n"));
+ 
+-    //
+-    // Disable the timer to trigger the process of async transfers temporarily.
+-    //
+-    Status = gBS->SetTimer (Private->TimerEvent, TimerCancel, 0);
+-    if (EFI_ERROR (Status)) {
+-      goto EXIT;
+-    }
+-
+-    //
+-    // Reset the NVMe controller.
+-    //
+-    Status = NvmeControllerReset (Private); // MU_CHANGE - Allocate IO Queue Buffer
+-    if (!EFI_ERROR (Status)) {
+-      Status = AbortAsyncPassThruTasks (Private);
+-      if (!EFI_ERROR (Status)) {
+-        //
+-        // Re-enable the timer to trigger the process of async transfers.
+-        //
+-        Status = gBS->SetTimer (Private->TimerEvent, TimerPeriodic, NVME_HC_ASYNC_TIMER);
+-        if (!EFI_ERROR (Status)) {
+-          //
+-          // Return EFI_TIMEOUT to indicate a timeout occurs for NVMe PassThru command.
+-          //
+-          Status = EFI_TIMEOUT;
+-        }
+-      }
++    if (Private->RecoveryInProgress) {
++      // The init/reset owner will stop this newly enabled generation once.
++      Status = EFI_TIMEOUT;
+     } else {
+-      Status = EFI_DEVICE_ERROR;
++      Status = NvmeControllerReset (Private);
++      Status = EFI_ERROR (Status) ? EFI_DEVICE_ERROR : EFI_TIMEOUT;
+     }
+ 
+     goto EXIT;
+@@ -916,46 +1261,68 @@
+   // previous status if previous status contains error.
+   Status = EFI_ERROR (PreviousStatus) ? PreviousStatus : Status;
+ 
+-  //
+-  // For now, the code does not support the non-blocking feature for admin queue.
+-  // If Event is not NULL for admin queue, signal the caller's event here.
+-  //
+-  if (Event != NULL) {
+-    ASSERT (QueueId == 0);
+-    gBS->SignalEvent (Event);
+-  }
+-
+ EXIT:
+-  if (MapData != NULL) {
+-    PciIo->Unmap (
+-             PciIo,
+-             MapData
+-             );
+-  }
+-
+-  if (MapMeta != NULL) {
+-    PciIo->Unmap (
+-             PciIo,
+-             MapMeta
+-             );
+-  }
+-
+-  if (MapPrpList != NULL) {
+-    PciIo->Unmap (
+-             PciIo,
+-             MapPrpList
+-             );
+-  }
+-
+-  if (Prp != NULL) {
+-    PciIo->FreeBuffer (PciIo, PrpListNo, PrpListHost);
++  if ((DmaRequest != NULL) && DmaRequest->Submitted && !DmaRequest->Completed &&
++      (DmaRequest->Generation == Private->DmaGeneration) && !Private->RecoveryInProgress &&
++      !Private->ControllerFailed)
++  {
++    // Includes a possibly delivered doorbell error; never release live DMA.
++    Private->ControllerFailed = TRUE;
++    NvmeQuiesceController (Private);
++  }
++
++  // Retirement may remove the final owner; services below can still reenter.
++  CallbackWasActive = Private->CallbackInProgress;
++  Private->CallbackInProgress = TRUE;
++  if (DmaRequest != NULL) {
++    CleanupStatus = NvmeReleaseRequest (Private, DmaRequest, Publish && !EFI_ERROR (Status));
++    if (EFI_ERROR (CleanupStatus)) {
++      if (!Private->RecoveryInProgress) {
++        Private->ControllerFailed = TRUE;
++      }
++      Private->AdmissionBlocked = TRUE;
++      Status = EFI_DEVICE_ERROR;
++    }
++  }
++
++  if (AsyncRequest != NULL) {
++    FreePool (AsyncRequest);
+   }
+ 
+   if (TimerEvent != NULL) {
+     gBS->CloseEvent (TimerEvent);
+   }
+ 
++  if ((Event != NULL) && (QueueId == 0)) {
++    // Admin completion is synchronous; failed, unsubmitted async has no event.
++    gBS->SignalEvent (Event);
++  }
++
++  Private->CallbackInProgress = CallbackWasActive;
+   return Status;
++}
++
++EFI_STATUS
++EFIAPI
++NvmExpressPassThru (
++  IN EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL        *This,
++  IN UINT32                                  NamespaceId,
++  IN EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET  *Packet,
++  IN EFI_EVENT                               Event OPTIONAL
++  )
++{
++  return NvmePassThru (This, NamespaceId, Packet, Event, FALSE);
++}
++
++EFI_STATUS
++NvmePassThruInternal (
++  IN EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL        *This,
++  IN UINT32                                  NamespaceId,
++  IN EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET  *Packet,
++  IN EFI_EVENT                               Event OPTIONAL
++  )
++{
++  return NvmePassThru (This, NamespaceId, Packet, Event, TRUE);
+ }
+ 
+ /**
+@@ -1011,6 +1378,14 @@
+   Status        = EFI_NOT_FOUND;
+ 
+   Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (This);
++  if (Private->ControllerFailed || (Private->ControllerData == NULL)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress || Private->CallbackInProgress) {
++    return EFI_NOT_READY;
++  }
++
+   //
+   // If the NamespaceId input value is 0xFFFFFFFF, then get the first valid namespace ID
+   //
+@@ -1113,6 +1488,14 @@
+ 
+   Node    = (NVME_NAMESPACE_DEVICE_PATH *)DevicePath;
+   Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (This);
++  if (Private->ControllerFailed || (Private->ControllerData == NULL)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress || Private->CallbackInProgress) {
++    return EFI_NOT_READY;
++  }
++
+ 
+   if (DevicePath->SubType == MSG_NVME_NAMESPACE_DP) {
+     if (DevicePathNodeLength (DevicePath) != sizeof (NVME_NAMESPACE_DEVICE_PATH)) {
+@@ -1189,6 +1572,14 @@
+ 
+   Status  = EFI_SUCCESS;
+   Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (This);
++  if (Private->ControllerFailed || (Private->ControllerData == NULL)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (Private->AdmissionBlocked || Private->RecoveryInProgress || Private->CallbackInProgress) {
++    return EFI_NOT_READY;
++  }
++
+ 
+   //
+   // Check NamespaceId is valid or not.

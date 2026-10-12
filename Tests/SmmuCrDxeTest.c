@@ -1,10 +1,21 @@
 /* SPDX-License-Identifier: MIT */
+#ifndef _PCD_VALUE_PcdUfsLegacyCoherentDmaHandoff
+#define _PCD_VALUE_PcdUfsLegacyCoherentDmaHandoff FALSE
+#endif
+#ifndef _PCD_VALUE_PcdUsbLegacyPhysicalDmaHandoff
+#define _PCD_VALUE_PcdUsbLegacyPhysicalDmaHandoff FALSE
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
 #undef NULL
 #include "../Driver/SmmuCrDxe/SmmuCrDxe.c"
+
+/* Exercise the shipped target separately from the synthetic policy fixtures. */
+#define CrTargetGetSmmuContext CrTargetGetActualSm8450SmmuContext
+#include "../Target/Sm8450/CrSmmuTarget.c"
+#undef CrTargetGetSmmuContext
 
 #define TEST_PAGE_COUNT 256U
 #define TEST_MAX_CALLS  96U
@@ -23,14 +34,52 @@ EFI_BOOT_SERVICES       *gBS = &mBootServices;
 EFI_DXE_SERVICES        *gDS = &mDxeServices;
 
 EFI_GUID gEfiPciIoProtocolGuid = EFI_PCI_IO_PROTOCOL_GUID;
+EFI_GUID gEfiDmaIdentityCrProtocolGuid = EFI_DMA_IDENTITY_CR_PROTOCOL_GUID;
+STATIC EFI_DMA_IDENTITY_CR_PROTOCOL *mIdentity;
 
+STATIC UINTN mDiagnosticCount;
+STATIC BOOLEAN mSawMapDiagnostic, mSawEbsDiagnostic, mSawAttachDiagnostic;
+BOOLEAN EFIAPI DebugPrintEnabled (VOID) { return TRUE; }
+BOOLEAN EFIAPI DebugPrintLevelEnabled (UINTN Level) { (VOID)Level; return TRUE; }
+BOOLEAN EFIAPI DebugAssertEnabled (VOID) { return TRUE; }
+VOID EFIAPI MemoryFence (VOID) { }
+VOID EFIAPI DebugAssert (CONST CHAR8 *File, UINTN Line, CONST CHAR8 *Description)
+{ fprintf (stderr, "%s:%zu: %s\n", File, (size_t)Line, Description); assert (0); }
+VOID EFIAPI DebugPrint (UINTN Level, CONST CHAR8 *Format, ...)
+{
+#ifndef CR_SMMU_REAL_CORE
+  assert (Level == DEBUG_ERROR || Level == DEBUG_INIT || Level == DEBUG_VERBOSE);
+  assert (Format != NULL && strstr (Format, "Crane SMMU:") != NULL);
+#else
+  (VOID)Level; assert (Format != NULL);
+#endif
+  mDiagnosticCount++;
+  if (strstr (Format, "Map IOVA=") != NULL) mSawMapDiagnostic = TRUE;
+  if (strstr (Format, "EBS block SID=") != NULL) mSawEbsDiagnostic = TRUE;
+  if (strstr (Format, "attach identity") != NULL) mSawAttachDiagnostic = TRUE;
+}
+
+BOOLEAN EFIAPI
+DebugCodeEnabled (VOID)
+{
+  return TRUE;
+}
+
+#ifdef CR_SMMU_REAL_CORE
+STATIC UINT32 TestSmmuHardwareRead32 (UINTN Address);
+STATIC VOID TestSmmuHardwareWrite32 (UINTN Address, UINT32 Value);
+#endif
 UINT32 EFIAPI
 MmioRead32 (
   IN UINTN Address
   )
 {
+#ifdef CR_SMMU_REAL_CORE
+  return TestSmmuHardwareRead32 (Address);
+#else
   (VOID)Address;
   return 0;
+#endif
 }
 
 UINT32 EFIAPI
@@ -39,7 +88,11 @@ MmioWrite32 (
   IN UINT32 Value
   )
 {
+#ifdef CR_SMMU_REAL_CORE
+  TestSmmuHardwareWrite32 (Address, Value);
+#else
   (VOID)Address;
+#endif
   return Value;
 }
 
@@ -49,7 +102,12 @@ MmioWrite64 (
   IN UINT64 Value
   )
 {
+#ifdef CR_SMMU_REAL_CORE
+  TestSmmuHardwareWrite32 (Address, (UINT32)Value);
+  TestSmmuHardwareWrite32 (Address + 4, (UINT32)(Value >> 32));
+#else
   (VOID)Address;
+#endif
   return Value;
 }
 
@@ -74,10 +132,16 @@ STATIC SET_CALL             mSetLog[TEST_MAX_CALLS];
 STATIC UINTN                mSetCalls;
 STATIC UINTN                mFailSetCall1;
 STATIC UINTN                mFailSetCall2;
+STATIC UINTN                mEvidenceCalls;
+STATIC UINT16               mEvidenceFailSid;
+STATIC EFI_STATUS           mEvidenceStatus;
 STATIC UINTN                mBlockCalls;
+STATIC SmmuDomain          *mBlockLog[CR_SMMU_MAX_DOMAINS];
 STATIC UINTN                mFailBlockCall;
 STATIC UINTN                mDetachCalls;
 STATIC UINTN                mAttachCalls;
+STATIC CR_STATUS            mAttachStatus;
+STATIC BOOLEAN              mAttachPoisoned;
 STATIC UINTN                mWriteBackCalls;
 STATIC UINTN                mWriteBackInvalidateCalls;
 STATIC UINTN                mInvalidateCalls;
@@ -85,10 +149,14 @@ STATIC VOID                *mLastCacheAddress;
 STATIC UINTN                mLastCacheLength;
 STATIC UINTN                mGetDescriptorCalls;
 STATIC UINTN                mSetMemoryAttributeCalls;
+STATIC UINTN                mFailMemoryAttributeCall;
 STATIC UINT64               mLastMemoryAttributes;
 STATIC EFI_STATUS           mSetMemoryAttributeStatus;
 STATIC EFI_STATUS           mGetDescriptorStatus;
-
+STATIC EFI_GCD_MEMORY_TYPE  mDescriptorType;
+STATIC UINT64               mDescriptorLength;
+STATIC UINT64               mDescriptorAttributes = EFI_MEMORY_WB | EFI_MEMORY_XP;
+STATIC UINT64               mDescriptorCapabilities;
 STATIC EFI_HANDLE CONST mHandleSegment0 = (EFI_HANDLE)(UINTN)0x1000;
 STATIC EFI_HANDLE CONST mHandleSegment1 = (EFI_HANDLE)(UINTN)0x1001;
 STATIC EFI_HANDLE CONST mHandleRoot      = (EFI_HANDLE)(UINTN)0x1002;
@@ -115,6 +183,18 @@ STATIC EFI_PCI_IO_PROTOCOL mPciRoot = {
 STATIC EFI_PCI_IO_PROTOCOL mPciBad = {
   .GetLocation = MockGetLocation
 };
+
+STATIC CrTargetSmmuContext mValidationTarget;
+CONST CrTargetSmmuContext *CrDalGetSmmuContext (VOID)
+{
+  return &mValidationTarget;
+}
+
+#ifndef CR_SMMU_DISPLAY_TARGET_OVERRIDE
+CONST CR_MDSS_TARGET *CrDalGetMdssContext(VOID) {return NULL;}
+#endif
+VOID *EFIAPI SetMem(VOID *Buffer,UINTN Length,UINT8 Value)
+{ return memset(Buffer,Value,Length); }
 
 STATIC CONST CrTargetSmmuContext mTarget = {
   .SegmentCount   = 2,
@@ -257,6 +337,10 @@ MockHandleProtocol (
   OUT VOID    **Interface
   )
 {
+  if (Protocol == &gEfiDmaIdentityCrProtocolGuid) {
+    *Interface = Handle == (EFI_HANDLE)(UINTN)0xD0 ? mIdentity : NULL;
+    return *Interface == NULL ? EFI_UNSUPPORTED : EFI_SUCCESS;
+  }
   assert (Protocol == &gEfiPciIoProtocolGuid && Interface != NULL);
   if (Handle == mHandleSegment0) {
     *Interface = &mPciSegment0;
@@ -320,10 +404,13 @@ MockGetMemorySpaceDescriptor (
   }
   ZeroMem (Descriptor, sizeof (*Descriptor));
   Descriptor->BaseAddress  = (EFI_PHYSICAL_ADDRESS)(UINTN)mPagePool;
-  Descriptor->Length       = sizeof (mPagePool);
-  Descriptor->Capabilities = EFI_MEMORY_UC | EFI_MEMORY_WB | EFI_MEMORY_XP;
-  Descriptor->Attributes   = EFI_MEMORY_WB | EFI_MEMORY_XP;
-  return EFI_SUCCESS;
+  Descriptor->Length       = mDescriptorLength;
+  Descriptor->GcdMemoryType = mDescriptorType;
+  /* Common DMA buffers use WC: on AArch64 that is normal non-cacheable
+     memory, whereas EFI_MEMORY_UC is Device memory. */
+  Descriptor->Capabilities = mDescriptorCapabilities;
+  Descriptor->Attributes   = mDescriptorAttributes;
+  return mGetDescriptorStatus;
 }
 
 STATIC EFI_STATUS EFIAPI
@@ -336,9 +423,15 @@ MockSetMemorySpaceAttributes (
   assert (Address != 0 && Length != 0);
   mSetMemoryAttributeCalls++;
   mLastMemoryAttributes = Attributes;
+  if (mSetMemoryAttributeCalls == mFailMemoryAttributeCall) {
+    return EFI_DEVICE_ERROR;
+  }
   return mSetMemoryAttributeStatus;
 }
 
+STATIC UINTN mFaultCaptureCalls;
+STATIC CR_STATUS mFaultCaptureStatus;
+#ifndef CR_SMMU_REAL_CORE
 CR_STATUS
 SmmuSetMapping (
   SmmuDomain *Domain,
@@ -361,12 +454,51 @@ SmmuSetMapping (
   return CR_SUCCESS;
 }
 
+CR_STATUS SmmuDumpFaultState (SmmuDomain *Domain) {
+  assert(Domain==&mSmmu.Domains[0].Domain && mSmmu.Lock.Lock==EfiLockAcquired);
+  assert(Domain->Tables); mFaultCaptureCalls++; return mFaultCaptureStatus;
+}
+
+CR_STATUS
+SmmuQueryMappingEvidence (SmmuDomain *Domain, UINT64 Iova, UINT64 Physical,
+                         UINTN Pages, UINT32 Access, SmmuMappingEvidence *Evidence)
+{
+  assert(mSmmu.AfterExitBootServices && mSmmu.Lock.Lock == EfiLockAcquired);
+  assert(Domain && Domain->Device == &mSmmu.Device && Domain->Active);
+  assert(Iova >= SMMU_IOVA_BASE && Pages && Access == SMMU_ACCESS_READ);
+  mEvidenceCalls++;
+  ZeroMem(Evidence, sizeof(*Evidence));
+  if (Domain->Sid == mEvidenceFailSid) return mEvidenceStatus;
+  Evidence->Base = mSmmu.Device.Base; Evidence->Sid = Domain->Sid;
+  Evidence->Iova = Iova; Evidence->Physical = Physical;
+  Evidence->Bytes = Pages * SMMU_PAGE_SIZE; Evidence->Access = Access;
+  return CR_SUCCESS;
+}
+
+CR_STATUS SmmuQueryRevokedMapping(SmmuDomain *Domain, UINT64 Iova,
+                                 UINTN Pages, SmmuMappingEvidence *Evidence) {
+  assert(mSmmu.ExitComplete && mSmmu.Lock.Lock == EfiLockAcquired);
+  BOOLEAN Revoked=FALSE;
+  for(UINTN I=0;I<mBlockCalls;++I)
+    if(mBlockLog[I]==Domain&&I+1!=mFailBlockCall)Revoked=TRUE;
+  for(UINTN I=0;I<mSetCalls;++I)
+    if(mSetLog[I].Domain==Domain&&mSetLog[I].Iova==Iova&&
+       mSetLog[I].Pages==Pages&&!mSetLog[I].Access&&I+1!=mFailSetCall1&&I+1!=mFailSetCall2)
+      Revoked=TRUE;
+  ZeroMem(Evidence,sizeof(*Evidence));
+  if(!Revoked||Domain->Sid==mEvidenceFailSid)return CR_DEVICE_ERROR;
+  Evidence->Sid=Domain->Sid;Evidence->Iova=Iova;Evidence->Bytes=Pages*SMMU_PAGE_SIZE;
+  return CR_SUCCESS;
+}
+
 CR_STATUS
 SmmuBlock (
   SmmuDomain *Domain
   )
 {
   assert (Domain != NULL);
+  assert (mBlockCalls < ARRAY_SIZE (mBlockLog));
+  mBlockLog[mBlockCalls] = Domain;
   mBlockCalls++;
   return (mBlockCalls == mFailBlockCall) ? CR_DEVICE_ERROR : CR_SUCCESS;
 }
@@ -398,8 +530,33 @@ SmmuAttach (
   Domain->Tables  = Tables;
   Domain->Active  = TRUE;
   Domain->Sid     = Sid;
-  return CR_SUCCESS;
+  Domain->Failed  = mAttachPoisoned;
+  return mAttachStatus;
 }
+
+CR_STATUS
+SmmuAttachCoherent (
+  SmmuDevice *Device,
+  SmmuDomain *Domain,
+  UINT16 Sid,
+  VOID *Tables,
+  UINT64 TableAddress
+  )
+{
+  CR_STATUS Status = SmmuAttach (Device, Domain, Sid, Tables, TableAddress);
+  Domain->CacheCoherent = TRUE;
+  return Status;
+}
+
+CR_STATUS SmmuAcquireStoppedStream(SmmuDevice *Device,SmmuDomain *Domain,
+    UINT16 Sid,VOID *Tables,UINT64 Address,BOOLEAN Coherent,
+    SmmuVerifyStopped Check,VOID *Context) {
+  CR_STATUS Status=Check(Context);
+  if(CR_ERROR(Status))return Status;
+  return Coherent?SmmuAttachCoherent(Device,Domain,Sid,Tables,Address):
+                  SmmuAttach(Device,Domain,Sid,Tables,Address);
+}
+#endif
 
 STATIC VOID
 ResetCalls (
@@ -411,9 +568,15 @@ ResetCalls (
   mFailSetCall1                = 0;
   mFailSetCall2                = 0;
   mBlockCalls                  = 0;
+  mEvidenceCalls               = 0;
+  mEvidenceFailSid             = 0xFFFF;
+  mEvidenceStatus              = EFI_DEVICE_ERROR;
+  ZeroMem (mBlockLog, sizeof (mBlockLog));
   mFailBlockCall               = 0;
   mDetachCalls                 = 0;
   mAttachCalls                 = 0;
+  mAttachStatus                = CR_SUCCESS;
+  mAttachPoisoned              = FALSE;
   mWriteBackCalls              = 0;
   mWriteBackInvalidateCalls    = 0;
   mInvalidateCalls             = 0;
@@ -438,6 +601,7 @@ ResetState (
   mDxeServices.SetMemorySpaceAttributes = MockSetMemorySpaceAttributes;
   mSmmu.Initialized        = TRUE;
   mSmmu.Device.AddressBits = 64;
+  mSmmu.Device.Stage1OutputAddressBits = 64;
   mSmmu.Device.Base        = 0x15000000U;
   mSmmu.DomainLimit        = CR_SMMU_MAX_DOMAINS;
   mSmmu.Target             = &mTarget;
@@ -451,9 +615,14 @@ ResetState (
   mCloseCalls              = 0;
   mGetDescriptorCalls      = 0;
   mSetMemoryAttributeCalls = 0;
+  mFailMemoryAttributeCall = 0;
   mLastMemoryAttributes    = 0;
   mSetMemoryAttributeStatus = EFI_SUCCESS;
   mGetDescriptorStatus      = EFI_SUCCESS;
+  mDescriptorType           = EfiGcdMemoryTypeSystemMemory;
+  mDescriptorLength         = sizeof (mPagePool);
+  mDescriptorAttributes     = EFI_MEMORY_WB | EFI_MEMORY_XP;
+  mDescriptorCapabilities   = EFI_MEMORY_UC | EFI_MEMORY_WC | EFI_MEMORY_WB | EFI_MEMORY_XP;
   ResetCalls ();
 }
 
@@ -472,6 +641,7 @@ AddDomain (
   mSmmu.Domains[Index].Sid          = Sid;
   mSmmu.Domains[Index].Domain.Device = &mSmmu.Device;
   mSmmu.Domains[Index].Domain.Active = TRUE;
+  mSmmu.Domains[Index].Domain.Sid = Sid;
 }
 
 STATIC VOID *
@@ -678,6 +848,7 @@ TestMapBoundsAndUnmapRetry (
   assert (DeviceAddress == 0 && Mapping == NULL);
 
   mSmmu.Device.AddressBits = 32;
+  mSmmu.Device.Stage1OutputAddressBits = 32;
   DeviceAddress = 0xBAD;
   Mapping       = (VOID *)(UINTN)0xBAD;
   Size          = 0x1000;
@@ -692,6 +863,7 @@ TestMapBoundsAndUnmapRetry (
   assert (DeviceAddress == 0 && Mapping == NULL && !BitmapIsSet (0));
 
   mSmmu.Device.AddressBits = 64;
+  mSmmu.Device.Stage1OutputAddressBits = 64;
   Size = sizeof (Buffer);
   assert (CrSmmuMap (
             &mIoMmuProtocol,
@@ -825,7 +997,7 @@ TestCommonBufferAllocation (
             EfiBootServicesData,
             1,
             &HostAddress,
-            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_WRITE_COMBINE
             ) == EFI_UNSUPPORTED);
   assert (HostAddress == NULL);
 
@@ -839,7 +1011,8 @@ TestCommonBufferAllocation (
             ) == EFI_SUCCESS);
   assert (HostAddress != NULL && mLastMemoryType == EfiBootServicesData);
   assert (mGetDescriptorCalls == 1 && mSetMemoryAttributeCalls == 1);
-  assert ((mLastMemoryAttributes & EFI_MEMORY_UC) != 0);
+  assert ((mLastMemoryAttributes & EFI_MEMORY_WC) != 0);
+  assert ((mLastMemoryAttributes & EFI_MEMORY_UC) == 0);
   assert ((mLastMemoryAttributes & EFI_MEMORY_WB) == 0);
 
   Size = 2 * SMMU_PAGE_SIZE;
@@ -857,6 +1030,25 @@ TestCommonBufferAllocation (
   assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 2, HostAddress) == EFI_SUCCESS);
   assert (mFreeCalls == 1);
   assert (mLastMemoryAttributes == (EFI_MEMORY_WB | EFI_MEMORY_XP));
+
+  /* If the allocator temporarily refuses the release, retain ownership in
+     normal non-cacheable memory so a retry never restores Device memory. */
+  ResetState ();
+  AddDomain (0, 0, 0x0100, 0x1C01);
+  assert (CrSmmuAllocateBuffer (
+            &mIoMmuProtocol,
+            AllocateAnyPages,
+            EfiBootServicesData,
+            1,
+            &HostAddress,
+            0
+            ) == EFI_SUCCESS);
+  mFreeStatus = EFI_DEVICE_ERROR;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 1, HostAddress) == EFI_DEVICE_ERROR);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WC | EFI_MEMORY_XP));
+  mFreeStatus = EFI_SUCCESS;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 1, HostAddress) == EFI_SUCCESS);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WB | EFI_MEMORY_XP));
 }
 
 STATIC VOID
@@ -873,10 +1065,51 @@ TestAttachBlockAndExit (
   assert (AttachStreamLocked (1, 0x0100, 0x1C01) == EFI_ACCESS_DENIED);
   assert (AttachStreamLocked (0, 0x0000, 0x1C01) == EFI_ACCESS_DENIED);
 
+  /* A long-lived display map must not block later UFS/PCIe attachment.
+     The newly attached domain receives no access to that existing IOVA. */
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0x2800);
+  {
+    STATIC UINT8 Buffer[SMMU_PAGE_SIZE] __attribute__((aligned(SMMU_PAGE_SIZE)));
+    CR_SMMU_MAPPING *Map = MapReadBuffer (Buffer, sizeof (Buffer));
+    ResetCalls ();
+    assert (AttachStreamLocked (0, 0x0000, 0x1C00) == EFI_SUCCESS);
+    assert (mAttachCalls == 1 && mSmmu.Domains[1].InUse);
+    assert (mSetCalls == 0 && Map->DomainAccess[1] == 0);
+    assert (CrSmmuSetAttributeById (
+              &mIoMmuProtocol, mSmmu.Device.Base, 0x2800, Map,
+              EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+    assert (Map->DomainAccess[0] == EDKII_IOMMU_ACCESS_READ &&
+            Map->DomainAccess[1] == 0);
+    ResetCalls ();
+    assert (CrSmmuUnmap (&mIoMmuProtocol, Map) == EFI_SUCCESS);
+    assert (mSetCalls == 2);
+  }
+
   ResetState ();
   Status = AttachStreamLocked (0, 0x0100, 0x1C01);
   assert (Status == EFI_SUCCESS && mAttachCalls == 1);
   assert (mLastMemoryType == EfiReservedMemoryType);
+
+  /* Rejection before MMIO owns no domain; rollback can report NOT_FOUND. */
+  ResetState ();
+  mAttachStatus = CR_BUSY;
+  assert (AttachStreamLocked (1, 0x0100, 0x1C81) == EFI_ACCESS_DENIED);
+  assert (mFreeCalls == 1);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 1) == EFI_NOT_FOUND);
+
+  /* A failed hardware write must keep its segment and tables quarantined. */
+  ResetState ();
+  mAttachStatus = CR_DEVICE_ERROR;
+  mAttachPoisoned = TRUE;
+  assert (AttachStreamLocked (1, 0x0100, 0x1C81) == EFI_DEVICE_ERROR);
+  assert (mSmmu.Domains[0].Poisoned && !mSmmu.Domains[0].InUse);
+  assert (mSmmu.Domains[0].Segment == 1 && mSmmu.Domains[0].Sid == 0x1C81);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 0) == EFI_NOT_FOUND);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 1) == EFI_DEVICE_ERROR);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 1) == EFI_DEVICE_ERROR);
+  assert (AttachStreamLocked (1, 0x0100, 0x1C81) == EFI_DEVICE_ERROR);
+  assert (mAttachCalls == 1 && mFreeCalls == 0 && mDetachCalls == 0);
 
   ResetState ();
   AddDomain (0, 0, 0x0100, 0x1C01);
@@ -902,11 +1135,566 @@ TestAttachBlockAndExit (
   assert (mSmmu.ExitBootServicesEvent == NULL);
 }
 
+STATIC VOID
+TestDisplayHandoff (
+  VOID
+  )
+{
+  CR_SMMU_MAPPING *Display;
+  CR_SMMU_MAPPING *Transient;
+  VOID           *Mapping;
+  EFI_PHYSICAL_ADDRESS Device;
+  UINTN Bytes;
+
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0x2800);
+  Display = MapReadBuffer (mPagePool, SMMU_PAGE_SIZE + 1);
+  /* System/boot memory cannot survive just because a consumer asks. The
+     permission must cover both pages, including the rounded trailing page. */
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_UNSUPPORTED);
+  mDescriptorType = EfiGcdMemoryTypeReserved;
+  mDescriptorLength = SMMU_PAGE_SIZE + 1;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_UNSUPPORTED);
+  mDescriptorLength = sizeof (mPagePool);
+  mGetDescriptorStatus = EFI_DEVICE_ERROR;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_DEVICE_ERROR);
+  mGetDescriptorStatus = EFI_SUCCESS;
+  assert (CrSmmuPreserveReadOnlyMapping (NULL, Display) == EFI_INVALID_PARAMETER);
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, NULL) == EFI_INVALID_PARAMETER);
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, mPagePool) == EFI_INVALID_PARAMETER);
+  Display->Operation = EdkiiIoMmuOperationBusMasterCommonBuffer;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_UNSUPPORTED);
+  Display->Operation = EdkiiIoMmuOperationBusMasterRead64;
+  Display->DeviceWriteGranted = TRUE;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_UNSUPPORTED);
+  Display->DeviceWriteGranted = FALSE;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_SUCCESS);
+  assert (Display->PreserveAtExit);
+  /* A mapping alone does not retain a stream which has no READ grant. */
+  ResetCalls ();
+  CrSmmuExitBootServices (NULL, NULL);
+  assert (mBlockCalls == 1 && mSetCalls == 0);
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_INVALID_PARAMETER);
+
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0x2800);
+  mDescriptorType = EfiGcdMemoryTypeReserved;
+  Bytes = 64;
+  assert (CrSmmuMap (&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterWrite,
+                     mPagePool + SMMU_PAGE_SIZE, &Bytes, &Device, &Mapping) == EFI_SUCCESS);
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Mapping) == EFI_UNSUPPORTED);
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Mapping) == EFI_SUCCESS);
+
+  for (UINTN Failure = 0; Failure < 4; Failure++) {
+    ResetState ();
+    AddDomain (0, 0, 0xFFFF, 0x2800);
+    AddDomain (1, 0, 0xFFFF, 0x2802);
+    AddDomain (2, 0, 0xFFFF, 0x00E0);
+    Display = MapReadBuffer (mPagePool, SMMU_PAGE_SIZE);
+    Transient = MapReadBuffer (mPagePool + SMMU_PAGE_SIZE, SMMU_PAGE_SIZE);
+    assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base, 0x2800,
+                                    Display, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+    assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base, 0x2802,
+                                    Display, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+    assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base, 0x2800,
+                                    Transient, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+    mDescriptorType = EfiGcdMemoryTypeReserved;
+    assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_SUCCESS);
+    ResetCalls ();
+    if (Failure == 1) mFailSetCall1 = 1;
+    if (Failure == 2) mSmmu.Domains[0].Poisoned = TRUE;
+    if (Failure == 3) mSmmu.Domains[0].Domain.Failed = TRUE;
+    CrSmmuExitBootServices (NULL, NULL);
+    /* Both display SIDs can fetch only the reserved framebuffer. Storage
+       is blocked; a revoke failure/poison blocks only the affected display SID. */
+    assert (mBlockCalls == (Failure == 0 ? 1 : 2));
+    assert (mBlockLog[mBlockCalls - 1] == &mSmmu.Domains[2].Domain);
+    if (Failure != 0) assert (mBlockLog[0] == &mSmmu.Domains[0].Domain);
+    if (Failure <= 1) {
+      assert (mSetCalls == 1 && mSetLog[0].Iova == Transient->IovaBase);
+      assert (mSetLog[0].Access == 0 && mSetLog[0].Domain == &mSmmu.Domains[0].Domain);
+    }
+    if (Failure == 0) assert (Transient->DomainAccess[0] == 0);
+    assert (Display->DomainAccess[1] == EDKII_IOMMU_ACCESS_READ);
+    assert (mFreeCalls == 0 && mDetachCalls == 0 && mAllocateCalls == 0);
+  }
+
+  /* An attempted unload withdraws the handoff even if Unmap fails halfway.
+     A subsequent exit must not preserve the remaining stale translation. */
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0x2800);
+  Display = MapReadBuffer (mPagePool, SMMU_PAGE_SIZE);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base, 0x2800,
+                                  Display, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+  mDescriptorType = EfiGcdMemoryTypeReserved;
+  assert (CrSmmuPreserveReadOnlyMapping (&mCrProtocol, Display) == EFI_SUCCESS);
+  ResetCalls ();
+  mFailSetCall1 = 1;
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Display) == EFI_DEVICE_ERROR);
+  assert (!Display->PreserveAtExit && Display->InUse);
+  ResetCalls ();
+  CrSmmuExitBootServices (NULL, NULL);
+  assert (mBlockCalls == 1 && mSetCalls == 0);
+}
+
+STATIC UINTN mObserverCalls;
+STATIC EFI_STATUS mObserverStatus, mObserverQueryStatus;
+STATIC EFI_SMMU_CR_MAPPING_EVIDENCE mObserved;
+STATIC VOID EFIAPI ExitObserver(VOID *Context, EFI_STATUS Status)
+{
+  assert(mSmmu.AfterExitBootServices && mSmmu.ExitComplete);
+  assert(mSmmu.Lock.Lock == EfiLockReleased);
+  mObserverCalls++; mObserverStatus = Status;
+  mObserverQueryStatus = CrSmmuQueryExitMapping(&mCrProtocol, Context, &mObserved);
+  assert(CrSmmuSetExitObserver(&mCrProtocol, Context, NULL, NULL) == EFI_ACCESS_DENIED);
+}
+
+STATIC UINTN mPrepareCalls;
+STATIC EFI_STATUS mPrepareStatus;
+STATIC EFI_STATUS EFIAPI PrepareObserver(VOID *Context) {
+  assert(Context==mPagePool&&mSmmu.AfterExitBootServices&&!mSmmu.ExitComplete);
+  assert(mSmmu.Lock.Lock==EfiLockReleased&&!mSetCalls&&!mBlockCalls);
+  assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,Context,NULL,NULL)==EFI_ACCESS_DENIED);
+  ++mPrepareCalls;return mPrepareStatus;
+}
+
+STATIC VOID TestExitEvidence(VOID)
+{
+  EFI_SMMU_CR_MAPPING_EVIDENCE E, Empty = {0};
+  CR_SMMU_MAPPING *Display, *Transient;
+  for (UINTN Failure=0;Failure<5;++Failure) {
+    ResetState(); mObserverCalls=0;
+    AddDomain(0,0,0xFFFF,0x2800); AddDomain(1,0,0xFFFF,0x2802);
+    Display=MapReadBuffer(mPagePool+8,SMMU_PAGE_SIZE+1);
+    Transient=MapReadBuffer(mPagePool+4*SMMU_PAGE_SIZE,SMMU_PAGE_SIZE);
+    for (UINTN I=0;I<2;++I)
+      assert(CrSmmuSetAttributeById(&mIoMmuProtocol,mSmmu.Device.Base,
+             mSmmu.Domains[I].Sid,Display,EDKII_IOMMU_ACCESS_READ)==EFI_SUCCESS);
+    assert(CrSmmuSetAttributeById(&mIoMmuProtocol,mSmmu.Device.Base,0x2800,
+             Transient,EDKII_IOMMU_ACCESS_READ)==EFI_SUCCESS);
+    mDescriptorType=EfiGcdMemoryTypeReserved;
+    assert(CrSmmuPreserveReadOnlyMapping(&mCrProtocol,Display)==EFI_SUCCESS);
+    assert(CrSmmuSetExitObserver(&mCrProtocol,Display,ExitObserver,Display)==EFI_SUCCESS);
+    assert(CrSmmuSetExitObserver(&mCrProtocol,Display,ExitObserver,Display)==EFI_SUCCESS);
+    assert(CrSmmuSetExitObserver(&mCrProtocol,Display,ExitObserver,Transient)==EFI_ALREADY_STARTED);
+    assert(CrSmmuQueryExitMapping(&mCrProtocol,Display,&E)==EFI_NOT_READY);
+    assert(!memcmp(&E,&Empty,sizeof(E)) && !mEvidenceCalls);
+    ResetCalls();
+    if(Failure==1)mFailSetCall1=1;
+    if(Failure==2)mEvidenceFailSid=0x2802;
+    if(Failure==3)mSmmu.Domains[1].Poisoned=TRUE;
+    if(Failure==4){AddDomain(2,0,0xFFFF,0xE0);mFailBlockCall=1;}
+    CrSmmuExitBootServices(NULL,NULL);
+    assert(mObserverCalls==1 && mSmmu.ExitComplete);
+    if(Failure==0||Failure==4) {
+      assert(mObserverQueryStatus==EFI_SUCCESS && mObserved.StreamCount==2);
+      assert(mObserved.Size==sizeof(mObserved) && mObserved.Revision==1);
+      assert(mObserved.MappingId==(UINT32)(Display-mSmmu.Mappings)+1);
+      assert(mObserved.HostAddress==(UINT64)(UINTN)(mPagePool+8));
+      assert(mObserved.DeviceAddress==Display->IovaBase+8);
+      assert(mObserved.NumberOfBytes==SMMU_PAGE_SIZE+1 && mObserved.PageBytes==2*SMMU_PAGE_SIZE);
+      assert(mObserved.Streams[0].Sid==0x2800 && mObserved.Streams[1].Sid==0x2802);
+      assert(mObserverStatus==(Failure==4?EFI_DEVICE_ERROR:EFI_SUCCESS));
+    } else {
+      assert(EFI_ERROR(mObserverQueryStatus));
+      assert(!memcmp(&mObserved,&Empty,sizeof(Empty)));
+    }
+    assert(!mAllocateCalls && !mFreeCalls && !mDetachCalls);
+    assert(CrSmmuQueryExitMapping(&mCrProtocol,Transient,&E)==EFI_ACCESS_DENIED);
+    assert(CrSmmuQueryExitMapping(&mCrProtocol,mPagePool,&E)==EFI_NOT_FOUND);
+    assert(CrSmmuQueryExitMapping(NULL,Display,&E)==EFI_INVALID_PARAMETER);
+    assert(CrSmmuQueryExitMapping(&mCrProtocol,Display,NULL)==EFI_INVALID_PARAMETER);
+    CrSmmuExitBootServices(NULL,NULL);assert(mObserverCalls==1);
+  }
+  // The exact original stream set survives the EBS grant-ledger clears.
+  for(UINTN Preserve=0;Preserve<2;++Preserve) {
+    ResetState();AddDomain(0,0,0xFFFF,0x2800);AddDomain(1,0,0xFFFF,0x2802);
+    Display=MapReadBuffer(mPagePool,SMMU_PAGE_SIZE);
+    Transient=MapReadBuffer(mPagePool+4*SMMU_PAGE_SIZE,SMMU_PAGE_SIZE);
+    for(UINTN I=0;I<2;++I) {
+      assert(CrSmmuSetAttributeById(&mIoMmuProtocol,mSmmu.Device.Base,mSmmu.Domains[I].Sid,Transient,EDKII_IOMMU_ACCESS_READ)==EFI_SUCCESS);
+      if(Preserve)assert(CrSmmuSetAttributeById(&mIoMmuProtocol,mSmmu.Device.Base,mSmmu.Domains[I].Sid,Display,EDKII_IOMMU_ACCESS_READ)==EFI_SUCCESS);
+    }
+    if(Preserve){mDescriptorType=EfiGcdMemoryTypeReserved;assert(CrSmmuPreserveReadOnlyMapping(&mCrProtocol,Display)==EFI_SUCCESS);}
+    assert(CrSmmuQueryExitRevokedMapping(&mCrProtocol,Transient,&E)==EFI_NOT_READY);
+    ResetCalls();CrSmmuExitBootServices(NULL,NULL);
+    assert(CrSmmuQueryExitRevokedMapping(&mCrProtocol,Transient,&E)==EFI_SUCCESS);
+    assert(E.StreamCount==2&&E.MappingId==(UINT32)(Transient-mSmmu.Mappings)+1);
+    assert(E.Streams[0].Sid==0x2800&&E.Streams[1].Sid==0x2802&&!E.Streams[0].Access&&!E.Streams[0].Physical);
+    if(Preserve)assert(!Transient->DomainAccess[0]&&!Transient->DomainAccess[1]);
+    assert(Transient->ExitDomainAccess[0]==EDKII_IOMMU_ACCESS_READ&&Transient->ExitDomainAccess[1]==EDKII_IOMMU_ACCESS_READ);
+    mEvidenceFailSid=0x2802;
+    assert(CrSmmuQueryExitRevokedMapping(&mCrProtocol,Transient,&E)==EFI_DEVICE_ERROR);
+    assert(!memcmp(&E,&Empty,sizeof(E)));
+    assert(!mAllocateCalls&&!mFreeCalls&&!mDetachCalls);
+  }
+  // Whole-aperture USB revocation must not depend on a read-only Map token.
+  for(UINTN Failure=0;Failure<5;++Failure) {
+    SmmuMappingEvidence Full,Zero={0};
+    ResetState();AddDomain(0,0,0xFFFF,0);ResetCalls();
+    assert(CrSmmuQueryExitRevokedDomain(&mCrProtocol,0,0xFFFF,0,&Full)==EFI_NOT_READY);
+    if(Failure==1)mFailBlockCall=1;
+    CrSmmuExitBootServices(NULL,NULL);
+    if(Failure==2)mSmmu.Domains[0].Poisoned=TRUE;
+    if(Failure==3)mSmmu.Domains[0].PreservedAtExit=TRUE;
+    if(Failure==4)mEvidenceFailSid=0;
+    EFI_STATUS Status=CrSmmuQueryExitRevokedDomain(&mCrProtocol,0,0xFFFF,0,&Full);
+    if(!Failure) {
+      assert(Status==EFI_SUCCESS&&Full.Sid==0&&Full.Iova==SMMU_IOVA_BASE&&Full.Bytes==SMMU_IOVA_SIZE&&!Full.Physical&&!Full.Access);
+    } else assert(EFI_ERROR(Status)&&!memcmp(&Full,&Zero,sizeof(Full)));
+    assert(CrSmmuQueryExitRevokedDomain(&mCrProtocol,1,0xFFFF,0,&Full)==EFI_ACCESS_DENIED);
+    assert(CrSmmuQueryExitRevokedDomain(&mCrProtocol,0,0,0,&Full)==EFI_ACCESS_DENIED);
+    assert(CrSmmuQueryExitRevokedDomain(&mCrProtocol,0,0xFFFF,1,&Full)==EFI_NOT_FOUND);
+    assert(!memcmp(&Full,&Zero,sizeof(Full)));
+    assert(CrSmmuQueryExitRevokedDomain(NULL,0,0xFFFF,0,&Full)==EFI_INVALID_PARAMETER);
+    assert(CrSmmuQueryExitRevokedDomain(&mCrProtocol,0,0xFFFF,0,NULL)==EFI_INVALID_PARAMETER);
+    assert(!mAllocateCalls&&!mFreeCalls&&!mDetachCalls);
+  }
+  for(UINTN Failure=0;Failure<3;++Failure) {
+    ResetState();AddDomain(0,0,0xFFFF,0x2800);mPrepareCalls=0;
+    mPrepareStatus=Failure==2?EFI_WARN_STALE_DATA:Failure?EFI_DEVICE_ERROR:EFI_SUCCESS;
+    for(UINTN I=1;I<=8;++I)
+      assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)I,PrepareObserver,mPagePool)==EFI_SUCCESS);
+    assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)9,PrepareObserver,mPagePool)==EFI_OUT_OF_RESOURCES);
+    assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)1,PrepareObserver,mPagePool)==EFI_SUCCESS);
+    assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)1,PrepareObserver,NULL)==EFI_ALREADY_STARTED);
+    for(UINTN I=2;I<=8;++I)assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)I,NULL,NULL)==EFI_SUCCESS);
+    assert(CrSmmuSetExitPrepareObserver(&mCrProtocol,(VOID*)2,NULL,NULL)==EFI_NOT_FOUND);
+    ResetCalls();CrSmmuExitBootServices(NULL,NULL);
+    assert(mPrepareCalls==1&&mBlockCalls==1&&mSmmu.ExitComplete);
+    assert(mSmmu.ExitStatus==(Failure==2?EFI_NOT_READY:mPrepareStatus)&&!mAllocateCalls&&!mFreeCalls);
+    CrSmmuExitBootServices(NULL,NULL);assert(mPrepareCalls==1);
+  }
+  ResetState();
+  for(UINTN I=1;I<=8;++I)
+    assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)I,ExitObserver,NULL)==EFI_SUCCESS);
+  assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)9,ExitObserver,NULL)==EFI_OUT_OF_RESOURCES);
+  assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)4,NULL,NULL)==EFI_SUCCESS);
+  assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)4,NULL,NULL)==EFI_NOT_FOUND);
+  assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)9,ExitObserver,NULL)==EFI_SUCCESS);
+  assert(CrSmmuSetExitObserver(NULL,(VOID*)9,NULL,NULL)==EFI_INVALID_PARAMETER);
+  assert(CrSmmuSetExitObserver(&mCrProtocol,NULL,NULL,NULL)==EFI_INVALID_PARAMETER);
+  for(UINTN I=1;I<=9;++I)if(I!=4)
+    assert(CrSmmuSetExitObserver(&mCrProtocol,(VOID*)I,NULL,NULL)==EFI_SUCCESS);
+  mObserverCalls=0;CrSmmuExitBootServices(NULL,NULL);assert(!mObserverCalls);
+}
+
+STATIC VOID
+TestScopedDetachAndMappedFree (VOID)
+{
+  STATIC UINT8 Buffer[SMMU_PAGE_SIZE] __attribute__((aligned(SMMU_PAGE_SIZE)));
+  CR_SMMU_MAPPING *Map;
+  VOID *Host, *Token;
+  UINTN Size;
+  EFI_PHYSICAL_ADDRESS Device;
+  UINTN FreeBefore, AttrBefore;
+
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0x00E0);
+  AddDomain (1, 0, 0x0100, 0x1C01);
+  AddDomain (2, 1, 0x0100, 0x1C81);
+  Map = MapReadBuffer (Buffer, sizeof (Buffer));
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+           0x00E0, Map, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+           0x1C81, Map, EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 1) == EFI_ACCESS_DENIED);
+  assert (mBlockCalls == 0);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 0) == EFI_SUCCESS);
+  assert (mBlockCalls == 1 && mBlockLog[0] == &mSmmu.Domains[1].Domain);
+  assert (mSmmu.Domains[0].InUse && mSmmu.Domains[2].InUse);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 0) == EFI_NOT_FOUND);
+  assert (AttachStreamLocked (0, 0x0100, 0x00E0) == EFI_ACCESS_DENIED);
+  assert (AttachStreamLocked (1, 0xFFFF, 0x1C81) == EFI_ACCESS_DENIED);
+  assert (AttachStreamLocked (1, 0x0200, 0x1C81) == EFI_ACCESS_DENIED);
+  assert (AttachStreamLocked (1, 0x0100, 0x1C81) == EFI_SUCCESS);
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Map) == EFI_SUCCESS);
+  assert (CrSmmuBlockSegment (&mCrProtocol, 1) == EFI_SUCCESS);
+
+  for (UINTN Bounce = 0; Bounce < 2; Bounce++) {
+    ResetState ();
+    AddDomain (0, 0, 0x0100, 0x1C01);
+    assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+             EfiBootServicesData, 2, &Host, 0) == EFI_SUCCESS);
+    Size = SMMU_PAGE_SIZE;
+    assert (CrSmmuMap (&mIoMmuProtocol,
+             Bounce ? EdkiiIoMmuOperationBusMasterWrite : EdkiiIoMmuOperationBusMasterCommonBuffer,
+             (UINT8 *)Host + SMMU_PAGE_SIZE, &Size, &Device, &Token) == EFI_SUCCESS);
+    FreeBefore = mFreeCalls; AttrBefore = mSetMemoryAttributeCalls;
+    assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 2, Host) == EFI_ACCESS_DENIED);
+    assert (mFreeCalls == FreeBefore && mSetMemoryAttributeCalls == AttrBefore);
+    assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+             0x1C01, Token, EDKII_IOMMU_ACCESS_WRITE) == EFI_SUCCESS);
+    mFailSetCall1 = mSetCalls + 1;
+    assert (CrSmmuUnmap (&mIoMmuProtocol, Token) == EFI_DEVICE_ERROR);
+    assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 2, Host) == EFI_ACCESS_DENIED);
+    assert (mFreeCalls == FreeBefore && mSetMemoryAttributeCalls == AttrBefore);
+    mFailSetCall1 = 0;
+    assert (CrSmmuUnmap (&mIoMmuProtocol, Token) == EFI_SUCCESS);
+    assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 2, Host) == EFI_SUCCESS);
+  }
+
+  ResetState ();
+  mAttachStatus = CR_DEVICE_ERROR; mAttachPoisoned = TRUE;
+  assert (AttachStreamLocked (0, 0x0100, 0x1C01) == EFI_DEVICE_ERROR);
+  assert (mSmmu.Domains[0].Poisoned && !mSmmu.Domains[0].InUse);
+  CrSmmuExitBootServices (NULL, NULL);
+  assert (mBlockCalls == 1 && mDetachCalls == 0 && mFreeCalls == 0);
+}
+
+STATIC VOID
+TestTargetActlrContract (VOID)
+{
+  STATIC CONST SmmuActlrSetting Setting = { 0xE0, 0, 0 };
+  CONST CrTargetSmmuContext *Target = NULL;
+  ZeroMem (&mValidationTarget, sizeof (mValidationTarget));
+  mValidationTarget.Base = 0x15000000;
+  mValidationTarget.Size = 0x100000;
+  mValidationTarget.SegmentCount = 2;
+  mValidationTarget.ActlrSettingCount = 1;
+  assert (GetTargetSmmuContext (&Target) == EFI_INVALID_PARAMETER);
+  mValidationTarget.ActlrSettings = &Setting;
+  assert (GetTargetSmmuContext (&Target) == EFI_SUCCESS && Target == &mValidationTarget);
+  mValidationTarget.ActlrSettingCount = 0;
+  mValidationTarget.ActlrSettings = NULL;
+  assert (GetTargetSmmuContext (&Target) == EFI_SUCCESS);
+  STATIC CONST UINT16 Allowed[] = { 0xE0, 0x1C00, 0x1C01 };
+  STATIC CONST UINT16 Coherent[] = { 0xE0, 0x1C01 };
+  STATIC CONST UINT16 Duplicate[] = { 0xE0, 0xE0 };
+  STATIC CONST UINT16 Unknown[] = { 0x20 };
+  mValidationTarget.DefaultStreamIds = Allowed;
+  mValidationTarget.DefaultStreamCount = ARRAY_SIZE (Allowed);
+  mValidationTarget.CoherentStreamCount = ARRAY_SIZE (Coherent);
+  assert (GetTargetSmmuContext (&Target) == EFI_INVALID_PARAMETER);
+  mValidationTarget.CoherentStreamIds = Coherent;
+  assert (GetTargetSmmuContext (&Target) == EFI_SUCCESS);
+  mValidationTarget.CoherentStreamIds = Duplicate;
+  assert (GetTargetSmmuContext (&Target) == EFI_INVALID_PARAMETER);
+  mValidationTarget.CoherentStreamIds = Unknown;
+  mValidationTarget.CoherentStreamCount = ARRAY_SIZE (Unknown);
+  assert (GetTargetSmmuContext (&Target) == EFI_INVALID_PARAMETER);
+  mValidationTarget.CoherentStreamIds = Coherent;
+  mValidationTarget.CoherentStreamCount = ARRAY_SIZE (Coherent);
+  mValidationTarget.DefaultStreamCount = 0;
+  assert (GetTargetSmmuContext (&Target) == EFI_INVALID_PARAMETER);
+}
+
+STATIC VOID
+TestTargetCoherentAttach (VOID)
+{
+  STATIC CONST UINT16 Allowed[] = { 0xE0, 0x1C01, 0 };
+  STATIC CONST UINT16 Coherent[] = { 0xE0, 0x1C01 };
+  CrTargetSmmuContext Target = mTarget;
+  ResetState ();
+  Target.DefaultStreamIds = Allowed;
+  Target.DefaultStreamCount = ARRAY_SIZE (Allowed);
+  Target.CoherentStreamIds = Coherent;
+  Target.CoherentStreamCount = ARRAY_SIZE (Coherent);
+  mSmmu.Target = &Target;
+  assert (AttachStreamLocked (0, 0xFFFF, 0xE0) == EFI_SUCCESS);
+  assert (FindDomainBySid (0xE0)->Domain.CacheCoherent);
+  assert (AttachStreamLocked (0, 0x0100, 0x1C01) == EFI_SUCCESS);
+  assert (FindDomainBySid (0x1C01)->Domain.CacheCoherent);
+  assert (AttachStreamLocked (0, 0xFFFF, 0) == EFI_SUCCESS);
+  assert (!FindDomainBySid (0)->Domain.CacheCoherent);
+  for (UINTN Index = 0; Index < 3; Index++) {
+    FreeDomainTables (&mSmmu.Domains[Index]);
+  }
+}
+
+STATIC VOID
+TestSm8450UfsDmaPolicy (VOID)
+{
+  VOID *Host;
+  VOID *Mapping;
+  UINTN Bytes = SMMU_PAGE_SIZE;
+  EFI_PHYSICAL_ADDRESS Device;
+
+  ResetState ();
+  mSmmu.Target = CrTargetGetActualSm8450SmmuContext ();
+  assert (AttachStreamLocked (0, 0xFFFF, 0xE0) == EFI_SUCCESS);
+  // The actual target pairs coherent E0 translation with CPU WB storage.
+  assert (FindDomainBySid (0xE0)->Domain.CacheCoherent);
+  assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+            EfiBootServicesData, 1, &Host,
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED) == EFI_SUCCESS);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WB | EFI_MEMORY_XP));
+  assert (CrSmmuMap (&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterCommonBuffer64,
+            Host, &Bytes, &Device, &Mapping) == EFI_SUCCESS);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0xE0, Mapping, EDKII_IOMMU_ACCESS_READ | EDKII_IOMMU_ACCESS_WRITE)
+          == EFI_SUCCESS);
+  assert (mSetLog[mSetCalls - 1].Domain == &FindDomainBySid (0xE0)->Domain);
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Mapping) == EFI_SUCCESS);
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 1, Host) == EFI_SUCCESS);
+  assert (AttachStreamLocked (0, 0x0100, 0x1C01) == EFI_SUCCESS);
+  assert (FindDomainBySid (0x1C01)->Domain.CacheCoherent);
+  for (UINTN Index = 0; Index < 2; Index++) {
+    FreeDomainTables (&mSmmu.Domains[Index]);
+  }
+}
+
+STATIC VOID
+TestCachedCommonBuffer (VOID)
+{
+  VOID *Host;
+  VOID *Token;
+  UINTN Bytes;
+  UINTN Calls;
+  EFI_PHYSICAL_ADDRESS Device;
+  CR_SMMU_MAPPING *Map;
+
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0xE0);
+  AddDomain (1, 0, 0xFFFF, 0);
+  AddDomain (2, 0, 0x0100, 0x1C00);
+  AddDomain (3, 0, 0x0100, 0x1C01);
+  mSmmu.Domains[0].Domain.CacheCoherent = TRUE;
+  mSmmu.Domains[2].Domain.CacheCoherent = TRUE;
+  // A different original CPU attribute makes failed-free restoration visible.
+  mDescriptorAttributes = EFI_MEMORY_WC | EFI_MEMORY_XP;
+  assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+            EfiBootServicesData, 3, &Host,
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED) == EFI_SUCCESS);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WB | EFI_MEMORY_XP));
+  // Cache policy belongs to the allocation, including unaligned subranges.
+  Bytes = 512;
+  assert (CrSmmuMap (&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterCommonBuffer64,
+            (UINT8 *)Host + SMMU_PAGE_SIZE + 31, &Bytes, &Device, &Token) == EFI_SUCCESS);
+  Map = Token;
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0xE0, Token, 3) == EFI_SUCCESS);
+  Calls = mSetCalls;
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0, Token, 3) == EFI_UNSUPPORTED);
+  assert (mSetCalls == Calls && Map->DomainAccess[1] == 0);
+  // Reject mixed PCI streams before granting even the coherent first stream.
+  assert (CrSmmuSetAttribute (&mIoMmuProtocol, mHandleSegment0, Token, 3)
+          == EFI_UNSUPPORTED);
+  assert (mSetCalls == Calls && Map->DomainAccess[2] == 0 && Map->DomainAccess[3] == 0);
+  mSmmu.Domains[3].Domain.CacheCoherent = TRUE;
+  assert (CrSmmuSetAttribute (&mIoMmuProtocol, mHandleSegment0, Token, 3) == EFI_SUCCESS);
+  assert (Map->DomainAccess[2] == 3 && Map->DomainAccess[3] == 3);
+  // Revocation must remain possible even if a domain is no longer coherent.
+  mSmmu.Domains[3].Domain.CacheCoherent = FALSE;
+  assert (CrSmmuSetAttribute (&mIoMmuProtocol, mHandleSegment0, Token, 0) == EFI_SUCCESS);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0, Token, 0) == EFI_SUCCESS);
+  Calls = mSetMemoryAttributeCalls;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 3, Host) == EFI_ACCESS_DENIED);
+  assert (mSetMemoryAttributeCalls == Calls);
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Token) == EFI_SUCCESS);
+  mFreeStatus = EFI_DEVICE_ERROR;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 3, Host) == EFI_DEVICE_ERROR);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WB | EFI_MEMORY_XP));
+  // A failed free retains a usable WB allocation with the same grant policy.
+  Bytes = SMMU_PAGE_SIZE;
+  assert (CrSmmuMap (&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterCommonBuffer,
+            Host, &Bytes, &Device, &Token) == EFI_SUCCESS);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0, Token, 3) == EFI_UNSUPPORTED);
+  assert (CrSmmuSetAttributeById (&mIoMmuProtocol, mSmmu.Device.Base,
+            0xE0, Token, 3) == EFI_SUCCESS);
+  assert (CrSmmuUnmap (&mIoMmuProtocol, Token) == EFI_SUCCESS);
+  mFreeStatus = EFI_SUCCESS;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 3, Host) == EFI_SUCCESS);
+  assert (mLastMemoryAttributes == (EFI_MEMORY_WC | EFI_MEMORY_XP));
+
+  ResetState ();
+  mDescriptorCapabilities &= ~EFI_MEMORY_WB;
+  assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+            EfiBootServicesData, 1, &Host,
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED) == EFI_UNSUPPORTED);
+  assert (Host == NULL && mFreeCalls == 1 && mSetMemoryAttributeCalls == 0);
+  ResetState ();
+  mSetMemoryAttributeStatus = EFI_DEVICE_ERROR;
+  assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+            EfiBootServicesData, 1, &Host,
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED) == EFI_DEVICE_ERROR);
+  assert (Host == NULL && mFreeCalls == 1 && !mSmmu.DmaBuffers[0].InUse);
+
+  ResetState ();
+  AddDomain (0, 0, 0xFFFF, 0xE0);
+  assert (CrSmmuAllocateBuffer (&mIoMmuProtocol, AllocateAnyPages,
+            EfiRuntimeServicesData, 1, &Host,
+            EDKII_IOMMU_ATTRIBUTE_MEMORY_CACHED) == EFI_SUCCESS);
+  mFreeStatus = EFI_DEVICE_ERROR;
+  mFailMemoryAttributeCall = mSetMemoryAttributeCalls + 2;
+  assert (CrSmmuFreeBuffer (&mIoMmuProtocol, 1, Host) == EFI_DEVICE_ERROR);
+  // Failed attribute recovery quarantines storage instead of allowing DMA.
+  assert (mSmmu.DmaBuffers[0].InUse && mSmmu.DmaBuffers[0].Busy);
+  Bytes = SMMU_PAGE_SIZE;
+  assert (CrSmmuMap (&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterCommonBuffer64,
+            Host, &Bytes, &Device, &Token) == EFI_UNSUPPORTED);
+  assert (Token == NULL && Device == 0);
+}
+
 int
 main (
   void
   )
 {
+  TestTargetActlrContract ();
+  TestTargetCoherentAttach ();
+  TestSm8450UfsDmaPolicy ();
+  TestCachedCommonBuffer ();
+  {
+    ResetState();
+    STATIC CONST CrTargetSmmuDmaDevice Device = {0x0A600000, 0x100000, 0};
+    CrTargetSmmuContext Target = mTarget;
+    Target.DmaDevices = &Device; Target.DmaDeviceCount = 1;
+    mSmmu.Target = &Target;
+    EFI_DMA_IDENTITY_CR_PROTOCOL Identity = {EFI_DMA_IDENTITY_CR_PROTOCOL_REVISION,
+                                            0x15000000, 0x0A600000, 0x100000, 0};
+    mIdentity = &Identity;
+    UINTN Bytes = 4096;
+    EFI_PHYSICAL_ADDRESS Iova;
+    VOID *Token;
+    AddDomain(0, 0, 0x0100, 0x1C01);
+    assert(CrSmmuMap(&mIoMmuProtocol, EdkiiIoMmuOperationBusMasterRead64,
+                     mPagePool, &Bytes, &Iova, &Token) == EFI_SUCCESS);
+    assert(CrSmmuSetAttribute(&mIoMmuProtocol, (EFI_HANDLE)(UINTN)0xD0, Token,
+                             EDKII_IOMMU_ACCESS_READ) == EFI_NOT_READY);
+    AddDomain(1, 0, 0xFFFF, 0);
+    assert(CrSmmuSetAttribute(&mIoMmuProtocol, (EFI_HANDLE)(UINTN)0xD0, Token,
+                             EDKII_IOMMU_ACCESS_READ) == EFI_SUCCESS);
+    assert(mSetLog[mSetCalls - 1].Domain == &mSmmu.Domains[1].Domain);
+    Identity.Sid = 0x1C00;
+    assert(CrSmmuSetAttribute(&mIoMmuProtocol, (EFI_HANDLE)(UINTN)0xD0, Token, 0) == EFI_ACCESS_DENIED);
+    Identity.Sid = 0; Identity.ControllerSize = 0x200000;
+    assert(CrSmmuSetAttribute(&mIoMmuProtocol, (EFI_HANDLE)(UINTN)0xD0, Token, 0) == EFI_ACCESS_DENIED);
+    Identity.ControllerSize = 0x100000;
+    mSmmu.Domains[1].Bdf = 0x100;
+    assert(CrSmmuSetAttribute(&mIoMmuProtocol, (EFI_HANDLE)(UINTN)0xD0, Token, 0) == EFI_NOT_READY);
+    mSmmu.Domains[1].Bdf = 0xFFFF;
+    assert(CrSmmuUnmap(&mIoMmuProtocol, Token) == EFI_SUCCESS);
+    mIdentity = NULL;
+  }
+  /* Pure native-identity fault capture rejects foreign/late queries without
+     mutation, and remains available for poisoned domains with live DMA. */
+  ResetState(); AddDomain(0,0,0xFFFF,0xE0);
+  UINTN FaultBytes=16; VOID *FaultMap; EFI_PHYSICAL_ADDRESS FaultIova;
+  assert(CrSmmuMap(&mIoMmuProtocol,EdkiiIoMmuOperationBusMasterRead64,mPagePool,
+                   &FaultBytes,&FaultIova,&FaultMap)==EFI_SUCCESS);
+  assert(CrSmmuSetAttributeById(&mIoMmuProtocol,mSmmu.Device.Base,0xE0,FaultMap,1)==EFI_SUCCESS);
+  mSmmu.Domains[0].Poisoned=TRUE; mSmmu.Domains[0].Domain.Failed=TRUE;
+  mFaultCaptureCalls=0; mFaultCaptureStatus=CR_SUCCESS;
+  static UINT64 FaultTables[SMMU_TABLE_PAGES*4096/8]; mSmmu.Domains[0].Domain.Tables=FaultTables;
+  CR_SMMU_STATE SavedState=mSmmu;
+  UINTN SavedSet=mSetCalls, SavedBlock=mBlockCalls, SavedAlloc=mAllocateCalls, SavedFree=mFreeCalls;
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0xFFFF,0xE0)==EFI_SUCCESS && mFaultCaptureCalls==1);
+  assert(!memcmp(&SavedState,&mSmmu,sizeof(mSmmu)));
+  assert(mSetCalls==SavedSet && mBlockCalls==SavedBlock && mAllocateCalls==SavedAlloc && mFreeCalls==SavedFree);
+  assert(CrSmmuDumpFault(NULL,0,0xFFFF,0xE0)==EFI_INVALID_PARAMETER);
+  assert(CrSmmuDumpFault(&mCrProtocol,1,0xFFFF,0xE0)==EFI_NOT_FOUND);
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0x100,0xE0)==EFI_NOT_FOUND);
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0xFFFF,0xE1)==EFI_NOT_FOUND && mFaultCaptureCalls==1);
+  mFaultCaptureStatus=CR_NOT_READY;
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0xFFFF,0xE0)==EFI_NOT_READY && mFaultCaptureCalls==2);
+  mSmmu.AfterExitBootServices=TRUE;
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0xFFFF,0xE0)==EFI_ACCESS_DENIED && mFaultCaptureCalls==2);
+  mSmmu.ExistingIoMmu=TRUE;
+  assert(CrSmmuDumpFault(&mCrProtocol,0,0xFFFF,0xE0)==EFI_NOT_READY && mFaultCaptureCalls==2);
   TestPerDeviceIsolation ();
   TestPermissionRollback ();
   TestFailedMapQuarantinesBounce ();
@@ -914,6 +1702,13 @@ main (
   TestWriteBounceAndFailedAuthorization ();
   TestCommonBufferAllocation ();
   TestAttachBlockAndExit ();
+  TestDisplayHandoff ();
+  TestScopedDetachAndMappedFree ();
+  TestExitEvidence ();
   puts ("Crane SMMU adapter: isolation, bounce, allocation and EBS checks passed");
+  #ifndef MDEPKG_NDEBUG
+  assert (mDiagnosticCount > 0);
+  assert (mSawMapDiagnostic && mSawEbsDiagnostic && mSawAttachDiagnostic);
+  #endif
   return 0;
 }

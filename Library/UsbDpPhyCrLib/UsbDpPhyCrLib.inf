@@ -1,0 +1,20 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UsbDpPhyCrLib
+  FILE_GUID = f5604647-cb03-4a07-80b8-930e4af94806
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UsbDpPhyCrLib
+[Sources]
+  UsbDpPhy.c
+  PhyTables.h
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  SynchronizationLib
+  TimerLib
+[BuildOptions]
+  MSFT:*_*_*_CC_FLAGS = /std:c11

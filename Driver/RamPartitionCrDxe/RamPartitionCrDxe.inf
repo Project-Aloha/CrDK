@@ -1,0 +1,38 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = RamPartitionCrDxe
+  FILE_GUID = 2b9d21c0-5351-49f0-8c26-78e3d1d2e8f7
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = RamPartitionCrDxeEntryPoint
+
+[Sources]
+  RamPartitionCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  ArmLib
+  ArmMmuLib
+  BaseMemoryLib
+  DebugLib
+  DxeMemoryProtectionHobLib
+  DxeServicesTableLib
+  PlatformMemoryMapLib
+  RamPartitionCrLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiSmemCrProtocolGuid ## CONSUMES
+  gEfiCpuArchProtocolGuid ## CONSUMES
+  gEfiRamPartitionProtocolGuid ## PRODUCES
+  gEfiCrRamRangeProtocolGuid ## PRODUCES
+
+[Depex]
+  gEfiSmemCrProtocolGuid AND gEfiCpuArchProtocolGuid

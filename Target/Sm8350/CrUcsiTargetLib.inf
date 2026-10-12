@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = CrUcsiTargetSm8350Lib
+  FILE_GUID = f163f6c0-7d4d-4ed0-acb3-8509f535f934
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UcsiTargetLib
+[Sources]
+  CrUcsiTarget.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

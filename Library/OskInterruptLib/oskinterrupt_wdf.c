@@ -11,31 +11,59 @@
 #include <wdm.h>
 #include "oskinterrupt_wdf.tmh"
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(CR_INTERRUPT_CONFIG,
+typedef struct {
+  CR_INTERRUPT_CONFIG Config;
+  EX_RUNDOWN_REF DeferredCallbacks;
+  BOOLEAN Closing;
+} OSK_WDF_INTERRUPT_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(OSK_WDF_INTERRUPT_CONTEXT,
                                    OskInterruptGetIrqContext);
 
-// Synchronize routine used to clear handler/context while holding the
-// interrupt lock so ISR cannot race with unregistration.
+/* Prevent further ISR callbacks before draining any callback already running
+ * at DISPATCH/PASSIVE level. Rundown protection cannot be used at DIRQL. */
+STATIC BOOLEAN
+OskInterruptSynchronizeClose(IN WDFINTERRUPT Interrupt, IN WDFCONTEXT Context) {
+  UNREFERENCED_PARAMETER(Context);
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx = OskInterruptGetIrqContext(Interrupt);
+  if (irqCtx == NULL) return FALSE;
+  irqCtx->Closing = TRUE;
+  return TRUE;
+}
+
 BOOLEAN
 OskInterruptSynchronizeClear(IN WDFINTERRUPT Interrupt, IN WDFCONTEXT Context) {
   UNREFERENCED_PARAMETER(Context);
-  CR_INTERRUPT_CONFIG *irqCtx = OskInterruptGetIrqContext(Interrupt);
-  if (irqCtx != NULL) {
-    irqCtx->Handler = NULL;
-    irqCtx->Param = NULL;
-  }
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx = OskInterruptGetIrqContext(Interrupt);
+  if (irqCtx == NULL) return FALSE;
+  irqCtx->Config.Handler = NULL;
+  irqCtx->Config.Param = NULL;
   return TRUE;
+}
+
+STATIC BOOLEAN
+OskInterruptSynchronizeInstall(IN WDFINTERRUPT Interrupt, IN WDFCONTEXT Context) {
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx = OskInterruptGetIrqContext(Interrupt);
+  if (irqCtx == NULL) return FALSE;
+  irqCtx->Config = *(CR_INTERRUPT_CONFIG *)Context;
+  irqCtx->Closing = FALSE;
+  return TRUE;
+}
+
+STATIC VOID OskInterruptInvokeDeferred(IN WDFINTERRUPT Interrupt) {
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx = OskInterruptGetIrqContext(Interrupt);
+  if (irqCtx == NULL || !ExAcquireRundownProtection(&irqCtx->DeferredCallbacks))
+    return;
+  if (irqCtx->Config.Handler != NULL)
+    irqCtx->Config.Handler(irqCtx->Config.Param);
+  ExReleaseRundownProtection(&irqCtx->DeferredCallbacks);
 }
 
 VOID EvtWdfInterruptDpc(IN WDFINTERRUPT Interrupt,
                         IN WDFOBJECT AssociatedObject) {
   UNREFERENCED_PARAMETER(AssociatedObject);
-  CR_INTERRUPT_CONFIG *irqContext = OskInterruptGetIrqContext(Interrupt);
-  if (irqContext == NULL || irqContext->Handler == NULL) {
-    return;
-  }
   TRACE_FUNCTION_ENTRY(TRACE_OSKAL);
-  irqContext->Handler(irqContext->Param);
+  OskInterruptInvokeDeferred(Interrupt);
 
   TRACE_FUNCTION_EXIT(TRACE_OSKAL);
   return;
@@ -45,11 +73,7 @@ VOID EvtWdfInterruptWorkitem(IN WDFINTERRUPT Interrupt,
                              IN WDFOBJECT AssociatedObject) {
   UNREFERENCED_PARAMETER(AssociatedObject);
   TRACE_FUNCTION_ENTRY(TRACE_OSKAL);
-  CR_INTERRUPT_CONFIG *irqContext = OskInterruptGetIrqContext(Interrupt);
-  if (irqContext == NULL || irqContext->Handler == NULL) {
-    return;
-  }
-  irqContext->Handler(irqContext->Param);
+  OskInterruptInvokeDeferred(Interrupt);
   TRACE_FUNCTION_EXIT(TRACE_OSKAL);
   return;
 };
@@ -61,14 +85,15 @@ CrInternalInterruptEntry(IN WDFINTERRUPT Interrupt, // WDF interrupt handle
 ) {
   UNREFERENCED_PARAMETER(MessageID);
   // Get context from interrupt
-  CR_STATUS Status = CR_SUCCESS;
   BOOLEAN InterruptRecognized = FALSE;
   log_info("ISR Enter!");
 
-  CR_INTERRUPT_CONFIG *irqContext = OskInterruptGetIrqContext(Interrupt);
-  if (irqContext == NULL || irqContext->Handler == NULL) {
+  OSK_WDF_INTERRUPT_CONTEXT *Context = OskInterruptGetIrqContext(Interrupt);
+  CR_INTERRUPT_CONFIG *irqContext;
+  if (Context == NULL || Context->Closing || Context->Config.Handler == NULL) {
     goto exit;
   }
+  irqContext = &Context->Config;
 
   // Call Recognize function if provided
   {
@@ -91,11 +116,8 @@ CrInternalInterruptEntry(IN WDFINTERRUPT Interrupt, // WDF interrupt handle
     }
 
     // Queue a DPC if not passive handling
-    Status = WdfInterruptQueueDpcForIsr(Interrupt);
-    if (CR_ERROR(Status)) {
-      log_err("WdfInterruptQueueDpcForIsr failed: %!STATUS!", Status);
-      goto exit;
-    }
+    /* FALSE also means the DPC is already queued, not an NTSTATUS error. */
+    WdfInterruptQueueDpcForIsr(Interrupt);
     goto exit;
   }
 
@@ -112,13 +134,22 @@ exit:
 CR_STATUS
 CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
   CR_STATUS Status = CR_SUCCESS;
+  if (InterruptConfig!=NULL && InterruptConfig->Backend!=NULL) {
+    CONST CR_INTERRUPT_BACKEND *B=InterruptConfig->Backend;
+    if (B->Context==NULL || B->Register==NULL || B->Unregister==NULL || B->IsRegistered==NULL)
+      return CR_INVALID_PARAMETER;
+    return B->Register(B->Context,InterruptConfig);
+  }
   // The config must be initialized.
   if (InterruptConfig == NULL ||
+      InterruptConfig->Handler == NULL ||
+      InterruptConfig->Device == NULL ||
       InterruptConfig->WdfInterruptConfig.InterruptRaw == NULL ||
       InterruptConfig->WdfInterruptConfig.InterruptTranslated == NULL) {
     log_err("Invalid interrupt config");
     return CR_INVALID_PARAMETER;
   }
+  if (KeGetCurrentIrql() != PASSIVE_LEVEL) return CR_BUSY;
 
   // Set the Isr
   if (InterruptConfig->WdfInterruptConfig.EvtInterruptIsr == NULL) {
@@ -140,7 +171,32 @@ CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
 
   // Ensure the interrupt object's context type is set in attributes.
   WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
-      &InterruptConfig->WdfInterruptAttributes, CR_INTERRUPT_CONFIG);
+      &InterruptConfig->WdfInterruptAttributes, OSK_WDF_INTERRUPT_CONTEXT);
+
+  /* WDF owns interrupt objects until device removal. Rebind a stopped object
+     during the driver's serialized PnP/power path; never delete or recreate
+     it on every callback-owner stop. WDF controls D0 activation. */
+  if (InterruptConfig->Interrupt != NULL) {
+    OSK_WDF_INTERRUPT_CONTEXT *irqCtx =
+        OskInterruptGetIrqContext(InterruptConfig->Interrupt);
+    if (irqCtx == NULL || irqCtx->Config.Device != InterruptConfig->Device)
+      return CR_INVALID_PARAMETER;
+    if (irqCtx->Config.Handler != NULL) return CR_ALREADY_STARTED;
+    if (irqCtx->Config.WdfInterruptConfig.EvtInterruptIsr !=
+            InterruptConfig->WdfInterruptConfig.EvtInterruptIsr ||
+        irqCtx->Config.WdfInterruptConfig.EvtInterruptDpc !=
+            InterruptConfig->WdfInterruptConfig.EvtInterruptDpc ||
+        irqCtx->Config.WdfInterruptConfig.EvtInterruptWorkItem !=
+            InterruptConfig->WdfInterruptConfig.EvtInterruptWorkItem ||
+        irqCtx->Config.WdfInterruptConfig.PassiveHandling !=
+            InterruptConfig->WdfInterruptConfig.PassiveHandling)
+      return CR_UNSUPPORTED;
+    ExReInitializeRundownProtection(&irqCtx->DeferredCallbacks);
+    return WdfInterruptSynchronize(InterruptConfig->Interrupt,
+                                  OskInterruptSynchronizeInstall,
+                                  InterruptConfig)
+               ? CR_SUCCESS : CR_DEVICE_ERROR;
+  }
 
   Status = WdfInterruptCreate(
       InterruptConfig->Device, &InterruptConfig->WdfInterruptConfig,
@@ -151,115 +207,73 @@ CrRegisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
   }
 
   // Populate the interrupt object's context so callbacks can access handler
-  CR_INTERRUPT_CONFIG *irqCtx =
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx =
       OskInterruptGetIrqContext(InterruptConfig->Interrupt);
-  if (irqCtx != NULL) {
-    irqCtx->Handler = InterruptConfig->Handler;
-    irqCtx->Param = InterruptConfig->Param;
-    irqCtx->WdfInterruptConfig = InterruptConfig->WdfInterruptConfig;
-    irqCtx->WdfInterruptAttributes = InterruptConfig->WdfInterruptAttributes;
-    irqCtx->Interrupt = InterruptConfig->Interrupt;
-    irqCtx->Device = InterruptConfig->Device;
-  }
+  if (irqCtx == NULL) return CR_DEVICE_ERROR;
+  ExInitializeRundownProtection(&irqCtx->DeferredCallbacks);
+  irqCtx->Config = *InterruptConfig;
+  irqCtx->Closing = FALSE;
 
   return Status;
 }
 
-// helper context for queued IO work item
-typedef struct _CR_UNREGISTER_WORK_CTX {
-  PIO_WORKITEM WorkItem;
-  CR_INTERRUPT_CONFIG *InterruptConfig;
-  WDFINTERRUPT SavedInterrupt;
-} CR_UNREGISTER_WORK_CTX, *PCR_UNREGISTER_WORK_CTX;
-
-// IO workitem callback runs at PASSIVE_LEVEL; free workitem & context here.
-static VOID CrUnregisterInterruptWorkerIo(PDEVICE_OBJECT DeviceObject,
-                                          PVOID Context) {
-  UNREFERENCED_PARAMETER(DeviceObject);
-  PCR_UNREGISTER_WORK_CTX ctx = (PCR_UNREGISTER_WORK_CTX)Context;
-  PIO_WORKITEM workItem = NULL;
-  WDFINTERRUPT savedInterrupt = NULL;
-
-  if (ctx == NULL) {
-    return;
-  }
-
-  workItem = ctx->WorkItem;
-  savedInterrupt = ctx->SavedInterrupt;
-
-  if (savedInterrupt != NULL) {
-    WdfInterruptDisable(savedInterrupt);
-    WdfObjectDelete(savedInterrupt);
-  }
-
-  if (workItem != NULL) {
-    IoFreeWorkItem(workItem);
-  }
-
-  ExFreePoolWithTag(ctx, 'rUnI');
-}
-
+/* Removal is synchronous: callers may release the callback owner only after
+ * success. Deferring deletion while reporting success left live callbacks
+ * and could lose the interrupt handle on worker allocation failures. */
 CR_STATUS
 CrUnregisterInterrupt(CR_INTERRUPT_CONFIG *InterruptConfig) {
-  if (InterruptConfig == NULL) {
-    log_err("CrUnregisterInterrupt: NULL parameter");
-    return CR_INVALID_PARAMETER;
+  OSK_WDF_INTERRUPT_CONTEXT *irqCtx;
+  if (InterruptConfig == NULL) return CR_INVALID_PARAMETER;
+  if (InterruptConfig->Backend!=NULL) {
+    CONST CR_INTERRUPT_BACKEND *B=InterruptConfig->Backend;
+    return B->Context!=NULL && B->Unregister!=NULL ? B->Unregister(B->Context,InterruptConfig) : CR_INVALID_PARAMETER;
   }
-
-  if (InterruptConfig->Interrupt == NULL) {
-    return CR_SUCCESS;
-  }
-
-  // If we are not at PASSIVE_LEVEL, defer the deletion to a worker so that
-  // WDF internals that require PASSIVE_LEVEL are executed safely.
-  if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
-    PCR_UNREGISTER_WORK_CTX ctx =
-        (PCR_UNREGISTER_WORK_CTX)ExAllocatePoolWithTag(NonPagedPoolNx,
-                                                       sizeof(*ctx), 'rUnI');
-    if (ctx == NULL) {
-      log_err("CrUnregisterInterrupt: failed to allocate work context");
-      return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    RtlZeroMemory(ctx, sizeof(*ctx));
-    // Atomically take ownership of the interrupt handle so other threads
-    // won't race to use/delete it while we defer deletion.
-    WDFINTERRUPT saved = (WDFINTERRUPT)InterlockedExchangePointer(
-        (PVOID *)&InterruptConfig->Interrupt, NULL);
-    if (saved == NULL) {
-      // Already cleared by someone else.
-      ExFreePoolWithTag(ctx, 'rUnI');
-      return CR_SUCCESS;
-    }
-    ctx->InterruptConfig = InterruptConfig;
-    ctx->SavedInterrupt = saved;
-
-    // Allocate IO workitem associated with the device so the queued routine
-    // will execute at PASSIVE_LEVEL. Use WDF helper to get the underlying
-    // PDEVICE_OBJECT for the WDF device stored in InterruptConfig.
-    PDEVICE_OBJECT devObj =
-        WdfDeviceWdmGetDeviceObject(InterruptConfig->Device);
-    if (devObj == NULL) {
-      ExFreePoolWithTag(ctx, 'rUnI');
-      log_err("CrUnregisterInterrupt: cannot get PDEVICE_OBJECT");
-      return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    ctx->WorkItem = IoAllocateWorkItem(devObj);
-    if (ctx->WorkItem == NULL) {
-      ExFreePoolWithTag(ctx, 'rUnI');
-      log_err("CrUnregisterInterrupt: IoAllocateWorkItem failed");
-      return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    IoQueueWorkItem(ctx->WorkItem, CrUnregisterInterruptWorkerIo,
-                    DelayedWorkQueue, ctx);
-    return CR_SUCCESS;
-  }
-
-  // PASSIVE_LEVEL: safe to perform synchronous deletion.
+  if (InterruptConfig->Interrupt == NULL) return CR_SUCCESS;
+  irqCtx = OskInterruptGetIrqContext(InterruptConfig->Interrupt);
+  if (irqCtx == NULL) return CR_DEVICE_ERROR;
+  if (irqCtx->Config.Handler == NULL) return CR_SUCCESS;
+  if (irqCtx->Config.Handler != InterruptConfig->Handler ||
+      irqCtx->Config.Param != InterruptConfig->Param) return CR_NOT_FOUND;
+  if (KeGetCurrentIrql() != PASSIVE_LEVEL) return CR_BUSY;
   WdfInterruptDisable(InterruptConfig->Interrupt);
-  WdfObjectDelete(InterruptConfig->Interrupt);
-  InterruptConfig->Interrupt = NULL;
-
+  if (!WdfInterruptSynchronize(InterruptConfig->Interrupt,
+                              OskInterruptSynchronizeClose, NULL))
+    return CR_DEVICE_ERROR;
+  ExWaitForRundownProtectionRelease(&irqCtx->DeferredCallbacks);
+  if (!WdfInterruptSynchronize(InterruptConfig->Interrupt,
+                              OskInterruptSynchronizeClear, NULL))
+    return CR_DEVICE_ERROR;
+  /* WdfObjectDelete is invalid for WDFINTERRUPT. Keep the stopped framework
+     handle for rebind; handler/context are detached and no callback is live. */
   return CR_SUCCESS;
+}
+
+BOOLEAN
+CrInterruptIsRegistered(IN CR_INTERRUPT_CONFIG *InterruptConfig) {
+  OSK_WDF_INTERRUPT_CONTEXT *Context;
+  if (InterruptConfig!=NULL && InterruptConfig->Backend!=NULL) {
+    CONST CR_INTERRUPT_BACKEND *B=InterruptConfig->Backend;
+    return B->Context!=NULL && B->IsRegistered!=NULL && B->IsRegistered(B->Context,InterruptConfig);
+  }
+  if (InterruptConfig == NULL || InterruptConfig->Handler == NULL ||
+      InterruptConfig->Interrupt == NULL) return FALSE;
+  Context = OskInterruptGetIrqContext(InterruptConfig->Interrupt);
+  return Context != NULL && Context->Config.Handler == InterruptConfig->Handler &&
+         Context->Config.Param == InterruptConfig->Param;
+}
+
+/* WDF interrupt enable/disable requires its framework power/IRQL protocol;
+ * no dispatch-safe exact-incarnation adapter has been qualified here. */
+CR_STATUS CrInterruptGetLease(CR_INTERRUPT_CONFIG *Config,CR_INTERRUPT_LEASE *Out) {
+  return Config == NULL || Out == NULL ? CR_INVALID_PARAMETER : CR_UNSUPPORTED;
+}
+CR_STATUS CrMaskInterrupt(CONST CR_INTERRUPT_LEASE *Lease) {
+  return Lease == NULL ? CR_INVALID_PARAMETER : CR_UNSUPPORTED;
+}
+CR_STATUS CrUnmaskInterrupt(CONST CR_INTERRUPT_LEASE *Lease) {
+  return Lease == NULL ? CR_INVALID_PARAMETER : CR_UNSUPPORTED;
+}
+
+CR_STATUS CrRegisterInterruptLeased(CR_INTERRUPT_CONFIG *Config,CR_INTERRUPT_LEASE *Out) {
+  return Config == NULL || Out == NULL ? CR_INVALID_PARAMETER : CR_UNSUPPORTED;
 }

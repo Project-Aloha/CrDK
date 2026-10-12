@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Sm8450LpassAudioCrLib
+  FILE_GUID = D1BA6603-38D5-49DB-A85E-E62ABF610C94
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = Sm8450LpassAudioCrLib
+[Sources]
+  Codecs.c
+  Lpass.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  AudioPrmCrLib
+  SoundWireCrLib

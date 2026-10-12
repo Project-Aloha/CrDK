@@ -21,6 +21,8 @@ typedef struct {
   BOOLEAN      KeepAlive;
   UINT16       NodeOffset;
   UINT16       NodeCount;
+  /** Linux BCM vote_scale; zero selects the standard kB/s scale of 1000. */
+  UINT32       VoteScale;
 } InterconnectTargetBcm;
 
 typedef struct {

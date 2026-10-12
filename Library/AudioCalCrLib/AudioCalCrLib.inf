@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AudioCalCrLib
+  FILE_GUID = 81CD4A22-83BC-40D2-855D-5A53A2234944
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AudioCalCrLib
+[Sources]
+  AudioCal.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  AcdbCrLib

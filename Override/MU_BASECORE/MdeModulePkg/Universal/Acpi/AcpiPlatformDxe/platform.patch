@@ -1,0 +1,102 @@
+diff --git a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
+--- a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
++++ b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
+@@ -15,6 +15,7 @@
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/DebugLib.h>
+ #include <Library/PcdLib.h>
++#include <Library/AdrenoBootUefiLib.h>
+ 
+ #include <IndustryStandard/Acpi.h>
+ 
+@@ -83,6 +84,9 @@
+     //
+     // See if it has the ACPI storage file
+     //
++    // ReadFile() queries metadata when Buffer is NULL, but the FV
++    // implementation still reads the input size before that check.
++    Size = 0;
+     Status = FvInstance->ReadFile (
+                            FvInstance,
+                            (EFI_GUID *)PcdGetPtr (PcdAcpiTableStorageFile),
+@@ -195,6 +199,7 @@
+   // Read tables from the storage file.
+   //
+   while (Status == EFI_SUCCESS) {
++    Size   = 0;
+     Status = FwVol->ReadSection (
+                       FwVol,
+                       (EFI_GUID *)PcdGetPtr (PcdAcpiTableStorageFile),
+@@ -214,19 +219,32 @@
+       ASSERT (Size >= TableSize);
+ 
+       //
+-      // Checksum ACPI table
+-      //
+-      AcpiPlatformChecksum ((UINT8 *)CurrentTable, TableSize);
++      // FACS has no ACPI description-header checksum. The byte at the
++      // usual checksum offset belongs to HardwareSignature instead.
++      //
++      if (CurrentTable->Signature != EFI_ACPI_1_0_FIRMWARE_ACPI_CONTROL_STRUCTURE_SIGNATURE) {
++        AcpiPlatformChecksum ((UINT8 *)CurrentTable, TableSize);
++      }
+ 
+       //
+       // Install ACPI table
+       //
++      BOOLEAN GpuHandled=FALSE;
++      if (CurrentTable->Signature == SIGNATURE_32('I','O','R','T')) {
++        Status=CrAdrenoBootInstallIort(AcpiTable,CurrentTable,TableSize,&GpuHandled,&TableHandle);
++        if (Status!=EFI_SUCCESS) {
++          gBS->FreePool(CurrentTable);
++          return EFI_ERROR(Status)?Status:EFI_DEVICE_ERROR;
++        }
++      }
++      if (!GpuHandled) {
+       Status = AcpiTable->InstallAcpiTable (
+                             AcpiTable,
+                             CurrentTable,
+                             TableSize,
+                             &TableHandle
+                             );
++      }
+ 
+       //
+       // Free memory allocated by ReadSection
+@@ -245,6 +263,20 @@
+     }
+   }
+ 
++  // EFI_NOT_FOUND terminates the RAW-section inventory. Preserve every
++  // other read failure instead of reporting a successful one-shot unload.
++  if (Status != EFI_NOT_FOUND) {
++    DEBUG ((DEBUG_ERROR, "AcpiPlatform: RAW section %d read failed: %r\n", Instance, Status));
++    return Status;
++  }
++
++  if (Instance == 0) {
++    DEBUG ((DEBUG_ERROR, "AcpiPlatform: table storage contains no RAW tables\n"));
++    return EFI_NOT_FOUND;
++  }
++
++  DEBUG ((DEBUG_INIT, "AcpiPlatform: installed %u RAW tables; requested unload\n", (UINT32)Instance));
++
+   //
+   // The driver does not require to be kept loaded.
+   //
+diff --git a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+--- a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
++++ b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+@@ -26,10 +26,12 @@
+ 
+ [Packages]
+   MdePkg/MdePkg.dec
++  CranePkg/CranePkg.dec
+   MdeModulePkg/MdeModulePkg.dec
+ 
+ [LibraryClasses]
+   UefiLib
++  AdrenoBootUefiLib
+   PcdLib
+   DebugLib
+   UefiBootServicesTableLib

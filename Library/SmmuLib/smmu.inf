@@ -8,6 +8,8 @@
 
 [Sources]
   smmu.c
+  SmmuDisplay.c
+  SmmuDisplayOwnership.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -15,3 +17,5 @@
 
 [LibraryClasses]
   BaseLib
+  BaseMemoryLib
+  DebugLib

@@ -12,6 +12,7 @@ root = crane.parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("--edk2", type=Path, default=root / "MU_BASECORE")
 parser.add_argument("--cc", default="clang")
+parser.add_argument("--rpmh-source", type=Path, default=crane / "Library/RpmhLib/rpmh.c")
 args = parser.parse_args()
 
 with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
@@ -30,9 +31,10 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
         "-fsanitize=address,undefined",
         "-I" + str(crane / "Tests/Mocks"),
         "-I" + str(crane / "Include"),
+        "-I" + str(crane / "Library/RpmhLib"),
         "-I" + str(args.edk2 / "MdePkg/Include"),
         "-I" + str(args.edk2 / "MdePkg/Include/X64"),
-        str(crane / "Library/RpmhLib/rpmh.c"),
+        str(args.rpmh_source),
         str(crane / "Tests/RpmhLibTest.c"),
         "-o",
         str(exe),
@@ -53,8 +55,11 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
         "-fdata-sections",
         "-Wl,--gc-sections",
         "-I" + str(crane / "Include"),
+        "-I" + str(crane / "Library/RpmhLib"),
         "-I" + str(args.edk2 / "MdePkg/Include"),
         "-I" + str(args.edk2 / "MdePkg/Include/X64"),
+        str(crane / "Library/RpmhLib/rpmh_rail.c"),
+        str(crane / "Library/RpmhArcVoteLib/RpmhArcVote.c"),
         str(crane / "Tests/RpmhCrDxeTest.c"),
         "-o",
         str(exe),

@@ -1,0 +1,40 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MpServicesCrDxe
+  FILE_GUID = 2C543760-A259-4228-BAFB-C7B804E47B48
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = MpServicesCrDxeEntryPoint
+[Sources]
+  MpServicesCrDxe.c
+  MpCrInternal.h
+  MpCrEntry.S
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  ArmLib
+  ArmMmuLib
+  ArmSmcLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  HobLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+[Protocols]
+  gEfiLoadedImageProtocolGuid
+  gEfiMpServiceProtocolGuid
+[Guids]
+  gArmMpCoreInfoGuid
+  gEfiEventExitBootServicesGuid
+[Depex]
+  TRUE
+[BuildOptions]
+  GCC:*_*_AARCH64_CC_FLAGS = -mstrict-align

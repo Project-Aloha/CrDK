@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = CrTargetSm8850Lib
+  FILE_GUID = 5092fd4f-7030-4e58-a4b2-267213da7e28
+  MODULE_TYPE = BASE
+  VERSION_STRING = 0.1
+  LIBRARY_CLASS = CrTargetLib
+[Sources]
+  CrTarget.c
+  CrGpioTarget.c
+  CrDebugUartTarget.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib

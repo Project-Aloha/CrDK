@@ -4,6 +4,7 @@
 
 #undef NULL
 #include <Library/CrDalLib.h>
+#include "../Target/Sm8450/CrUfsTarget.c"
 
 #define IMMUTABLE_ATTRIBUTES \
   (CR_DAL_DEVICE_ATTRIBUTE_STATIC_STORAGE | \
@@ -119,6 +120,8 @@ TestDiscovery (
   mBootServices.LocateProtocol = MockLocateProtocol;
   assert (CrDalGetDeviceCount (&Count) == EFI_NOT_FOUND);
   assert (Count == 0);
+  mLocateStatus = EFI_WARN_UNKNOWN_GLYPH;
+  assert (CrDalGetDeviceCount (&Count) == EFI_WARN_UNKNOWN_GLYPH && Count == 0);
   mLocateStatus = EFI_SUCCESS;
   mProtocol.Revision = CR_DAL_REVISION (2, 0);
   assert (CrDalGetDeviceCount (&Count) == EFI_INCOMPATIBLE_VERSION);
@@ -291,6 +294,45 @@ TestServiceAndCopyContracts (
   assert (Template.Context == &Clock);
 }
 
+STATIC VOID TestUfsPayload(VOID) {
+  CR_TARGET_UFS_CONTEXT C=*CrTargetGetUfsContext();
+  SetResponse(CrDalDeviceUfs,sizeof(C),&C);
+  assert(CrDalGetUfsContext()==&C);
+  mResponse.DataSize--; assert(CrDalGetUfsContext()==NULL);
+  mResponse.DataSize+=2; assert(CrDalGetUfsContext()==NULL);
+  mResponse.DataSize=sizeof(C);
+  mResponse.DataRevision=CR_DAL_REVISION(1,1); assert(CrDalGetUfsContext()==NULL);
+  mResponse.DataRevision=CR_DAL_DATA_REVISION_1;
+  mResponse.Attributes &= ~CR_DAL_DEVICE_ATTRIBUTE_IMMUTABLE; assert(CrDalGetUfsContext()==NULL);
+  SetResponse(CrDalDeviceUfs,sizeof(C),&C);
+  C.Revision++; assert(CrDalGetUfsContext()==NULL); C.Revision--;
+  mProviderStatus=EFI_WARN_UNKNOWN_GLYPH; assert(CrDalGetUfsContext()==NULL);
+  mProviderStatus=EFI_NOT_FOUND; assert(CrDalGetUfsContext()==NULL);
+  mProviderStatus=EFI_SUCCESS; assert(CrDalGetUfsContext()==&C);
+}
+
+STATIC VOID TestSdPayload(VOID) {
+  CR_TARGET_SD_CONTEXT C={.Revision=CR_TARGET_SD_REVISION,.Size=sizeof(C),.Variant=CR_TARGET_SDHC_V5,
+    .Base=0x8804000,.Bytes=0x1000,.PowerInterrupt=255,.PowerTrigger=CR_INTERRUPT_TRIGGER_LEVEL_HIGH,
+    .ClockController="gcc",.Clocks={"ahb","apps"},.Rails={{"vdd",3008,7},{"io",3008,7}},
+    .Paths={{"p",0x8000,0x8001,80000,160000},{"p",0x8002,0x8003,50000,100000}},.Gpio={.CdPin=92,.FirstPad=211,.PadControlOffset=0x1d6000}};
+  SetResponse(CrDalDeviceSd,sizeof(C),&C);assert(CrDalGetSdContext()==&C);
+  C.Revision=1;assert(CrDalGetSdContext()==NULL);C.Revision=CR_TARGET_SD_REVISION;
+  C.Gpio.ActiveDriveMa[0]=16;C.Gpio.ActiveDriveMa[1]=10;C.Gpio.ActiveDriveMa[2]=10;
+  assert(CrDalGetSdContext()==&C);
+  C.Gpio.ActiveDriveMa[1]=0;assert(CrDalGetSdContext()==NULL);
+  C.Gpio.ActiveDriveMa[1]=9;assert(CrDalGetSdContext()==NULL);
+  C.Gpio.ActiveDriveMa[1]=18;assert(CrDalGetSdContext()==NULL);
+  C.Gpio.ActiveDriveMa[0]=C.Gpio.ActiveDriveMa[1]=C.Gpio.ActiveDriveMa[2]=0;
+  assert(CrDalGetSdContext()==&C);
+  mResponse.Attributes=CR_DAL_DEVICE_ATTRIBUTE_STATIC_STORAGE|CR_DAL_DEVICE_ATTRIBUTE_SHARED_MUTABLE|CR_DAL_DEVICE_ATTRIBUTE_BOOT_SERVICES;
+  assert(CrDalGetSdContext()==NULL);SetResponse(CrDalDeviceSd,sizeof(C),&C);
+  C.Rails[1].Mode=0;assert(CrDalGetSdContext()==NULL);C.Rails[1].Mode=7;
+  C.Gpio.CdPin=C.Gpio.FirstPad;assert(CrDalGetSdContext()==NULL);C.Gpio.CdPin=92;
+  mResponse.DataSize--;assert(CrDalGetSdContext()==NULL);
+  SetResponse(CrDalDeviceSd,sizeof(C),&C);mProviderStatus=EFI_WARN_UNKNOWN_GLYPH;assert(CrDalGetSdContext()==NULL);mProviderStatus=EFI_NOT_FOUND;assert(CrDalGetSdContext()==NULL);mProviderStatus=EFI_SUCCESS;
+}
+
 STATIC VOID
 TestEnumeration (
   VOID
@@ -321,6 +363,8 @@ main (void)
   TestDiscovery ();
   TestTypedPayloadValidation ();
   TestServiceAndCopyContracts ();
+  TestSdPayload ();
+  TestUfsPayload ();
   TestEnumeration ();
   puts ("CrDAL client: discovery retry, typed payload validation, service and copy contracts passed");
   return 0;

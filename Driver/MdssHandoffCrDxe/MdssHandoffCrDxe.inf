@@ -1,0 +1,28 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssHandoffCrDxe
+  FILE_GUID = EF3B23CB-B9F8-48C3-8291-C4B81A96A1E2
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = MdssHandoffCrDxeEntryPoint
+[Sources]
+  MdssHandoffCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  DebugLib
+  MdssHandoffUefiLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiSmmuCrProtocolGuid
+  gEfiMdssHandoffProtocolGuid
+  gEfiAcpiTableProtocolGuid
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gEfiEventReadyToBootGuid
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiSmmuCrProtocolGuid

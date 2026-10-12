@@ -1,0 +1,25 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssDsiCmdCrLib
+  FILE_GUID = CCF7289E-BA7A-45B1-BD2C-21F358A2C00A
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssDsiCmdCrLib
+[Sources]
+  Plan.c
+  Io.c
+  Host.c
+  PanelR66451.c
+  Panel.c
+  PhySm8250.c
+  DscLegacy.c
+  DpuCommand.c
+  Lifecycle.c
+  Freeze.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  MdssDscCrLib
+  BaseMemoryLib
+  CompilerIntrinsicsLib

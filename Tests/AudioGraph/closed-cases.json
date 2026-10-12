@@ -1,0 +1,1415 @@
+{
+  "scope": "Independent research inventory of genuine C1a plans; source pins in C1b plan. No firmware compatibility claim.",
+  "cases": [
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 1,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 6,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 7,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 8,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 9,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 10,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 18,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 20,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 22,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 36,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "case": 37,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 1,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 6,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 7,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 8,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 9,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 10,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 18,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 20,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 22,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 36,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "case": 37,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 1,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 6,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 7,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 8,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 9,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 10,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 18,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 20,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 22,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 36,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "case": 37,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 1,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 6,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 7,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 8,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 9,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 10,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 18,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 20,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 22,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 36,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 37,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 44,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 45,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 46,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 47,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 48,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 49,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 50,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 51,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 52,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 53,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 54,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 55,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 56,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 57,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 58,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "case": 59,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "case": 15,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "case": 26,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "case": 38,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 1,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 6,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 7,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 8,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x401d"
+          ]
+        },
+        {
+          "pid": "0x8001004",
+          "a": "0x4038",
+          "b": "0x4133",
+          "external": [
+            "0x4038"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 9,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 10,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 11,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 18,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 19,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 20,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 21,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 22,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 23,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 24,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 29,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 30,
+      "closed_module_graph": false,
+      "external_links": [
+        {
+          "pid": "0x8001004",
+          "a": "0x401d",
+          "b": "0x4133",
+          "external": [
+            "0x4133"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 36,
+      "closed_module_graph": true,
+      "external_links": []
+    },
+    {
+      "fixture": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "case": 37,
+      "closed_module_graph": true,
+      "external_links": []
+    }
+  ]
+}

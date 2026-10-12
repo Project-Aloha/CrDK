@@ -1,0 +1,27 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = ChargerBootCrLib
+  FILE_GUID = 0BFAAA1B-8FCA-48F2-9DFA-8E50A6B63FEF
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ChargerBootLib|DXE_DRIVER
+[Sources]
+  ChargerBootCrLib.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+[Guids]
+  gChargerCrFileGuid
+[Protocols]
+  gEfiCrFdtProtocolGuid
+  gEfiLoadedImageProtocolGuid

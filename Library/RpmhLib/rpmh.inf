@@ -20,6 +20,8 @@
 
 [LibraryClasses]
   ArmLib
+  BaseLib
+  BaseMemoryLib
   DebugLib
   IoLib
   OskInterruptLib
@@ -27,3 +29,6 @@
 
 [Sources.common]
   rpmh.c
+  rpmh_rail.c
+  rpmh_rail_votes.c
+  rpmh_rail_observe.c

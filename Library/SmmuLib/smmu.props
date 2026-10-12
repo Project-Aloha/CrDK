@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <CRANE_CRDK_LIB_SMMU_DIR>$(MSBuildThisFileDirectory)</CRANE_CRDK_LIB_SMMU_DIR>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_PropertySheetDisplayName>SmmuLib</_PropertySheetDisplayName>
+    <IncludePath>$(CRANE_CRDK_LIB_SMMU_DIR);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="$(CRANE_CRDK_LIB_SMMU_DIR)smmu.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_SMMU_DIR)SmmuDisplay.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_SMMU_DIR)SmmuDisplayOwnership.c" />
+  </ItemGroup>
+</Project>

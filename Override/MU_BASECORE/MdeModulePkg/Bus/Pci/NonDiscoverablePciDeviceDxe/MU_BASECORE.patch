@@ -1,0 +1,192 @@
+diff --git a/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c b/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
+index d2734a4882..e22044971e 100644
+--- a/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
++++ b/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
+@@ -728,6 +728,7 @@ CoherentPciIoMap (
+ {
+   NON_DISCOVERABLE_PCI_DEVICE           *Dev;
+   EFI_STATUS                            Status;
++  EFI_STATUS                            CleanupStatus;
+   NON_DISCOVERABLE_PCI_DEVICE_MAP_INFO  *MapInfo;
+ 
+   // MU_CHANGE [BEGIN]
+@@ -752,6 +753,7 @@ CoherentPciIoMap (
+   }
+ 
+   // MU_CHANGE [BEGIN]
++  *Mapping = NULL;
+   MapInfo = AllocatePool (sizeof *MapInfo);
+   if (MapInfo == NULL) {
+     return EFI_OUT_OF_RESOURCES;
+@@ -875,13 +877,16 @@ CoherentPciIoMap (
+   return EFI_SUCCESS;
+ 
+ Unmap:
+-  Status = IoMmuUnmap (MapInfo->IoMmuContext);
+-  if (EFI_ERROR (Status)) {
++  CleanupStatus = IoMmuUnmap (MapInfo->IoMmuContext);
++  if (EFI_ERROR (CleanupStatus)) {
+     DEBUG ((DEBUG_ERROR, "%a - IoMmuUnmap failed.\n", __func__));
+     ASSERT (FALSE);
++    // Keep the token until the IOMMU relinquishes its mapping.
++    return Status;
+   }
+ 
+ FreeMapInfo:
++  *Mapping = NULL;
+   FreePool (MapInfo);
+   return Status;
+ 
+@@ -987,9 +992,6 @@ CoherentPciIoAllocateBuffer (
+   )
+ {
+   NON_DISCOVERABLE_PCI_DEVICE  *Dev;
+-  EFI_PHYSICAL_ADDRESS         AllocAddress;
+-  EFI_ALLOCATE_TYPE            AllocType;
+-  EFI_STATUS                   Status;
+ 
+   if ((Attributes & ~(EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE |
+                       EFI_PCI_ATTRIBUTE_MEMORY_CACHED)) != 0)
+@@ -1007,25 +1009,12 @@ CoherentPciIoAllocateBuffer (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  //
+-  // Allocate below 4 GB if the dual address cycle attribute has not
+-  // been set. If the system has no memory available below 4 GB, there
+-  // is little we can do except propagate the error.
+-  //
+   Dev = NON_DISCOVERABLE_PCI_DEVICE_FROM_PCI_IO (This);
+-  if ((Dev->Attributes & EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE) == 0) {
+-    AllocAddress = MAX_UINT32;
+-    AllocType    = AllocateMaxAddress;
+-  } else {
+-    AllocType = AllocateAnyPages;
+-  }
+-
+-  Status = gBS->AllocatePages (AllocType, MemoryType, Pages, &AllocAddress);
+-  if (!EFI_ERROR (Status)) {
+-    *HostAddress = (VOID *)(UINTN)AllocAddress;
+-  }
+-
+-  return Status;
++  // MU_CHANGE: Common buffers must belong to the IOMMU allocation owner.
++  return IoMmuAllocateBuffer (
++           Type, MemoryType, Pages, HostAddress,
++           Attributes | (Dev->Attributes & EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE)
++           );
+ }
+ 
+ /**
+@@ -1047,8 +1036,7 @@ CoherentPciIoFreeBuffer (
+   IN  VOID                 *HostAddress
+   )
+ {
+-  FreePages (HostAddress, Pages);
+-  return EFI_SUCCESS;
++  return IoMmuFreeBuffer (Pages, HostAddress); // MU_CHANGE
+ }
+ 
+ /**
+@@ -1145,6 +1133,9 @@ NonCoherentPciIoFreeBuffer (
+   if (EndPages != 0) {
+     AllocTail = AllocatePool (sizeof *AllocTail);
+     if (AllocTail == NULL) {
++      if (AllocHead != NULL) {
++        FreePool (AllocHead);
++      }
+       return EFI_OUT_OF_RESOURCES;
+     }
+ 
+@@ -1174,18 +1165,32 @@ NonCoherentPciIoFreeBuffer (
+                   Alloc->Attributes
+                   );
+   if (EFI_ERROR (Status)) {
+-    goto FreeAlloc;
++    goto RestoreAllocation;
+   }
+ 
+   //
+   // If we fail to restore the original attributes, it is better to leak the
+   // memory than to return it to the heap
+   //
+-  FreePages (HostAddress, Pages);
++  Status = CoherentPciIoFreeBuffer (This, Pages, HostAddress); // MU_CHANGE
++  if (EFI_ERROR (Status)) {
++    goto RestoreAllocation;
++  }
+ 
+-FreeAlloc:
+   FreePool (Alloc);
+   return Status;
++
++RestoreAllocation:
++  if (AllocHead != NULL) {
++    RemoveEntryList (&AllocHead->List);
++    FreePool (AllocHead);
++  }
++  if (AllocTail != NULL) {
++    RemoveEntryList (&AllocTail->List);
++    FreePool (AllocTail);
++  }
++  InsertHeadList (&Dev->UncachedAllocationList, &Alloc->List);
++  return Status;
+ }
+ 
+ /**
+@@ -1240,7 +1245,7 @@ NonCoherentPciIoAllocateBuffer (
+              MemoryType,
+              Pages,
+              &AllocAddress,
+-             Attributes
++             Attributes & ~EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE // MU_CHANGE: this adapter selects WC below
+              );
+   if (EFI_ERROR (Status)) {
+     return Status;
+@@ -1262,7 +1267,8 @@ NonCoherentPciIoAllocateBuffer (
+   //
+   // Set the preferred memory attributes
+   //
+-  if (((Attributes & EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE) != 0) ||
++  if (((GcdDescriptor.Attributes & EFI_MEMORY_WC) != 0) || // MU_CHANGE: retain normal noncached DMA memory
++      ((Attributes & EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE) != 0) ||
+       ((GcdDescriptor.Capabilities & EFI_MEMORY_UC) == 0))
+   {
+     //
+@@ -1382,6 +1388,7 @@ NonCoherentPciIoMap (
+ {
+   NON_DISCOVERABLE_PCI_DEVICE           *Dev;
+   EFI_STATUS                            Status;
++  EFI_STATUS                            CleanupStatus;
+   NON_DISCOVERABLE_PCI_DEVICE_MAP_INFO  *MapInfo;
+   UINTN                                 AlignMask;
+   VOID                                  *AllocAddress;
+@@ -1410,6 +1417,7 @@ NonCoherentPciIoMap (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
++  *Mapping = NULL;
+   MapInfo = AllocatePool (sizeof *MapInfo);
+   if (MapInfo == NULL) {
+     return EFI_OUT_OF_RESOURCES;
+@@ -1569,15 +1577,18 @@ NonCoherentPciIoMap (
+   return EFI_SUCCESS;
+ 
+ Unmap:
+-  Status = IoMmuUnmap (MapInfo->IoMmuContext);
+-  if (EFI_ERROR (Status)) {
++  CleanupStatus = IoMmuUnmap (MapInfo->IoMmuContext);
++  if (EFI_ERROR (CleanupStatus)) {
+     DEBUG ((DEBUG_ERROR, "%a - IoMmuUnmap failed.\n", __func__));
+     ASSERT (FALSE);
++    // Keep the token until the IOMMU relinquishes its mapping.
++    return Status;
+   }
+ 
+   // MU_CHANGE [END]
+ 
+ FreeMapInfo:
++  *Mapping = NULL;
+   FreePool (MapInfo);
+ 
+   return Status;

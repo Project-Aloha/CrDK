@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = Hdk8245UsbTargetLib
+  FILE_GUID = aa43ef77-fdcb-4c8a-963d-38ad81af8245
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = HdkUsbTargetLib
+[Sources]
+  CrUsbTarget.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

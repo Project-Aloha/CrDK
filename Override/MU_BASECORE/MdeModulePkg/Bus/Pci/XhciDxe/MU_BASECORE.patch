@@ -1,0 +1,2078 @@
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+index c337f15118..cb5ec93159 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+@@ -121,6 +121,12 @@ XhcGetCapability (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc             = XHC_FROM_THIS (This);
+   *MaxSpeed       = EFI_USB_SPEED_SUPER;
+@@ -128,6 +134,7 @@ XhcGetCapability (
+   *Is64BitCapable = (UINT8)Xhc->Support64BitDma;
+   DEBUG ((DEBUG_INFO, "XhcGetCapability: %d ports, 64 bit %d\n", *PortNumber, *Is64BitCapable));
+ 
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return EFI_SUCCESS;
+@@ -171,6 +178,12 @@ XhcReset (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   switch (Attributes) {
+     case EFI_USB_HC_RESET_GLOBAL:
+@@ -225,6 +238,7 @@ XhcReset (
+ 
+ ON_EXIT:
+   DEBUG ((DEBUG_INFO, "XhcReset: status %r\n", Status));
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -258,6 +272,12 @@ XhcGetState (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -268,6 +288,7 @@ XhcGetState (
+   }
+ 
+   DEBUG ((DEBUG_INFO, "XhcGetState: current state %d\n", *State));
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return EFI_SUCCESS;
+@@ -308,6 +329,12 @@ XhcSetState (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -344,6 +371,7 @@ XhcSetState (
+   }
+ 
+   DEBUG ((DEBUG_INFO, "XhcSetState: status %r\n", Status));
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -387,6 +415,12 @@ XhcGetRootHubPortStatus (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc    = XHC_FROM_THIS (This);
+   Status = EFI_SUCCESS;
+@@ -489,6 +523,7 @@ XhcGetRootHubPortStatus (
+   }
+ 
+ ON_EXIT:
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+@@ -521,6 +556,12 @@ XhcSetRootHubPortFeature (
+   EFI_TPL            OldTpl;
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc    = XHC_FROM_THIS (This);
+   Status = EFI_SUCCESS;
+@@ -601,6 +642,7 @@ XhcSetRootHubPortFeature (
+ 
+ ON_EXIT:
+   DEBUG ((DEBUG_INFO, "XhcSetRootHubPortFeature: status %r\n", Status));
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -637,6 +679,12 @@ XhcClearRootHubPortFeature (
+   EFI_TPL            OldTpl;
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc    = XHC_FROM_THIS (This);
+   Status = EFI_SUCCESS;
+@@ -735,6 +783,7 @@ XhcClearRootHubPortFeature (
+ 
+ ON_EXIT:
+   DEBUG ((DEBUG_INFO, "XhcClearRootHubPortFeature: status %r\n", Status));
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -945,6 +994,12 @@ XhcControlTransfer (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -997,6 +1052,11 @@ XhcControlTransfer (
+     // can find out the actual device address by it.
+     //
+     Xhc->UsbDevContext[SlotId].BusDevAddr = (UINT8)Request->Value;
++    DEBUG ((DEBUG_WARN, "Xhc address: bus=%u hardware=%u slot=%u speed=%u route=0x%x root=%u parent=0x%x\n",
++            (UINT8)Request->Value, Xhc->UsbDevContext[SlotId].XhciDevAddr, SlotId, DeviceSpeed,
++            Xhc->UsbDevContext[SlotId].RouteString.Route.RouteString,
++            Xhc->UsbDevContext[SlotId].RouteString.Route.RootPortNum,
++            Xhc->UsbDevContext[SlotId].ParentRouteString.Dword));
+     Status                                = EFI_SUCCESS;
+     goto ON_EXIT;
+   }
+@@ -1211,9 +1271,12 @@ XhcControlTransfer (
+ 
+ ON_EXIT:
+   if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "XhcControlTransfer: error - %r, transfer - %x\n", Status, *TransferResult));
++    DEBUG ((DEBUG_ERROR, "XhcControlTransfer: bus=%u speed=%u request=%02x/%02x value=%04x index=%04x length=%u error=%r transfer=%x\n",
++            DeviceAddress, DeviceSpeed, Request->RequestType, Request->Request,
++            Request->Value, Request->Index, Request->Length, Status, *TransferResult));
+   }
+ 
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -1295,6 +1358,12 @@ XhcBulkTransfer (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -1343,6 +1412,7 @@ ON_EXIT:
+     DEBUG ((DebugErrorLevel, "XhcBulkTransfer: error - %r, transfer - %x\n", Status, *TransferResult));
+   }
+ 
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -1398,7 +1468,6 @@ XhcAsyncInterruptTransfer (
+   URB                *Urb;
+   EFI_STATUS         Status;
+   UINT8              SlotId;
+-  UINT8              Index;
+   EFI_TPL            OldTpl;
+ 
+   //
+@@ -1423,6 +1492,12 @@ XhcAsyncInterruptTransfer (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -1430,20 +1505,8 @@ XhcAsyncInterruptTransfer (
+   // Delete Async interrupt transfer request.
+   //
+   if (!IsNewTransfer) {
+-    //
+-    // The delete request may happen after device is detached.
+-    //
+-    for (Index = 0; Index < 255; Index++) {
+-      if (Xhc->UsbDevContext[Index + 1].BusDevAddr == DeviceAddress) {
+-        break;
+-      }
+-    }
+-
+-    if (Index == 255) {
+-      Status = EFI_INVALID_PARAMETER;
+-      goto ON_EXIT;
+-    }
+-
++    // The URB list owns cancellation identity. Slot/bus mappings can already
++    // have been retired or reused by GET_PORT_STATUS and SET_ADDRESS.
+     Status = XhciDelAsyncIntTransfer (Xhc, DeviceAddress, EndPointAddress);
+     DEBUG ((DEBUG_INFO, "XhcAsyncInterruptTransfer: remove old transfer for addr %d, Status = %r\n", DeviceAddress, Status));
+     goto ON_EXIT;
+@@ -1462,6 +1525,7 @@ XhcAsyncInterruptTransfer (
+   //
+   SlotId = XhcBusDevAddrToSlotId (Xhc, DeviceAddress);
+   if (SlotId == 0) {
++    Status = EFI_DEVICE_ERROR;
+     goto ON_EXIT;
+   }
+ 
+@@ -1487,6 +1551,7 @@ XhcAsyncInterruptTransfer (
+ 
+ ON_EXIT:
+   Xhc->PciIo->Flush (Xhc->PciIo);
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -1561,6 +1626,12 @@ XhcSyncInterruptTransfer (
+   }
+ 
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc = XHC_FROM_THIS (This);
++  if (Xhc->Frozen) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   Xhc = XHC_FROM_THIS (This);
+ 
+@@ -1599,6 +1670,7 @@ ON_EXIT:
+     DEBUG ((DEBUG_ERROR, "XhcSyncInterruptTransfer: error - %r, transfer - %x\n", Status, *TransferResult));
+   }
+ 
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ 
+   return Status;
+@@ -1788,35 +1860,30 @@ ON_EXIT:
+ }
+ 
+ /**
+-  Create and initialize a USB_XHCI_INSTANCE structure.
++  Initialize a previously allocated USB_XHCI_INSTANCE structure.
+ 
+   @param  PciIo                  The PciIo on this device.
+   @param  DevicePath             The device path of host controller.
+   @param  OriginalPciAttributes  Original PCI attributes.
+ 
+-  @return The allocated and initialized USB_XHCI_INSTANCE structure if created,
+-          otherwise NULL.
++  @return EFI_SUCCESS when initialized, otherwise the service failure.
+ 
+ **/
+-USB_XHCI_INSTANCE *
+-XhcCreateUsbHc (
++STATIC EFI_STATUS EFIAPI XhcFreeze (EDKII_USB2_HC_FREEZE_PROTOCOL *This, UINT32 *ActiveCalls);
++
++EFI_STATUS
++XhcInitializeUsbHc (
++  IN USB_XHCI_INSTANCE         *Xhc,
+   IN EFI_PCI_IO_PROTOCOL       *PciIo,
+   IN EFI_DEVICE_PATH_PROTOCOL  *DevicePath,
+   IN UINT64                    OriginalPciAttributes
+   )
+ {
+-  USB_XHCI_INSTANCE  *Xhc;
+   EFI_STATUS         Status;
+   UINT32             PageSize;
+   UINT16             ExtCapReg;
+   UINT8              ReleaseNumber;
+ 
+-  Xhc = AllocateZeroPool (sizeof (USB_XHCI_INSTANCE));
+-
+-  if (Xhc == NULL) {
+-    return NULL;
+-  }
+-
+   //
+   // Initialize private data structure
+   //
+@@ -1825,6 +1892,9 @@ XhcCreateUsbHc (
+   Xhc->DevicePath            = DevicePath;
+   Xhc->OriginalPciAttributes = OriginalPciAttributes;
+   CopyMem (&Xhc->Usb2Hc, &gXhciUsb2HcTemplate, sizeof (EFI_USB2_HC_PROTOCOL));
++  Xhc->Freeze.Revision = EDKII_USB2_HC_FREEZE_PROTOCOL_REVISION;
++  Xhc->Freeze.HostController = &Xhc->Usb2Hc;
++  Xhc->Freeze.Freeze = XhcFreeze;
+ 
+   Status = PciIo->Pci.Read (
+                         PciIo,
+@@ -1859,6 +1929,7 @@ XhcCreateUsbHc (
+   PageSize = XhcReadOpReg (Xhc, XHC_PAGESIZE_OFFSET);
+   if ((PageSize & (~XHC_PAGESIZE_MASK)) != 0) {
+     DEBUG ((DEBUG_ERROR, "XhcCreateUsb3Hc: Reserved bits are not 0 for PageSize\n"));
++    Status = EFI_UNSUPPORTED;
+     goto ON_ERROR;
+   }
+ 
+@@ -1898,11 +1969,27 @@ XhcCreateUsbHc (
+     goto ON_ERROR;
+   }
+ 
+-  return Xhc;
++  return EFI_SUCCESS;
+ 
+ ON_ERROR:
+-  FreePool (Xhc);
+-  return NULL;
++  return Status;
++}
++
++/** Close software writers only; the platform owns subsequent hardware retirement. */
++STATIC EFI_STATUS EFIAPI
++XhcFreeze (EDKII_USB2_HC_FREEZE_PROTOCOL *This, UINT32 *ActiveCalls)
++{
++  USB_XHCI_INSTANCE *Xhc;
++  EFI_TPL OldTpl;
++  if (This == NULL || ActiveCalls == NULL) return EFI_INVALID_PARAMETER;
++  Xhc = CR (This, USB_XHCI_INSTANCE, Freeze, XHCI_INSTANCE_SIG);
++  if (This->Revision != EDKII_USB2_HC_FREEZE_PROTOCOL_REVISION ||
++      This->HostController != &Xhc->Usb2Hc) return EFI_INVALID_PARAMETER;
++  OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc->Frozen = TRUE;
++  *ActiveCalls = Xhc->ActiveCalls;
++  gBS->RestoreTPL (OldTpl);
++  return *ActiveCalls == 0 ? EFI_SUCCESS : EFI_NOT_READY;
+ }
+ 
+ /**
+@@ -1922,20 +2009,23 @@ XhcExitBootService (
+ {
+   USB_XHCI_INSTANCE    *Xhc;
+   EFI_PCI_IO_PROTOCOL  *PciIo;
++  UINT32 ActiveCalls;
+ 
+   Xhc   = (USB_XHCI_INSTANCE *)Context;
+   PciIo = Xhc->PciIo;
+ 
++  // A platform that has closed us owns hardware retirement from this point.
++  // Do not write PCI attributes or registers after its final observation.
++  if (Xhc->Frozen) return;
++  if (XhcFreeze (&Xhc->Freeze, &ActiveCalls) != EFI_SUCCESS) return;
++
+   //
+   // Stop AsyncRequest Polling timer then stop the XHCI driver
+   // and uninstall the XHCI protocl.
+   //
+-  gBS->SetTimer (Xhc->PollTimer, TimerCancel, 0);
++  if (Xhc->PollTimer != NULL) gBS->SetTimer (Xhc->PollTimer, TimerCancel, 0);
+   XhcHaltHC (Xhc, XHC_GENERIC_TIMEOUT);
+ 
+-  if (Xhc->PollTimer != NULL) {
+-    gBS->CloseEvent (Xhc->PollTimer);
+-  }
+ 
+   XhcClearBiosOwnership (Xhc);
+ 
+@@ -1950,6 +2040,88 @@ XhcExitBootService (
+            );
+ }
+ 
++// Failed Start and unpublished Stop instances stay reachable through Stop while their
++// PCI BY_DRIVER open prevents the parent and this image from being removed.
++STATIC USB_XHCI_INSTANCE *mXhcFailedStarts;
++
++STATIC
++USB_XHCI_INSTANCE *
++XhcFindFailedStart (
++  IN EFI_HANDLE Controller
++  )
++{
++  USB_XHCI_INSTANCE *Xhc;
++  for (Xhc = mXhcFailedStarts; Xhc != NULL; Xhc = Xhc->FailedNext) {
++    if (Xhc->FailedController == Controller) return Xhc;
++  }
++  return NULL;
++}
++
++STATIC
++EFI_STATUS
++XhcCleanupFailedStart (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN USB_XHCI_INSTANCE *Xhc
++  )
++{
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  USB_XHCI_INSTANCE **Link;
++  OldTpl = gBS->RaiseTPL (XHC_TPL);
++  if (Xhc->Frozen || Xhc->ActiveCalls != 0) {
++    Status = EFI_NOT_READY;
++    goto DONE;
++  }
++  // Reset or Run may have failed after committing writes. A failed return does
++  // not establish that the hardware has stopped using its schedule.
++  if (Xhc->FailedHardwareTouched && !Xhc->FailedHalted) {
++    Status = XhcHaltHC (Xhc, XHC_GENERIC_TIMEOUT);
++    if (Status != EFI_SUCCESS) goto DONE;
++    XhcClearBiosOwnership (Xhc);
++    Xhc->FailedHalted = TRUE;
++  }
++  if (Xhc->PollTimer != NULL) {
++    Status = gBS->CloseEvent (Xhc->PollTimer);
++    if (Status != EFI_SUCCESS) goto DONE;
++    Xhc->PollTimer = NULL;
++  }
++  if (Xhc->ExitBootServiceEvent != NULL) {
++    Status = gBS->CloseEvent (Xhc->ExitBootServiceEvent);
++    if (Status != EFI_SUCCESS) goto DONE;
++    Xhc->ExitBootServiceEvent = NULL;
++  }
++  if (Xhc->FailedSlotsOwned) {
++    // This used to be a published controller. Both callbacks are now closed;
++    // retire slot/URB memory while PCI register access is still enabled.
++    XhcFreeDeviceSlots (Xhc);
++    XhciDelAllAsyncIntTransfers (Xhc);
++    if (!IsListEmpty (&Xhc->AsyncIntTransfers)) {
++      Status = EFI_NOT_READY;
++      goto DONE;
++    }
++    Xhc->FailedSlotsOwned = FALSE;
++  }
++  if (Xhc->FailedAttributesSaved && !Xhc->FailedAttributesRestored) {
++    Status = Xhc->PciIo->Attributes (Xhc->PciIo, EfiPciIoAttributeOperationSet,
++                                    Xhc->OriginalPciAttributes, NULL);
++    if (Status != EFI_SUCCESS) goto DONE;
++    Xhc->FailedAttributesRestored = TRUE;
++  }
++  Status = gBS->CloseProtocol (Xhc->FailedController, &gEfiPciIoProtocolGuid,
++                              This->DriverBindingHandle, Xhc->FailedController);
++  if (Status != EFI_SUCCESS) goto DONE;
++  // Still at TPL_NOTIFY: no parent teardown or polling can interleave between
++  // dropping the PCI open and freeing its stopped DMA allocations.
++  XhcFreeSched (Xhc);
++  if (Xhc->ControllerNameTable != NULL) FreeUnicodeStringTable (Xhc->ControllerNameTable);
++  for (Link = &mXhcFailedStarts; *Link != Xhc; Link = &(*Link)->FailedNext) {}
++  *Link = Xhc->FailedNext;
++  FreePool (Xhc);
++DONE:
++  gBS->RestoreTPL (OldTpl);
++  return Status == EFI_SUCCESS || EFI_ERROR (Status) ? Status : EFI_NOT_READY;
++}
++
+ /**
+   Starting the Usb XHCI Driver.
+ 
+@@ -1975,9 +2147,16 @@ XhcDriverBindingStart (
+   EFI_PCI_IO_PROTOCOL       *PciIo;
+   UINT64                    Supports;
+   UINT64                    OriginalPciAttributes;
+-  BOOLEAN                   PciAttributesSaved;
+   USB_XHCI_INSTANCE         *Xhc;
+   EFI_DEVICE_PATH_PROTOCOL  *HcDevicePath;
++  EFI_STATUS                CleanupStatus;
++  EFI_TPL                   OldTpl;
++
++  if (XhcFindFailedStart (Controller) != NULL) return EFI_NOT_READY;
++  // Allocate the cleanup journal before taking the PCI open or changing any
++  // attributes. Even initialization failure then has a reachable Stop path.
++  Xhc = AllocateZeroPool (sizeof (*Xhc));
++  if (Xhc == NULL) return EFI_OUT_OF_RESOURCES;
+ 
+   //
+   // Open the PciIo Protocol, then enable the USB host controller
+@@ -1991,9 +2170,11 @@ XhcDriverBindingStart (
+                   EFI_OPEN_PROTOCOL_BY_DRIVER
+                   );
+ 
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (Status != EFI_SUCCESS) {
++    FreePool (Xhc);
++    return Status == EFI_SUCCESS || EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
++  Xhc->PciIo = PciIo;
+ 
+   //
+   // Open Device Path Protocol for on USB host controller
+@@ -2008,7 +2189,6 @@ XhcDriverBindingStart (
+                         EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                         );
+ 
+-  PciAttributesSaved = FALSE;
+   //
+   // Save original PCI attributes
+   //
+@@ -2019,11 +2199,12 @@ XhcDriverBindingStart (
+                     &OriginalPciAttributes
+                     );
+ 
+-  if (EFI_ERROR (Status)) {
+-    goto CLOSE_PCIIO;
++  if (Status != EFI_SUCCESS) {
++    goto FREE_POOL;
+   }
+ 
+-  PciAttributesSaved = TRUE;
++  Xhc->FailedAttributesSaved = TRUE;
++  Xhc->OriginalPciAttributes = OriginalPciAttributes;
+ 
+   Status = PciIo->Attributes (
+                     PciIo,
+@@ -2031,7 +2212,7 @@ XhcDriverBindingStart (
+                     0,
+                     &Supports
+                     );
+-  if (!EFI_ERROR (Status)) {
++  if (Status == EFI_SUCCESS) {
+     Supports &= (UINT64)EFI_PCI_DEVICE_ENABLE;
+     Status    = PciIo->Attributes (
+                          PciIo,
+@@ -2041,19 +2222,18 @@ XhcDriverBindingStart (
+                          );
+   }
+ 
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: failed to enable controller\n"));
+-    goto CLOSE_PCIIO;
++    goto FREE_POOL;
+   }
+ 
+   //
+   // Create then install USB2_HC_PROTOCOL
+   //
+-  Xhc = XhcCreateUsbHc (PciIo, HcDevicePath, OriginalPciAttributes);
+-
+-  if (Xhc == NULL) {
+-    DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: failed to create USB2_HC\n"));
+-    return EFI_OUT_OF_RESOURCES;
++  Status = XhcInitializeUsbHc (Xhc, PciIo, HcDevicePath, OriginalPciAttributes);
++  if (Status != EFI_SUCCESS) {
++    DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: failed to initialize USB2_HC\n"));
++    goto FREE_POOL;
+   }
+ 
+   //
+@@ -2067,7 +2247,7 @@ XhcDriverBindingStart (
+                       EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE,
+                       NULL
+                       );
+-    if (!EFI_ERROR (Status)) {
++    if (Status == EFI_SUCCESS) {
+       Xhc->Support64BitDma = TRUE;
+     } else {
+       DEBUG ((
+@@ -2080,10 +2260,11 @@ XhcDriverBindingStart (
+     }
+   }
+ 
++  Xhc->FailedHardwareTouched = TRUE;
+   XhcSetBiosOwnership (Xhc);
+ 
+   Status = XhcResetHC (Xhc, XHC_RESET_TIMEOUT);
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "%a: failed to reset HC\n", __func__));
+     goto FREE_POOL;
+   }
+@@ -2104,15 +2285,15 @@ XhcDriverBindingStart (
+   //
+   // Start the Host Controller
+   //
+-  XhcRunHC (Xhc, XHC_GENERIC_TIMEOUT);
++  Status = XhcRunHC (Xhc, XHC_GENERIC_TIMEOUT);
++  if (Status != EFI_SUCCESS) goto FREE_POOL;
+ 
+   //
+   // Start the asynchronous interrupt monitor
+   //
+   Status = gBS->SetTimer (Xhc->PollTimer, TimerPeriodic, XHC_ASYNC_TIMER_INTERVAL);
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: failed to start async interrupt monitor\n"));
+-    XhcHaltHC (Xhc, XHC_GENERIC_TIMEOUT);
+     goto FREE_POOL;
+   }
+ 
+@@ -2127,7 +2308,7 @@ XhcDriverBindingStart (
+                   &gEfiEventExitBootServicesGuid,
+                   &Xhc->ExitBootServiceEvent
+                   );
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     goto FREE_POOL;
+   }
+ 
+@@ -2150,13 +2331,13 @@ XhcDriverBindingStart (
+     FALSE
+     );
+ 
+-  Status = gBS->InstallProtocolInterface (
++  Status = gBS->InstallMultipleProtocolInterfaces (
+                   &Controller,
+-                  &gEfiUsb2HcProtocolGuid,
+-                  EFI_NATIVE_INTERFACE,
+-                  &Xhc->Usb2Hc
++                  &gEfiUsb2HcProtocolGuid, &Xhc->Usb2Hc,
++                  &gEdkiiUsb2HcFreezeProtocolGuid, &Xhc->Freeze,
++                  NULL
+                   );
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: failed to install USB2_HC Protocol\n"));
+     goto FREE_POOL;
+   }
+@@ -2165,31 +2346,18 @@ XhcDriverBindingStart (
+   return EFI_SUCCESS;
+ 
+ FREE_POOL:
+-  gBS->CloseEvent (Xhc->PollTimer);
+-  XhcFreeSched (Xhc);
+-  FreePool (Xhc);
+-
+-CLOSE_PCIIO:
+-  if (PciAttributesSaved) {
+-    //
+-    // Restore original PCI attributes
+-    //
+-    PciIo->Attributes (
+-             PciIo,
+-             EfiPciIoAttributeOperationSet,
+-             OriginalPciAttributes,
+-             NULL
+-             );
++  OldTpl = gBS->RaiseTPL (XHC_TPL);
++  Xhc->FailedStart = TRUE;
++  Xhc->FailedController = Controller;
++  Xhc->FailedNext = mXhcFailedStarts;
++  mXhcFailedStarts = Xhc;
++  gBS->RestoreTPL (OldTpl);
++  CleanupStatus = XhcCleanupFailedStart (This, Xhc);
++  if (CleanupStatus != EFI_SUCCESS) {
++    DEBUG ((DEBUG_ERROR, "XhcDriverBindingStart: retained failed start for Stop: %r\n", CleanupStatus));
+   }
++  return Status == EFI_SUCCESS || EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+ 
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  return Status;
+ }
+ 
+ /**
+@@ -2216,9 +2384,11 @@ XhcDriverBindingStop (
+ {
+   EFI_STATUS            Status;
+   EFI_USB2_HC_PROTOCOL  *Usb2Hc;
+-  EFI_PCI_IO_PROTOCOL   *PciIo;
+   USB_XHCI_INSTANCE     *Xhc;
+-  UINT8                 Index;
++  EFI_TPL               OldTpl;
++
++  Xhc = XhcFindFailedStart (Controller);
++  if (Xhc != NULL) return XhcCleanupFailedStart (This, Xhc);
+ 
+   //
+   // Test whether the Controller handler passed in is a valid
+@@ -2234,84 +2404,53 @@ XhcDriverBindingStop (
+                   EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                   );
+ 
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  Status = gBS->UninstallProtocolInterface (
+-                  Controller,
+-                  &gEfiUsb2HcProtocolGuid,
+-                  Usb2Hc
+-                  );
+-
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (Status != EFI_SUCCESS) {
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+ 
+   Xhc   = XHC_FROM_THIS (Usb2Hc);
+-  PciIo = Xhc->PciIo;
+ 
+-  //
+-  // Stop AsyncRequest Polling timer then stop the XHCI driver
+-  // and uninstall the XHCI protocl.
+-  //
+-  gBS->SetTimer (Xhc->PollTimer, TimerCancel, 0);
+-
+-  //
+-  // Disable the device slots occupied by these devices on its downstream ports.
+-  // Entry 0 is reserved.
+-  //
+-  for (Index = 0; Index < 255; Index++) {
+-    if (!Xhc->UsbDevContext[Index + 1].Enabled ||
+-        (Xhc->UsbDevContext[Index + 1].SlotId == 0))
+-    {
+-      continue;
+-    }
+-
+-    if (Xhc->HcCParams.Data.Csz == 0) {
+-      XhcDisableSlotCmd (Xhc, Xhc->UsbDevContext[Index + 1].SlotId);
+-    } else {
+-      XhcDisableSlotCmd64 (Xhc, Xhc->UsbDevContext[Index + 1].SlotId);
+-    }
+-  }
+-
+-  if (Xhc->PollTimer != NULL) {
+-    gBS->CloseEvent (Xhc->PollTimer);
++  // Serialize with asynchronous polling until DMA is proven stopped. Keep
++  // the protocol, events and allocations reachable if stopping fails.
++  OldTpl = gBS->RaiseTPL (XHC_TPL);
++  if (Xhc->Frozen || Xhc->ActiveCalls != 0) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
+   }
+ 
+-  if (Xhc->ExitBootServiceEvent != NULL) {
+-    gBS->CloseEvent (Xhc->ExitBootServiceEvent);
++  // A whole-controller stop needs a verified halt, not per-slot command
++  // completion. Native role teardown can already have halted this controller.
++  // Retain every slot allocation until both halt and protocol removal succeed.
++  Status = XhcHaltHC (Xhc, XHC_GENERIC_TIMEOUT);
++  if (Status != EFI_SUCCESS) {
++    DEBUG ((DEBUG_ERROR, "XhcDriverBindingStop: controller halt failed, retaining DMA: %r\n", Status));
++    gBS->RestoreTPL (OldTpl);
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+ 
+-  XhcHaltHC (Xhc, XHC_GENERIC_TIMEOUT);
+-  XhcClearBiosOwnership (Xhc);
+-  XhciDelAllAsyncIntTransfers (Xhc);
+-  XhcFreeSched (Xhc);
++  Status = gBS->UninstallMultipleProtocolInterfaces (
++                  Controller,
++                  &gEfiUsb2HcProtocolGuid, Usb2Hc,
++                  &gEdkiiUsb2HcFreezeProtocolGuid, &Xhc->Freeze,
++                  NULL
++                  );
+ 
+-  if (Xhc->ControllerNameTable) {
+-    FreeUnicodeStringTable (Xhc->ControllerNameTable);
++  if (Status != EFI_SUCCESS) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+ 
+-  //
+-  // Restore original PCI attributes
+-  //
+-  PciIo->Attributes (
+-           PciIo,
+-           EfiPciIoAttributeOperationSet,
+-           Xhc->OriginalPciAttributes,
+-           NULL
+-           );
+-
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  FreePool (Xhc);
+-
+-  return EFI_SUCCESS;
++  // Uninstall succeeded, so this stopped instance is no longer discoverable
++  // via USB2HC. Keep it reachable through the retained PCI ownership journal
++  // until every event, attribute and protocol cleanup explicitly succeeds.
++  Xhc->FailedStart = TRUE;
++  Xhc->FailedSlotsOwned = TRUE;
++  Xhc->FailedController = Controller;
++  Xhc->FailedNext = mXhcFailedStarts;
++  mXhcFailedStarts = Xhc;
++  Status = XhcCleanupFailedStart (This, Xhc);
++  gBS->RestoreTPL (OldTpl);
++  return Status;
+ }
+ 
+ /**
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.h b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.h
+index c9a12095c2..7a549ac027 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.h
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.h
+@@ -16,6 +16,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include <Protocol/Usb2HostController.h>
+ #include <Protocol/PciIo.h>
++#include <Protocol/Usb2HcFreeze.h>
+ 
+ #include <Guid/EventGroup.h>
+ 
+@@ -208,6 +209,18 @@ struct _USB_XHCI_INSTANCE {
+   USBHC_MEM_POOL              *MemPool;
+ 
+   EFI_USB2_HC_PROTOCOL        Usb2Hc;
++  EDKII_USB2_HC_FREEZE_PROTOCOL Freeze;
++  BOOLEAN                     Frozen;
++  UINT32                      ActiveCalls;
++  // Failed Start/unpublished Stop retain PCI and DMA until exact cleanup.
++  BOOLEAN                     FailedStart;
++  BOOLEAN                     FailedSlotsOwned;
++  BOOLEAN                     FailedHardwareTouched;
++  BOOLEAN                     FailedHalted;
++  BOOLEAN                     FailedAttributesSaved;
++  BOOLEAN                     FailedAttributesRestored;
++  EFI_HANDLE                  FailedController;
++  USB_XHCI_INSTANCE           *FailedNext;
+ 
+   EFI_DEVICE_PATH_PROTOCOL    *DevicePath;
+ 
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf b/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+index 0e0289e8a6..6ddf6b5ae9 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+@@ -53,6 +53,7 @@
+   gEfiEventExitBootServicesGuid                 ## SOMETIMES_CONSUMES ## Event
+ 
+ [Protocols]
++  gEdkiiUsb2HcFreezeProtocolGuid                 ## BY_START
+   gEfiPciIoProtocolGuid                         ## TO_START
+   gEfiUsb2HcProtocolGuid                        ## BY_START
+ 
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+index b706a09f7b..4a1032cb2f 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+@@ -13,6 +13,36 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include "Xhci.h"
+ 
++STATIC
++BOOLEAN
++XhcRetryTransaction (
++  IN USB_XHCI_INSTANCE *Xhc,
++  IN URB              *Urb
++  );
++
++/** Publish complete DMA-visible TRB fields before transferring ownership.
++
++  The xHC may already be fetching an active endpoint ring. Its Cycle bit is
++  the ownership handoff, so a later MMIO doorbell barrier cannot order a TRB
++  which has already become visible. This follows Linux queue_trb's wmb before
++  the final control word, including producer-cycle zero and link traversal.
++**/
++STATIC
++VOID
++XhcPublishTrb (
++  IN TRB_TEMPLATE *Trb,
++  IN UINT32       Cycle
++  )
++{
++  volatile UINT32 *Control;
++  UINT32 Value;
++
++  Control = (volatile UINT32 *)Trb + 3;
++  Value = (*Control & ~(UINT32)BIT0) | (Cycle & BIT0);
++  MemoryFence ();
++  *Control = Value;
++}
++
+ /**
+   Create a command transfer TRB to support XHCI command interfaces.
+ 
+@@ -28,7 +58,8 @@ XhcCreateCmdTrb (
+   IN TRB_TEMPLATE       *CmdTrb
+   )
+ {
+-  URB  *Urb;
++  URB          *Urb;
++  TRB_TEMPLATE Unowned;
+ 
+   Urb = AllocateZeroPool (sizeof (URB));
+   if (Urb == NULL) {
+@@ -41,8 +72,11 @@ XhcCreateCmdTrb (
+   XhcSyncTrsRing (Xhc, Urb->Ring);
+   Urb->TrbNum   = 1;
+   Urb->TrbStart = Urb->Ring->RingEnqueue;
+-  CopyMem (Urb->TrbStart, CmdTrb, sizeof (TRB_TEMPLATE));
+-  Urb->TrbStart->CycleBit = Urb->Ring->RingPCS & BIT0;
++  // Copy an explicitly unowned command first, including when PCS is zero.
++  CopyMem (&Unowned, CmdTrb, sizeof (Unowned));
++  Unowned.CycleBit = (Urb->Ring->RingPCS ^ BIT0) & BIT0;
++  CopyMem (Urb->TrbStart, &Unowned, sizeof (Unowned));
++  XhcPublishTrb (Urb->TrbStart, Urb->Ring->RingPCS);
+   Urb->TrbEnd             = Urb->TrbStart;
+ 
+   return Urb;
+@@ -327,7 +361,7 @@ XhcCreateTransferTrb (
+       //
+       // Update the cycle bit
+       //
+-      TrbStart->TrbCtrSetup.CycleBit = EPRing->RingPCS & BIT0;
++      XhcPublishTrb ((TRB_TEMPLATE *)TrbStart, EPRing->RingPCS);
+       Urb->TrbNum++;
+ 
+       //
+@@ -357,7 +391,7 @@ XhcCreateTransferTrb (
+         //
+         // Update the cycle bit
+         //
+-        TrbStart->TrbCtrData.CycleBit = EPRing->RingPCS & BIT0;
++        XhcPublishTrb ((TRB_TEMPLATE *)TrbStart, EPRing->RingPCS);
+         Urb->TrbNum++;
+       }
+ 
+@@ -382,7 +416,7 @@ XhcCreateTransferTrb (
+       //
+       // Update the cycle bit
+       //
+-      TrbStart->TrbCtrStatus.CycleBit = EPRing->RingPCS & BIT0;
++      XhcPublishTrb ((TRB_TEMPLATE *)TrbStart, EPRing->RingPCS);
+       //
+       // Update the enqueue pointer
+       //
+@@ -417,7 +451,7 @@ XhcCreateTransferTrb (
+         //
+         // Update the cycle bit
+         //
+-        TrbStart->TrbNormal.CycleBit = EPRing->RingPCS & BIT0;
++        XhcPublishTrb ((TRB_TEMPLATE *)TrbStart, EPRing->RingPCS);
+ 
+         XhcSyncTrsRing (Xhc, EPRing);
+         TrbNum++;
+@@ -453,7 +487,7 @@ XhcCreateTransferTrb (
+         //
+         // Update the cycle bit
+         //
+-        TrbStart->TrbNormal.CycleBit = EPRing->RingPCS & BIT0;
++        XhcPublishTrb ((TRB_TEMPLATE *)TrbStart, EPRing->RingPCS);
+ 
+         XhcSyncTrsRing (Xhc, EPRing);
+         TrbNum++;
+@@ -738,9 +772,22 @@ XhcDequeueTrbFromEndpoint (
+   UINT8       Dci;
+   UINT8       SlotId;
+ 
++  // A halted controller cannot fetch this transfer. Slot retirement likewise
++  // keeps the bus-address tombstone but has already freed its transfer rings.
++  if (Urb->Retired || XhcIsHalt (Xhc)) {
++    return EFI_SUCCESS;
++  }
++
+   Status = EFI_SUCCESS;
+   SlotId = XhcBusDevAddrToSlotId (Xhc, Urb->Ep.BusAddr);
+   if (SlotId == 0) {
++    for (UINTN Index = 1; Index < 256; Index++) {
++      if (!Xhc->UsbDevContext[Index].Enabled &&
++          (Xhc->UsbDevContext[Index].SlotId == 0) &&
++          (Xhc->UsbDevContext[Index].BusDevAddr == Urb->Ep.BusAddr)) {
++        return EFI_SUCCESS;
++      }
++    }
+     return EFI_DEVICE_ERROR;
+   }
+ 
+@@ -1040,6 +1087,10 @@ IsTransferRingTrb (
+   UINTN                 Index;
+   EFI_PHYSICAL_ADDRESS  PhyAddr;
+ 
++  if (Urb->Retired) {
++    return FALSE;
++  }
++
+   CheckedTrb = Urb->TrbStart;
+   for (Index = 0; Index < Urb->TrbNum; Index++) {
+     if (Trb == CheckedTrb) {
+@@ -1114,6 +1165,7 @@ XhcCheckUrbResult (
+   EVT_TRB_TRANSFER      *EvtTrb;
+   TRB_TEMPLATE          *TRBPtr;
+   UINTN                 Index;
++  UINTN                 Consumed;
+   UINT8                 TRBType;
+   EFI_STATUS            Status;
+   URB                   *AsyncUrb;
+@@ -1125,6 +1177,7 @@ XhcCheckUrbResult (
+ 
+   ASSERT ((Xhc != NULL) && (Urb != NULL));
+ 
++  Consumed = 0;
+   Status   = EFI_SUCCESS;
+   AsyncUrb = NULL;
+ 
+@@ -1151,6 +1204,7 @@ XhcCheckUrbResult (
+       //
+       goto EXIT;
+     }
++    Consumed++;
+ 
+     //
+     // Only handle COMMAND_COMPLETETION_EVENT and TRANSFER_EVENT.
+@@ -1159,6 +1213,16 @@ XhcCheckUrbResult (
+       continue;
+     }
+ 
++    // A disconnected slot can leave a queued transfer completion after its
++    // class request retires. Reject it before translating a freed DMA pointer.
++    if ((EvtTrb->Type == TRB_TYPE_TRANS_EVENT) &&
++        ((EvtTrb->SlotId == 0) || (EvtTrb->SlotId > Xhc->MaxSlotsEn) ||
++         (EvtTrb->EndpointId == 0) || (EvtTrb->EndpointId > 31) ||
++         !Xhc->UsbDevContext[EvtTrb->SlotId].Enabled ||
++         (Xhc->UsbDevContext[EvtTrb->SlotId].SlotId != EvtTrb->SlotId))) {
++      continue;
++    }
++
+     //
+     // Need convert pci device address to host address
+     //
+@@ -1181,7 +1245,72 @@ XhcCheckUrbResult (
+       continue;
+     }
+ 
++    // Matching a reused TRB address is insufficient: qualify the actual
++    // command ring or live slot/endpoint/bus/ring before changing any request.
++    if (EvtTrb->Type == TRB_TYPE_COMMAND_COMPLT_EVENT) {
++      if (CheckedUrb->Ring != &Xhc->CmdRing) {
++        continue;
++      }
++    } else if ((EvtTrb->EndpointId != XhcEndpointToDci (CheckedUrb->Ep.EpAddr, (UINT8)CheckedUrb->Ep.Direction)) ||
++               (Xhc->UsbDevContext[EvtTrb->SlotId].BusDevAddr != CheckedUrb->Ep.BusAddr) ||
++               (Xhc->UsbDevContext[EvtTrb->SlotId].EndpointTransferRing[EvtTrb->EndpointId - 1] != CheckedUrb->Ring)) {
++      continue;
++    }
++
+     CheckedUrb->Ring->RingDequeue = TRBPtr;         // MU_CHANGE - 274185
++    if ((EvtTrb->Type == TRB_TYPE_TRANS_EVENT) &&
++        (EvtTrb->Completecode != TRB_COMPLETION_SUCCESS) &&
++        (EvtTrb->Completecode != TRB_COMPLETION_SHORT_PACKET)) {
++      DEBUG ((DEBUG_ERROR, "Xhc transfer error: bus=%u ep=%u dir=%u slot=%u dci=%u code=%u\n",
++              CheckedUrb->Ep.BusAddr, CheckedUrb->Ep.EpAddr, CheckedUrb->Ep.Direction,
++              EvtTrb->SlotId, EvtTrb->EndpointId, EvtTrb->Completecode));
++      if ((EvtTrb->SlotId != 0) && (EvtTrb->EndpointId != 0) &&
++          (EvtTrb->EndpointId < 32) &&
++          (Xhc->UsbDevContext[EvtTrb->SlotId].OutputContext != NULL)) {
++        volatile SLOT_CONTEXT *Slot;
++        UINT8                  State;
++        VOID                   *Output;
++
++        Output = Xhc->UsbDevContext[EvtTrb->SlotId].OutputContext;
++        // The first four slot-context DWORDs are identical in both layouts.
++        Slot = (volatile SLOT_CONTEXT *)Output;
++        MemoryFence ();
++        State = Xhc->HcCParams.Data.Csz == 0 ?
++                (UINT8)((volatile DEVICE_CONTEXT *)Output)->EP[EvtTrb->EndpointId - 1].EPState :
++                (UINT8)((volatile DEVICE_CONTEXT_64 *)Output)->EP[EvtTrb->EndpointId - 1].EPState;
++        DEBUG ((DEBUG_ERROR, "Xhc transfer context: speed=%u route=0x%x root=%u tt=%u/%u state=%u retry=%u\n",
++                Slot->Speed, Slot->RouteString, Slot->RootHubPortNum,
++                Slot->TTHubSlotId, Slot->TTPortNum, State, CheckedUrb->SoftRetryCount));
++        if (CheckedUrb->SoftRetryCount == 0) {
++          volatile UINT32 *Ep;
++          UINT32           Port;
++
++          Ep = Xhc->HcCParams.Data.Csz == 0 ?
++               (volatile UINT32 *)&((volatile DEVICE_CONTEXT *)Output)->EP[EvtTrb->EndpointId - 1] :
++               (volatile UINT32 *)&((volatile DEVICE_CONTEXT_64 *)Output)->EP[EvtTrb->EndpointId - 1];
++          Port = ((Slot->RootHubPortNum > 0) && (Slot->RootHubPortNum <= Xhc->HcSParams1.Data.MaxPorts)) ?
++                 XhcReadOpReg (Xhc, XHC_PORTSC_OFFSET + (0x10 * (Slot->RootHubPortNum - 1))) : 0;
++          DEBUG ((DEBUG_ERROR, "Xhc error state: USBSTS=%08x PORTSC=%08x addr=%u slot-state=%u ep=%08x/%08x/%08x/%08x/%08x\n",
++                  XhcReadOpReg (Xhc, XHC_USBSTS_OFFSET), Port, Slot->DeviceAddress, Slot->SlotState,
++                  Ep[0], Ep[1], Ep[2], Ep[3], Ep[4]));
++          DEBUG ((DEBUG_ERROR, "Xhc error ring: event=%u CCS=%u trb=%p dequeue=%p enqueue=%p PCS=%u bytes=%u/%u previous-IN=%u\n",
++                  (UINT32)((TRB_TEMPLATE *)EvtTrb - (TRB_TEMPLATE *)Xhc->EventRing.EventRingSeg0),
++                  Xhc->EventRing.EventRingCCS, TRBPtr, CheckedUrb->Ring->RingDequeue,
++                  CheckedUrb->Ring->RingEnqueue, CheckedUrb->Ring->RingPCS,
++                  (UINT32)CheckedUrb->Completed, (UINT32)CheckedUrb->DataLen,
++                  CheckedUrb->InterruptCompletions));
++          // This pointer has already passed slot/DCI and live-ring identity
++          // checks. Preserve descriptor evidence without dumping input data.
++          DEBUG ((DEBUG_ERROR, "Xhc error TD: %08x/%08x/%08x/%08x DMA=%p map=%p\n",
++                  ((volatile UINT32 *)TRBPtr)[0], ((volatile UINT32 *)TRBPtr)[1],
++                  ((volatile UINT32 *)TRBPtr)[2], ((volatile UINT32 *)TRBPtr)[3],
++                  CheckedUrb->DataPhy, CheckedUrb->DataMap));
++        }
++      }
++    }
++    if (EvtTrb->Type == TRB_TYPE_COMMAND_COMPLT_EVENT) {
++      CheckedUrb->EvtTrb = (TRB_TEMPLATE *)EvtTrb;
++    }
+ 
+     switch (EvtTrb->Completecode) {
+       case TRB_COMPLETION_STALL_ERROR:
+@@ -1223,6 +1352,9 @@ XhcCheckUrbResult (
+ 
+       case TRB_COMPLETION_SHORT_PACKET:
+       case TRB_COMPLETION_SUCCESS:
++        if (EvtTrb->Type == TRB_TYPE_TRANS_EVENT) {
++          CheckedUrb->SoftRetryCount = 0;
++        }
+         // MU_CHANGE [BEGIN] - 161866
+         // if (EvtTrb->Completecode == TRB_COMPLETION_SHORT_PACKET) {
+         // DEBUG ((DEBUG_VERBOSE, "XhcCheckUrbResult: short packet happens!\n"));
+@@ -1277,7 +1409,9 @@ EXIT:
+ 
+   PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->EventRing.EventRingDequeue, sizeof (TRB_TEMPLATE), FALSE);
+ 
+-  if ((XhcDequeue & (~0x0F)) != (PhyAddr & (~0x0F))) {
++  // A full consumed turn returns to the same address with the opposite
++  // cycle. Acknowledge its events/EHB even when the pointer bits match.
++  if ((Consumed != 0) || ((XhcDequeue & (~0x0F)) != (PhyAddr & (~0x0F)))) {
+     //
+     // Some 3rd party XHCI external cards don't support single 64-bytes width register access,
+     // So divide it to two 32-bytes width register access.
+@@ -1354,7 +1488,10 @@ XhcExecTransfer (
+   do {
+     Finished = XhcCheckUrbResult (Xhc, Urb);
+     if (Finished) {
+-      break;
++      if (CmdTransfer || !XhcRetryTransaction (Xhc, Urb)) {
++        break;
++      }
++      Finished = FALSE;
+     }
+ 
+     gBS->Stall (XHC_1_MICROSECOND);
+@@ -1419,9 +1556,13 @@ XhciDelAsyncIntTransfer (
+       // Device doesn't finish the IntTransfer until real data comes
+       // So the TRB should be removed as well.
+       //
++      Urb->Cancelled = TRUE;
++      Urb->Callback  = NULL;
++      Urb->Context   = NULL;
+       Status = XhcDequeueTrbFromEndpoint (Xhc, Urb);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_ERROR, "XhciDelAsyncIntTransfer: XhcDequeueTrbFromEndpoint failed\n"));
++      if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
++        DEBUG ((DEBUG_ERROR, "XhciDelAsyncIntTransfer: endpoint cleanup retained: %r\n", Status));
++        return Status;
+       }
+ 
+       RemoveEntryList (&Urb->UrbList);
+@@ -1477,9 +1618,13 @@ XhciDelAllAsyncIntTransfers (
+     // Device doesn't finish the IntTransfer until real data comes
+     // So the TRB should be removed as well.
+     //
++    Urb->Cancelled = TRUE;
++    Urb->Callback  = NULL;
++    Urb->Context   = NULL;
+     Status = XhcDequeueTrbFromEndpoint (Xhc, Urb);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "XhciDelAllAsyncIntTransfers: XhcDequeueTrbFromEndpoint failed\n"));
++    if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
++      DEBUG ((DEBUG_ERROR, "XhciDelAllAsyncIntTransfers: endpoint cleanup retained: %r\n", Status));
++      continue;
+     }
+ 
+     RemoveEntryList (&Urb->UrbList);
+@@ -1537,6 +1682,15 @@ XhciInsertAsyncIntTransfer (
+   // MU_CHANGE [BEGIN]
+   EFI_STATUS  Status;
+ 
++  LIST_ENTRY *Entry;
++  BASE_LIST_FOR_EACH (Entry, &Xhc->AsyncIntTransfers) {
++    URB *Existing = EFI_LIST_CONTAINER (Entry, URB, UrbList);
++    if ((Existing->Ep.BusAddr == BusAddr) &&
++        (Existing->Ep.EpAddr == (EpAddr & 0x0F)) &&
++        (Existing->Ep.Direction == ((EpAddr & 0x80) ? EfiUsbDataIn : EfiUsbDataOut))) {
++      return NULL;
++    }
++  }
+   Data = NULL;
+ 
+   Status = Xhc->PciIo->AllocateBuffer (
+@@ -1665,14 +1819,21 @@ XhcFlushAsyncIntMap (
+   }
+ 
+   Urb->DataMap = NULL;
++  Urb->DataPhy = NULL;
+ 
+   Status = PciIo->Map (PciIo, MapOp, Urb->Data, &Len, &PhyAddr, &Map);
+-  if (EFI_ERROR (Status) || (Len != Urb->DataLen)) {
++  if (EFI_ERROR (Status)) {
+     goto ON_ERROR;
+   }
+ 
+-  Urb->DataPhy = (VOID *)((UINTN)PhyAddr);
++  // Even a short successful mapping owns a token. Preserve it for Unmap
++  // during cancellation or the next flush, but never submit it to hardware.
+   Urb->DataMap = Map;
++  if (Len != Urb->DataLen) {
++    goto ON_ERROR;
++  }
++
++  Urb->DataPhy = (VOID *)((UINTN)PhyAddr);
+   return EFI_SUCCESS;
+ 
+ ON_ERROR:
+@@ -1705,6 +1866,11 @@ XhcMonitorAsyncRequests (
+   OldTpl = gBS->RaiseTPL (XHC_TPL);
+ 
+   Xhc = (USB_XHCI_INSTANCE *)Context;
++  if (Xhc->Frozen || Xhc->FailedStart) {
++    gBS->RestoreTPL (OldTpl);
++    return;
++  }
++  ++Xhc->ActiveCalls;
+ 
+   BASE_LIST_FOR_EACH_SAFE (Entry, Next, &Xhc->AsyncIntTransfers) {
+     //
+@@ -1719,6 +1885,9 @@ XhcMonitorAsyncRequests (
+     VOID    *cbContext;
+ 
+     Urb = EFI_LIST_CONTAINER (Entry, URB, UrbList);
++    if (Urb->Cancelled) {
++      continue;
++    }
+ 
+     //
+     // Make sure that the device is available before every check.
+@@ -1738,13 +1907,35 @@ XhcMonitorAsyncRequests (
+       continue;
+     }
+ 
++    // Retry the original TD before remapping its DMA or notifying the client.
++    // Running a command here, outside event traversal, also avoids recursion
++    // while the transfer event's dequeue pointer is still being acknowledged.
++    if (XhcRetryTransaction (Xhc, Urb)) {
++      continue;
++    }
++
++    if (Urb->Result == EFI_USB_NOERROR) {
++      if (Urb->InterruptCompletions == 0) {
++        DEBUG ((DEBUG_WARN, "Xhc interrupt first completion: bus=%u ep=%u slot=%u bytes=%u/%u TRB=%p DMA=%p\n",
++                Urb->Ep.BusAddr, Urb->Ep.EpAddr, SlotId, (UINT32)Urb->Completed,
++                (UINT32)Urb->DataLen, Urb->TrbStart, Urb->DataPhy));
++      }
++      if (Urb->InterruptCompletions != MAX_UINT32) {
++        Urb->InterruptCompletions++;
++      }
++    }
++
+     //
+     // Flush any PCI posted write transactions from a PCI host
+     // bridge to system memory.
+     //
+     Status = XhcFlushAsyncIntMap (Xhc, Urb);
+     if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "XhcMonitorAsyncRequests: Fail to Flush AsyncInt Mapped Memeory\n"));
++      DEBUG ((DEBUG_ERROR, "XhcMonitorAsyncRequests: async DMA refresh failed: %r\n", Status));
++      // A failed flush cannot supply CPU data or a full mapping for another
++      // transfer. Notify the client through its normal error recovery path.
++      Urb->Result   |= EFI_USB_ERR_BUFFER;
++      Urb->Completed = 0;
+     }
+ 
+     //
+@@ -1800,12 +1991,16 @@ XhcMonitorAsyncRequests (
+       gBS->RestoreTPL (OldTpl);
+       (Urb->Callback)(ProcBuf, cbCompleted, cbContext, cbResult);
+       OldTpl = gBS->RaiseTPL (XHC_TPL);
++      // Freeze can be requested by a callback. Retain its scratch allocation
++      // and all ring mappings; neither requeue nor free after EBS preparation.
++      if (Xhc->Frozen) break;
+     }
+ 
+     if (ProcBuf != NULL) {
+       gBS->FreePool (ProcBuf);
+     }
+   }
++  --Xhc->ActiveCalls;
+   gBS->RestoreTPL (OldTpl);
+ }
+ 
+@@ -1865,6 +2060,9 @@ XhcPollPortStatusChange (
+     } else {
+       Status = XhcDisableSlotCmd64 (Xhc, SlotId);
+     }
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
+   }
+ 
+   if (((PortState->PortStatus & USB_PORT_STAT_ENABLE) != 0) &&
+@@ -2022,36 +2220,30 @@ XhcSyncEventRing (
+   IN EVENT_RING         *EvtRing
+   )
+ {
+-  UINTN         Index;
+-  TRB_TEMPLATE  *EvtTrb1;
++  UINTN                  Index;
++  volatile TRB_TEMPLATE *EvtTrb;
++  UINT32                 Cycle;
+ 
+   ASSERT (EvtRing != NULL);
+-
+-  //
+-  // Calculate the EventRingEnqueue and EventRingCCS.
+-  // Note: only support single Segment
+-  //
+-  EvtTrb1 = EvtRing->EventRingDequeue;
+-
++  // Scan with a private cycle. An error handler may return before consuming
++  // the events across wrap; scanning must never advance consumer ownership.
++  EvtTrb = EvtRing->EventRingDequeue;
++  Cycle  = EvtRing->EventRingCCS;
+   for (Index = 0; Index < EvtRing->TrbNumber; Index++) {
+-    if (EvtTrb1->CycleBit != EvtRing->EventRingCCS) {
++    if (EvtTrb->CycleBit != Cycle) {
+       break;
+     }
+-
+-    EvtTrb1++;
+-
+-    if ((UINTN)EvtTrb1 >= ((UINTN)EvtRing->EventRingSeg0 + sizeof (TRB_TEMPLATE) * EvtRing->TrbNumber)) {
+-      EvtTrb1               = EvtRing->EventRingSeg0;
+-      EvtRing->EventRingCCS = (EvtRing->EventRingCCS) ? 0 : 1;
++    MemoryFence ();
++    EvtTrb++;
++    if ((UINTN)EvtTrb >= ((UINTN)EvtRing->EventRingSeg0 + sizeof (TRB_TEMPLATE) * EvtRing->TrbNumber)) {
++      EvtTrb = EvtRing->EventRingSeg0;
++      Cycle ^= 1;
+     }
+   }
+-
+-  if (Index < EvtRing->TrbNumber) {
+-    EvtRing->EventRingEnqueue = EvtTrb1;
+-  } else {
+-    ASSERT (FALSE);
+-  }
+-
++  // This is an observation only, including a completely full ring. The
++  // actual dequeue path rechecks the cycle rather than using equal pointers
++  // as an empty-ring test (the producer can publish after this scan).
++  EvtRing->EventRingEnqueue = (TRB_TEMPLATE *)EvtTrb;
+   return EFI_SUCCESS;
+ }
+ 
+@@ -2092,7 +2284,7 @@ XhcSyncTrsRing (
+       //
+       // set cycle bit in Link TRB as normal
+       //
+-      ((LINK_TRB *)TrsTrb)->CycleBit = TrsRing->RingPCS & BIT0;
++      XhcPublishTrb (TrsTrb, TrsRing->RingPCS);
+       //
+       // Toggle PCS maintained by software
+       //
+@@ -2140,22 +2332,22 @@ XhcCheckNewEvent (
+   OUT TRB_TEMPLATE       **NewEvtTrb
+   )
+ {
+-  ASSERT (EvtRing != NULL);
++  volatile TRB_TEMPLATE *Event;
+ 
+-  *NewEvtTrb = EvtRing->EventRingDequeue;
+-
+-  if (EvtRing->EventRingDequeue == EvtRing->EventRingEnqueue) {
++  ASSERT (EvtRing != NULL);
++  Event = EvtRing->EventRingDequeue;
++  // xHCI 4.9.4: the cycle bit transfers ownership to the consumer. Read other
++  // DMA fields only after observing it, and toggle CCS on actual dequeue wrap.
++  if (Event->CycleBit != EvtRing->EventRingCCS) {
+     return EFI_NOT_READY;
+   }
+-
++  MemoryFence ();
++  *NewEvtTrb = (TRB_TEMPLATE *)Event;
+   EvtRing->EventRingDequeue++;
+-  //
+-  // If the dequeue pointer is beyond the ring, then roll-back it to the begining of the ring.
+-  //
+   if ((UINTN)EvtRing->EventRingDequeue >= ((UINTN)EvtRing->EventRingSeg0 + sizeof (TRB_TEMPLATE) * EvtRing->TrbNumber)) {
+     EvtRing->EventRingDequeue = EvtRing->EventRingSeg0;
++    EvtRing->EventRingCCS ^= 1;
+   }
+-
+   return EFI_SUCCESS;
+ }
+ 
+@@ -2682,6 +2874,120 @@ XhcInitializeDeviceSlot64 (
+   return Status;
+ }
+ 
++/**
++  Detach requests only after successful Disable Slot (or controller halt).
++  GET_PORT_STATUS can retire a slot before UsbBus disconnects its class driver.
++  Preserve each URB until that driver's cancellation, but never let the old URB
++  inspect freed TRBs or stop an endpoint belonging to a reused bus address.
++**/
++STATIC
++VOID
++XhcRetireSlotRequests (
++  IN USB_XHCI_INSTANCE *Xhc,
++  IN UINT8             SlotId
++  )
++{
++  LIST_ENTRY *Entry;
++  URB        *Urb;
++  UINT8       Dci;
++
++  BASE_LIST_FOR_EACH (Entry, &Xhc->AsyncIntTransfers) {
++    Urb = EFI_LIST_CONTAINER (Entry, URB, UrbList);
++    Dci = XhcEndpointToDci (Urb->Ep.EpAddr, (UINT8)Urb->Ep.Direction);
++    if (!Urb->Retired && (Dci > 0) && (Dci < 32) &&
++        (Urb->Ring != NULL) &&
++        (Urb->Ring == Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci - 1])) {
++      Urb->Retired   = TRUE;
++      Urb->Cancelled = TRUE;
++      Urb->Callback  = NULL;
++      Urb->Context   = NULL;
++      Urb->Ring      = NULL;
++      Urb->TrbStart  = NULL;
++      Urb->TrbEnd    = NULL;
++      Urb->TrbNum    = 0;
++      DEBUG ((DEBUG_WARN, "Xhc retired async transfer: slot=%u bus=%u dci=%u\n",
++              SlotId, Urb->Ep.BusAddr, Dci));
++    }
++  }
++}
++
++/**
++  Release one slot after a successful Disable Slot completion or a proven
++  whole-controller halt. Preserve its address mapping for class cancellation.
++**/
++STATIC
++VOID
++XhcFreeDeviceSlot (
++  IN USB_XHCI_INSTANCE  *Xhc,
++  IN UINT8              SlotId
++  )
++{
++  USB_DEV_CONTEXT  *Device;
++  TRANSFER_RING    *Ring;
++  UINTN             Index;
++
++  Device = &Xhc->UsbDevContext[SlotId];
++  XhcRetireSlotRequests (Xhc, SlotId);
++  if (Xhc->DCBAA != NULL) {
++    Xhc->DCBAA[SlotId] = 0;
++  }
++
++  for (Index = 0; Index < ARRAY_SIZE (Device->EndpointTransferRing); Index++) {
++    Ring = Device->EndpointTransferRing[Index];
++    if (Ring != NULL) {
++      if (Ring->RingSeg0 != NULL) {
++        UsbHcFreeMem (Xhc->MemPool, Ring->RingSeg0, sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER);
++      }
++      FreePool (Ring);
++      Device->EndpointTransferRing[Index] = NULL;
++    }
++  }
++
++  if (Device->ConfDesc != NULL) {
++    for (Index = 0; Index < Device->DevDesc.NumConfigurations; Index++) {
++      if (Device->ConfDesc[Index] != NULL) {
++        FreePool (Device->ConfDesc[Index]);
++      }
++    }
++    FreePool (Device->ConfDesc);
++    Device->ConfDesc = NULL;
++  }
++  if (Device->ActiveAlternateSetting != NULL) {
++    FreePool (Device->ActiveAlternateSetting);
++    Device->ActiveAlternateSetting = NULL;
++  }
++  if (Device->InputContext != NULL) {
++    UsbHcFreeMem (Xhc->MemPool, Device->InputContext,
++                 Xhc->HcCParams.Data.Csz == 0 ? sizeof (INPUT_CONTEXT) : sizeof (INPUT_CONTEXT_64));
++    Device->InputContext = NULL;
++  }
++  if (Device->OutputContext != NULL) {
++    UsbHcFreeMem (Xhc->MemPool, Device->OutputContext,
++                 Xhc->HcCParams.Data.Csz == 0 ? sizeof (DEVICE_CONTEXT) : sizeof (DEVICE_CONTEXT_64));
++    Device->OutputContext = NULL;
++  }
++  Device->Enabled = FALSE;
++  Device->SlotId  = 0;
++}
++
++/**
++  Retire all software slots after the controller is halted and its host
++  protocol is uninstalled. Include partially initialized, disabled entries.
++  A halted controller cannot process Disable Slot commands.
++**/
++VOID
++XhcFreeDeviceSlots (
++  IN USB_XHCI_INSTANCE  *Xhc
++  )
++{
++  UINTN  Index;
++
++  ASSERT (XhcIsHalt (Xhc));
++  for (Index = 1; Index < ARRAY_SIZE (Xhc->UsbDevContext); Index++) {
++    XhcFreeDeviceSlot (Xhc, (UINT8)Index);
++  }
++}
++
+ /**
+   Disable the specified device slot.
+ 
+@@ -2702,7 +3008,6 @@ XhcDisableSlotCmd (
+   TRB_TEMPLATE          *EvtTrb;
+   CMD_TRB_DISABLE_SLOT  CmdTrbDisSlot;
+   UINT8                 Index;
+-  VOID                  *RingSeg;
+ 
+   EvtTrb = NULL;
+ 
+@@ -2721,8 +3026,8 @@ XhcDisableSlotCmd (
+     Status = XhcDisableSlotCmd (Xhc, Xhc->UsbDevContext[Index + 1].SlotId);
+ 
+     if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: failed to disable child, ignore error\n"));
+-      Xhc->UsbDevContext[Index + 1].SlotId = 0;
++      DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: child remains active: %r\n", Status));
++      return Status;
+     }
+   }
+ 
+@@ -2741,56 +3046,15 @@ XhcDisableSlotCmd (
+                              XHC_GENERIC_TIMEOUT,
+                              (TRB_TEMPLATE **)(UINTN)&EvtTrb
+                              );
+-  if (EFI_ERROR (Status) || (EvtTrb == NULL)) {
++  if (!EFI_ERROR (Status) && (EvtTrb == NULL)) {
++    Status = EFI_DEVICE_ERROR;
++  }
++  if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: Disable Slot Command Failed, Status = %r\n", Status));
+     return Status;
+   }
+ 
+-  //
+-  // Free the slot's device context entry
+-  //
+-  Xhc->DCBAA[SlotId] = 0;
+-
+-  //
+-  // Free the slot related data structure
+-  //
+-  for (Index = 0; Index < 31; Index++) {
+-    if (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index] != NULL) {
+-      RingSeg = ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index])->RingSeg0;
+-      if (RingSeg != NULL) {
+-        UsbHcFreeMem (Xhc->MemPool, RingSeg, sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER);
+-      }
+-
+-      FreePool (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index]);
+-      Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index] = NULL;
+-    }
+-  }
+-
+-  for (Index = 0; Index < Xhc->UsbDevContext[SlotId].DevDesc.NumConfigurations; Index++) {
+-    if (Xhc->UsbDevContext[SlotId].ConfDesc[Index] != NULL) {
+-      FreePool (Xhc->UsbDevContext[SlotId].ConfDesc[Index]);
+-    }
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].ActiveAlternateSetting != NULL) {
+-    FreePool (Xhc->UsbDevContext[SlotId].ActiveAlternateSetting);
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].InputContext != NULL) {
+-    UsbHcFreeMem (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT));
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].OutputContext != NULL) {
+-    UsbHcFreeMem (Xhc->MemPool, Xhc->UsbDevContext[SlotId].OutputContext, sizeof (DEVICE_CONTEXT));
+-  }
+-
+-  //
+-  // Doesn't zero the entry because XhcAsyncInterruptTransfer() may be invoked to remove the established
+-  // asynchronous interrupt pipe after the device is disabled. It needs the device address mapping info to
+-  // remove urb from XHCI's asynchronous transfer list.
+-  //
+-  Xhc->UsbDevContext[SlotId].Enabled = FALSE;
+-  Xhc->UsbDevContext[SlotId].SlotId  = 0;
++  XhcFreeDeviceSlot (Xhc, SlotId);
+ 
+   return Status;
+ }
+@@ -2815,7 +3079,6 @@ XhcDisableSlotCmd64 (
+   TRB_TEMPLATE          *EvtTrb;
+   CMD_TRB_DISABLE_SLOT  CmdTrbDisSlot;
+   UINT8                 Index;
+-  VOID                  *RingSeg;
+ 
+   EvtTrb = NULL;
+ 
+@@ -2834,8 +3097,8 @@ XhcDisableSlotCmd64 (
+     Status = XhcDisableSlotCmd64 (Xhc, Xhc->UsbDevContext[Index + 1].SlotId);
+ 
+     if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: failed to disable child, ignore error\n"));
+-      Xhc->UsbDevContext[Index + 1].SlotId = 0;
++      DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: child remains active: %r\n", Status));
++      return Status;
+     }
+   }
+ 
+@@ -2854,56 +3117,15 @@ XhcDisableSlotCmd64 (
+                              XHC_GENERIC_TIMEOUT,
+                              (TRB_TEMPLATE **)(UINTN)&EvtTrb
+                              );
+-  if (EFI_ERROR (Status) || (EvtTrb == NULL)) {
++  if (!EFI_ERROR (Status) && (EvtTrb == NULL)) {
++    Status = EFI_DEVICE_ERROR;
++  }
++  if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "XhcDisableSlotCmd: Disable Slot Command Failed, Status = %r\n", Status));
+     return Status;
+   }
+ 
+-  //
+-  // Free the slot's device context entry
+-  //
+-  Xhc->DCBAA[SlotId] = 0;
+-
+-  //
+-  // Free the slot related data structure
+-  //
+-  for (Index = 0; Index < 31; Index++) {
+-    if (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index] != NULL) {
+-      RingSeg = ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index])->RingSeg0;
+-      if (RingSeg != NULL) {
+-        UsbHcFreeMem (Xhc->MemPool, RingSeg, sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER);
+-      }
+-
+-      FreePool (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index]);
+-      Xhc->UsbDevContext[SlotId].EndpointTransferRing[Index] = NULL;
+-    }
+-  }
+-
+-  for (Index = 0; Index < Xhc->UsbDevContext[SlotId].DevDesc.NumConfigurations; Index++) {
+-    if (Xhc->UsbDevContext[SlotId].ConfDesc[Index] != NULL) {
+-      FreePool (Xhc->UsbDevContext[SlotId].ConfDesc[Index]);
+-    }
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].ActiveAlternateSetting != NULL) {
+-    FreePool (Xhc->UsbDevContext[SlotId].ActiveAlternateSetting);
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].InputContext != NULL) {
+-    UsbHcFreeMem (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT_64));
+-  }
+-
+-  if (Xhc->UsbDevContext[SlotId].OutputContext != NULL) {
+-    UsbHcFreeMem (Xhc->MemPool, Xhc->UsbDevContext[SlotId].OutputContext, sizeof (DEVICE_CONTEXT_64));
+-  }
+-
+-  //
+-  // Doesn't zero the entry because XhcAsyncInterruptTransfer() may be invoked to remove the established
+-  // asynchronous interrupt pipe after the device is disabled. It needs the device address mapping info to
+-  // remove urb from XHCI's asynchronous transfer list.
+-  //
+-  Xhc->UsbDevContext[SlotId].Enabled = FALSE;
+-  Xhc->UsbDevContext[SlotId].SlotId  = 0;
++  XhcFreeDeviceSlot (Xhc, SlotId);
+ 
+   return Status;
+ }
+@@ -3084,7 +3306,10 @@ XhcInitializeEndpointContext (
+           InputContext->EP[Dci-1].EPType = ED_INTERRUPT_OUT;
+         }
+ 
+-        InputContext->EP[Dci-1].AverageTRBLength = 0x1000;
++        // For low/full-speed interrupt endpoints, one packet is the maximum
++        // payload per ESIT. Advertise that expected TRB length to the periodic
++        // scheduler instead of the bulk endpoint's 4 KiB estimate (4.14.1.1).
++        InputContext->EP[Dci-1].AverageTRBLength = EpDesc->MaxPacketSize;
+         InputContext->EP[Dci-1].MaxESITPayload   = EpDesc->MaxPacketSize;
+         InputContext->EP[Dci-1].Interval         = CalculateInterval (USB_ENDPOINT_INTERRUPT, DeviceSpeed, EpDesc->Interval);
+ 
+@@ -3260,7 +3485,10 @@ XhcInitializeEndpointContext64 (
+           InputContext->EP[Dci-1].EPType = ED_INTERRUPT_OUT;
+         }
+ 
+-        InputContext->EP[Dci-1].AverageTRBLength = 0x1000;
++        // For low/full-speed interrupt endpoints, one packet is the maximum
++        // payload per ESIT. Advertise that expected TRB length to the periodic
++        // scheduler instead of the bulk endpoint's 4 KiB estimate (4.14.1.1).
++        InputContext->EP[Dci-1].AverageTRBLength = EpDesc->MaxPacketSize;
+         InputContext->EP[Dci-1].MaxESITPayload   = EpDesc->MaxPacketSize;
+         InputContext->EP[Dci-1].Interval         = CalculateInterval (USB_ENDPOINT_INTERRUPT, DeviceSpeed, EpDesc->Interval);
+ 
+@@ -3402,6 +3630,15 @@ XhcSetConfigCmd (
+     DEBUG ((DEBUG_ERROR, "XhcSetConfigCmd: Config Endpoint Failed, Status = %r\n", Status));
+   } else {
+     Xhc->UsbDevContext[SlotId].ActiveConfiguration = ConfigDesc->ConfigurationValue;
++    MemoryFence ();
++    for (Dci = 2; Dci <= MaxDci; Dci++) {
++      if ((InputContext->InputControlContext.Dword2 & (BIT0 << Dci)) != 0) {
++        volatile UINT32 *Ep = (volatile UINT32 *)&((volatile DEVICE_CONTEXT *)OutputContext)->EP[Dci - 1];
++        DEBUG ((DEBUG_WARN, "Xhc configured: slot=%u bus=%u config=%u dci=%u ep=%08x/%08x/%08x/%08x/%08x\n",
++                SlotId, Xhc->UsbDevContext[SlotId].BusDevAddr, ConfigDesc->ConfigurationValue,
++                Dci, Ep[0], Ep[1], Ep[2], Ep[3], Ep[4]));
++      }
++    }
+   }
+ 
+   return Status;
+@@ -3495,6 +3732,15 @@ XhcSetConfigCmd64 (
+     DEBUG ((DEBUG_ERROR, "XhcSetConfigCmd64: Config Endpoint Failed, Status = %r\n", Status));
+   } else {
+     Xhc->UsbDevContext[SlotId].ActiveConfiguration = ConfigDesc->ConfigurationValue;
++    MemoryFence ();
++    for (Dci = 2; Dci <= MaxDci; Dci++) {
++      if ((InputContext->InputControlContext.Dword2 & (BIT0 << Dci)) != 0) {
++        volatile UINT32 *Ep = (volatile UINT32 *)&((volatile DEVICE_CONTEXT_64 *)OutputContext)->EP[Dci - 1];
++        DEBUG ((DEBUG_WARN, "Xhc configured: slot=%u bus=%u config=%u dci=%u ep=%08x/%08x/%08x/%08x/%08x\n",
++                SlotId, Xhc->UsbDevContext[SlotId].BusDevAddr, ConfigDesc->ConfigurationValue,
++                Dci, Ep[0], Ep[1], Ep[2], Ep[3], Ep[4]));
++      }
++    }
+   }
+ 
+   return Status;
+@@ -3512,66 +3758,204 @@ XhcSetConfigCmd64 (
+   @retval Others                Failed to stop endpoint.
+ 
+ **/
++STATIC
++UINT8
++XhcReadEndpointState (
++  IN USB_XHCI_INSTANCE *Xhc,
++  IN UINT8 SlotId,
++  IN UINT8 Dci
++  )
++{
++  VOID *OutputContext;
++  if ((SlotId == 0) || (Dci == 0) || (Dci >= 32)) {
++    return 0xFF;
++  }
++  OutputContext = Xhc->UsbDevContext[SlotId].OutputContext;
++  if (OutputContext == NULL) {
++    return 0xFF;
++  }
++  MemoryFence ();
++  if (Xhc->HcCParams.Data.Csz == 0) {
++    return (UINT8)((volatile DEVICE_CONTEXT *)OutputContext)->EP[Dci - 1].EPState;
++  }
++  return (UINT8)((volatile DEVICE_CONTEXT_64 *)OutputContext)->EP[Dci - 1].EPState;
++}
++
++/**
++  Retry a halted bulk/interrupt TD without resetting its data toggle or dequeue.
++
++  xHCI 4.6.8.1 and Linux process_bulk_intr_td use Reset Endpoint with TSP=1
++  for a bounded number of USB transaction errors. A TT-backed endpoint cannot
++  use this path: it needs the USB hub's transaction-translator recovery.
++  Failure leaves the original error and TD owned for normal cancellation.
++**/
++STATIC
++BOOLEAN
++XhcRetryTransaction (
++  IN USB_XHCI_INSTANCE *Xhc,
++  IN URB              *Urb
++  )
++{
++  UINT8                       SlotId;
++  UINT8                       Dci;
++  UINT8                       EpType;
++  UINT8                       RootPort;
++  UINT32                      PortState;
++  VOID                        *Output;
++  TRANSFER_RING               *Ring;
++  volatile SLOT_CONTEXT       *Slot;
++  CMD_TRB_RESET_ENDPOINT      Reset;
++  EVT_TRB_COMMAND_COMPLETION  *Completion;
++  EFI_STATUS                  Status;
++
++  if (Urb->Cancelled || Urb->Retired || !Urb->Finished ||
++      (Urb->Result != EDKII_USB_ERR_TRANSACTION) ||
++      (Urb->SoftRetryCount >= 4) || XhcIsHalt (Xhc) || XhcIsSysError (Xhc)) {
++    return FALSE;
++  }
++  SlotId = XhcBusDevAddrToSlotId (Xhc, Urb->Ep.BusAddr);
++  Dci = XhcEndpointToDci (Urb->Ep.EpAddr, (UINT8)Urb->Ep.Direction);
++  if ((SlotId == 0) || (Dci <= 1) || (Dci >= 32) ||
++      (Urb->Ring == NULL) ||
++      (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci - 1] != Urb->Ring)) {
++    return FALSE;
++  }
++  Output = Xhc->UsbDevContext[SlotId].OutputContext;
++  if (Output == NULL) {
++    return FALSE;
++  }
++  MemoryFence ();
++  Ring = Urb->Ring;
++  Slot = (volatile SLOT_CONTEXT *)Output;
++  EpType = Xhc->HcCParams.Data.Csz == 0 ?
++           (UINT8)((volatile DEVICE_CONTEXT *)Output)->EP[Dci - 1].EPType :
++           (UINT8)((volatile DEVICE_CONTEXT_64 *)Output)->EP[Dci - 1].EPType;
++  if ((Slot->TTHubSlotId != 0) ||
++      ((EpType != ED_BULK_IN) && (EpType != ED_BULK_OUT) &&
++       (EpType != ED_INTERRUPT_IN) && (EpType != ED_INTERRUPT_OUT)) ||
++      (XhcReadEndpointState (Xhc, SlotId, Dci) != 2)) {
++    return FALSE;
++  }
++  RootPort = (UINT8)Slot->RootHubPortNum;
++  if ((RootPort == 0) || (RootPort > Xhc->HcSParams1.Data.MaxPorts)) {
++    return FALSE;
++  }
++  PortState = XhcReadOpReg (Xhc, XHC_PORTSC_OFFSET + 0x10 * (RootPort - 1));
++  if (((PortState & XHC_PORTSC_CCS) == 0) ||
++      ((PortState & XHC_PORTSC_PLS) == (6U << 5))) {
++    return FALSE;
++  }
++
++  Urb->SoftRetryCount++;
++  ZeroMem (&Reset, sizeof (Reset));
++  Reset.CycleBit = 1;
++  Reset.Type = TRB_TYPE_RESET_ENDPOINT;
++  Reset.EDID = Dci;
++  Reset.SlotId = SlotId;
++  Reset.TSP = 1;
++  Completion = NULL;
++  Status = XhcCmdTransfer (Xhc, (TRB_TEMPLATE *)&Reset,
++                          XHC_GENERIC_TIMEOUT, (TRB_TEMPLATE **)&Completion);
++  if (EFI_ERROR (Status) || (Completion == NULL) ||
++      (Completion->Completecode != TRB_COMPLETION_SUCCESS)) {
++    DEBUG ((DEBUG_ERROR, "Xhc soft retry retained: slot=%u dci=%u attempt=%u status=%r\n",
++            SlotId, Dci, Urb->SoftRetryCount, Status));
++    return FALSE;
++  }
++  // Command polling can consume other endpoint events. Revalidate the exact
++  // original slot/context/ring before touching its port or ringing it again.
++  if (Urb->Cancelled || Urb->Retired ||
++      (XhcBusDevAddrToSlotId (Xhc, Urb->Ep.BusAddr) != SlotId) ||
++      (Xhc->UsbDevContext[SlotId].OutputContext != Output) ||
++      (Urb->Ring != Ring) ||
++      (Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci - 1] != Ring)) {
++    return FALSE;
++  }
++  PortState = XhcReadOpReg (Xhc, XHC_PORTSC_OFFSET + 0x10 * (RootPort - 1));
++  if (((PortState & XHC_PORTSC_CCS) == 0) ||
++      ((PortState & XHC_PORTSC_PLS) == (6U << 5))) {
++    return FALSE;
++  }
++  Status = XhcRingDoorBell (Xhc, SlotId, Dci);
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++  Urb->Result = EFI_USB_NOERROR;
++  Urb->Finished = FALSE;
++  DEBUG ((DEBUG_WARN, "Xhc soft retry: slot=%u dci=%u attempt=%u (toggle/TD preserved)\n",
++          SlotId, Dci, Urb->SoftRetryCount));
++  return TRUE;
++}
++
+ EFI_STATUS
+ EFIAPI
+ XhcStopEndpoint (
+   IN USB_XHCI_INSTANCE  *Xhc,
+   IN UINT8              SlotId,
+   IN UINT8              Dci,
+-  IN URB                *PendingUrb  OPTIONAL
++  IN URB                *PendingUrb OPTIONAL
+   )
+ {
+-  EFI_STATUS                  Status;
+-  EVT_TRB_COMMAND_COMPLETION  *EvtTrb;
+-  CMD_TRB_STOP_ENDPOINT       CmdTrbStopED;
+-
+-  DEBUG ((DEBUG_VERBOSE, "XhcStopEndpoint: Slot = 0x%x, Dci = 0x%x\n", SlotId, Dci));
+-
+-  EvtTrb = NULL;
++  EFI_STATUS                 Status;
++  EVT_TRB_COMMAND_COMPLETION *EvtTrb;
++  CMD_TRB_STOP_ENDPOINT      CmdTrbStopED;
++  UINT8                      State;
++  UINTN                      Attempt;
++
++  State = XhcReadEndpointState (Xhc, SlotId, Dci);
++  if (State == 2) {
++    // xHCI 4.6.8: a halted endpoint needs Reset Endpoint, not Stop Endpoint.
++    // Keep the failed URB result so dequeue does not mistake it for success.
++    return XhcResetEndpoint (Xhc, SlotId, Dci);
++  }
++  if ((State != 1) && (State != 3)) {
++    return EFI_DEVICE_ERROR;
++  }
+ 
+-  //
+-  // When XhcCheckUrbResult waits for the Stop_Endpoint completion, it also checks
+-  // the PendingUrb completion status, because it's possible that the PendingUrb is
+-  // finished just before stopping the end point, but after the looping check.
+-  //
+-  // The PendingUrb could be passed to XhcCmdTransfer to XhcExecTransfer to XhcCheckUrbResult
+-  // through function parameter, but That will cause every consumer of XhcCmdTransfer,
+-  // XhcExecTransfer and XhcCheckUrbResult pass a NULL PendingUrb.
+-  // But actually only XhcCheckUrbResult is aware of the PendingUrb.
+-  // So we choose to save the PendingUrb into the USB_XHCI_INSTANCE and use it in XhcCheckUrbResult.
+-  //
+   ASSERT (Xhc->PendingUrb == NULL);
+   Xhc->PendingUrb = PendingUrb;
+-  //
+-  // Reset the URB result from Timeout to NoError.
+-  // The USB result will be:
+-  //   changed to Timeout when Stop/StopInvalidLength Transfer Event is received, or
+-  //   remain NoError when Success/ShortPacket Transfer Event is received.
+-  //
+-  if (PendingUrb != NULL) {
++  if ((PendingUrb != NULL) && !PendingUrb->Finished) {
+     PendingUrb->Result = EFI_USB_NOERROR;
+   }
+ 
+-  //
+-  // Send stop endpoint command to transit Endpoint from running to stop state
+-  //
+   ZeroMem (&CmdTrbStopED, sizeof (CmdTrbStopED));
+   CmdTrbStopED.CycleBit = 1;
+-  CmdTrbStopED.Type     = TRB_TYPE_STOP_ENDPOINT;
+-  CmdTrbStopED.EDID     = Dci;
+-  CmdTrbStopED.SlotId   = SlotId;
+-  Status                = XhcCmdTransfer (
+-                            Xhc,
+-                            (TRB_TEMPLATE *)(UINTN)&CmdTrbStopED,
+-                            XHC_GENERIC_TIMEOUT,
+-                            (TRB_TEMPLATE **)(UINTN)&EvtTrb
+-                            );
+-  if (EFI_ERROR (Status) || (EvtTrb == NULL)) {
+-    DEBUG ((DEBUG_ERROR, "XhcStopEndpoint: Stop Endpoint Failed, Status = %r\n", Status));
++  CmdTrbStopED.Type    = TRB_TYPE_STOP_ENDPOINT;
++  CmdTrbStopED.EDID    = Dci;
++  CmdTrbStopED.SlotId  = SlotId;
++  Status = EFI_DEVICE_ERROR;
++  for (Attempt = 0; Attempt < 100; Attempt++) {
++    EvtTrb = NULL;
++    Status = XhcCmdTransfer (Xhc, (TRB_TEMPLATE *)&CmdTrbStopED,
++                            XHC_GENERIC_TIMEOUT, (TRB_TEMPLATE **)&EvtTrb);
++    if (!EFI_ERROR (Status) && (EvtTrb != NULL)) {
++      break;
++    }
++    if (!EFI_ERROR (Status)) {
++      Status = EFI_DEVICE_ERROR;
++    }
++    if ((EvtTrb == NULL) || (EvtTrb->Completecode != TRB_COMPLETION_CONTEXT_STATE_ERROR)) {
++      break;
++    }
++    State = XhcReadEndpointState (Xhc, SlotId, Dci);
++    if (State == 2) {
++      // The endpoint may halt between the state read and Stop completion.
++      Xhc->PendingUrb = NULL;
++      return XhcResetEndpoint (Xhc, SlotId, Dci);
++    }
++    if ((State != 1) && (State != 3)) {
++      break;
++    }
++    // A just-rung endpoint can still report Stopped while its restart is in
++    // flight. Linux allows 100 ms for this restart race; require a
++    // successful Stop completion instead of trusting the Stopped snapshot.
++    MicroSecondDelay (1000);
+   }
+-
+   Xhc->PendingUrb = NULL;
+-
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "XhcStopEndpoint: slot=%u dci=%u state=%u status=%r\n",
++            SlotId, Dci, XhcReadEndpointState (Xhc, SlotId, Dci), Status));
++  }
+   return Status;
+ }
+ 
+@@ -3616,7 +4000,10 @@ XhcResetEndpoint (
+                              XHC_GENERIC_TIMEOUT,
+                              (TRB_TEMPLATE **)(UINTN)&EvtTrb
+                              );
+-  if (EFI_ERROR (Status) || (EvtTrb == NULL)) {
++  if (!EFI_ERROR (Status) && (EvtTrb == NULL)) {
++    Status = EFI_DEVICE_ERROR;
++  }
++  if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "XhcResetEndpoint: Reset Endpoint Failed, Status = %r\n", Status));
+   }
+ 
+@@ -3671,7 +4058,10 @@ XhcSetTrDequeuePointer (
+                            XHC_GENERIC_TIMEOUT,
+                            (TRB_TEMPLATE **)(UINTN)&EvtTrb
+                            );
+-  if (EFI_ERROR (Status) || (EvtTrb == NULL)) {
++  if (!EFI_ERROR (Status) && (EvtTrb == NULL)) {
++    Status = EFI_DEVICE_ERROR;
++  }
++  if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "XhcSetTrDequeuePointer: Set TR Dequeue Pointer Failed, Status = %r\n", Status));
+   }
+   // MU_CHANGE [BEGIN] - 274185
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
+index e606e212a1..c3013a2df2 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
+@@ -75,6 +75,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define TRB_COMPLETION_TRB_ERROR               5
+ #define TRB_COMPLETION_STALL_ERROR             6
+ #define TRB_COMPLETION_SHORT_PACKET            13
++#define TRB_COMPLETION_CONTEXT_STATE_ERROR     19
+ #define TRB_COMPLETION_STOPPED                 26
+ #define TRB_COMPLETION_STOPPED_LENGTH_INVALID  27
+ 
+@@ -180,10 +181,14 @@ typedef struct _URB {
+   VOID                               *DataMap;
+   EFI_ASYNC_USB_TRANSFER_CALLBACK    Callback;
+   VOID                               *Context;
++  BOOLEAN                            Cancelled; // Keep failed-cancel DMA without client callbacks.
++  BOOLEAN                            Retired;   // Disable Slot completed; the original rings no longer exist.
+   //
+   // Execute result
+   //
+   UINT32                             Result;
++  UINT8                              SoftRetryCount; // Consecutive transaction errors on this TD.
++  UINT32                             InterruptCompletions; // Successful completions before a later error.
+   //
+   // completed data length
+   //
+@@ -1205,6 +1210,15 @@ XhcEvaluateContext64 (
+   IN UINT32             MaxPacketSize
+   );
+ 
++/**
++  Release all software slot allocations after a proven controller halt and
++  host protocol removal. Caller serializes against all controller activity.
++**/
++VOID
++XhcFreeDeviceSlots (
++  IN USB_XHCI_INSTANCE  *Xhc
++  );
++
+ /**
+   Disable the specified device slot.
+ 

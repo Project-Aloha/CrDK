@@ -1,0 +1,16 @@
+## @file
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = VariablePersistenceLibNull
+  FILE_GUID = 5A79A9B7-78DE-4B1C-BB83-9BF25079F3F1
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = VariablePersistenceLib
+[Sources]
+  VariablePersistenceLibNull.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec

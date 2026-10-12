@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = SpmiSharedCrLib
+  FILE_GUID = aa0b901f-ab69-5f09-ba1e-4208ab1c7f31
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SpmiSharedCrLib
+[Sources]
+  SpmiShared.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  IoLib
+  SpmiLib

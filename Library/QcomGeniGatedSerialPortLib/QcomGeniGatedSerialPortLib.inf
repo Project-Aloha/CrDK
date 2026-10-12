@@ -1,0 +1,36 @@
+## @file
+# Inactive HDK DXE console variant; common gate closes all copies at EBS.
+# SPDX-License-Identifier: MIT
+##
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = QcomGeniGatedSerialPortLib
+  FILE_GUID = 6BE1108D-E92F-42E8-A751-E0B428B31936
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SerialPortLib|DXE_CORE DXE_DRIVER UEFI_DRIVER UEFI_APPLICATION
+  CONSTRUCTOR = CrUartSerialConstructor
+  DESTRUCTOR = CrUartSerialDestructor
+
+[Sources]
+  GatedSerial.c
+  UartAdmissionUefi.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+
+[LibraryClasses]
+  UartAdmissionLib
+  SynchronizationLib
+  PcdLib
+  TimerLib
+
+[Guids]
+  gEfiEventExitBootServicesGuid
+
+[FixedPcd]
+  gMUCommonCrPkgTokenSpaceGuid.PcdUartSerialBase
+  gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate
+

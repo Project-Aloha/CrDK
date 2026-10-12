@@ -1,0 +1,23 @@
+# A730 retained kernel CP transaction
+
+This private library implements one source-qualified A730.1 command processor transaction. It acquires GPU OOB access, initializes the complete selected Linux register profile, programs mapped SQE/ring/shadows, publishes CP_INIT and secure-mode exit in order, then runs a fixed kernel scratch-write with ordered BV and BR cache-clean fences. The caller supplies no arbitrary packet, indirect buffer, address or page-table switch. Completion is only this probe, never RenderReady or a WDDM rendering capability.
+
+`Init` binds immutable descriptors and disjoint resident CPU/IOVA spans without I/O. `Begin`, `Poll` and `SubmitProbe` execute under the same retained parent operation lock; each callback validates the actual parent, power, runtime, firmware, domain and secure loan. Query returns metadata only. Seal/Drain stop software admission; they never attest physical stop or authorize freeing DMA storage. The retained effect journal records OOB, SQE, secure stages and publication before calls; an error after accepted WPTR permanently faults this transaction and cannot replay it.
+
+Only chip 0x07030001 is admitted. Ring is 32 KiB, shadow 4 KiB and powerlist 8 KiB; SQE is a page-aligned mapped payload after its four-byte file prefix. CPU ranges and IOVAs must be distinct and bounded. The WDM consumer uses noncached NX kernel MDLs, actual HAL stage-1 mappings, high IOVAs and sparse high physical pages, explicit cache synchronization and barriers. Ring/SQE are GPU-read-only; powerlist/shadow are read/write. Fences and scratch must come from that exact retained mapping.
+
+## Source profile and deliberate limits
+
+Linux commit a53261b60834ce617cc4f3c7723dda8285c59789 supplies a6xx_gpu.c hardware initialization, a7xx_cp_init/a7xx_submit, a6xx_catalog.c A730 HWCG/protection/power lists, a6xx_gmu.c nonlegacy GPU OOB, and XML-derived registers/packets. Original C functions are compiled independently by the source oracle; its complete trace, powerlist and packet comparisons do not reuse the candidate tables as expected values.
+
+Android commit e93f69dc83e69e5139e6a7911041f357b5e2b304 is an independent ordering/target comparison. Its A730.1 chicken registers and some IFPC/protect policy differ and are not mixed into this Linux profile. Linux's optional aperture call failure is strengthened to a required retained provider contract for this unit; no bank number is invented. The final completion IRQ bit is deliberately cleared and the GPU IRQ mask remains zero in this polling-only probe. This divergence is independently packet-compared and still needs review/physical qualification before live selection.
+
+The canonical SCM host cannot supply the required PAS13/ZAP or allocated CP-bank provider. A missing provider refuses before the first CP/OOB activation effect. Public HAL InputMappingIds are not physical SIDs or context-bank numbers. The Windows consumer requires an explicit CP PDO and exact pair corresponding to CP0/1; it never reuses the GMU SID5 route. A future fixed-domain policy may prove that an aperture operation is unnecessary, but no Boolean shortcut or guessed bank0 supplies that proof here.
+
+The SQE candidate is official linux-firmware commit 42e9d5a5994cf8178558cc2f8d9733e0dedddc0c; the tested file qcom/a730_sqe.fw is 75,924 bytes, SHA256 4f8b288f340ff5b4881bed8dfea90bb4a1b967556ca2df6d07f4ed4e4a28d071, WHENCE v1.81. The adapter checks exact size/prefix/version before copying the 75,920-byte payload into immutable mapped storage. This is format compatibility, not authentication. The source manifest retains exact firmware provenance and license; no firmware is installed by this unit.
+
+The required physical stop first closes/drains CPU work, retires runtime IRQ/DPC/PASSIVE service, halts SQE when GX is accessible, releases OOB, and obtains fresh parent CM3/GPU reset/GBIF observations. A residual held GPU reset at activation is refused: no unsupported reset-clear or power-cycle is manufactured. Normal slumber/wake, firmware recovery, arbitrary OS unload after uncertain hardware failure, user submissions, scheduling, process isolation and Mesa/WDDM ABI are separate work. RenderReady remains FALSE.
+
+## Integration boundary
+
+Portable class registration/export remains root-owned. This new INF is unselected and has not been native-built. The private WDM props imports the two core TUs and three new adapter TUs; current WDK project compilation/link is recorded separately. No DiagnosticStart, ACPI/IORT, secure provider, SDK or native image is changed by this unit. Hardware execution has not been tested.

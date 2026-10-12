@@ -22,7 +22,7 @@
 #define INTERCONNECT_BCM_COMMIT_BIT     BIT(30)
 #define INTERCONNECT_BCM_VALID_BIT      BIT(29)
 #define INTERCONNECT_BCM_VOTE_X_SHIFT  14
-#define INTERCONNECT_VOTE_SCALE         1000U
+#define INTERCONNECT_DEFAULT_VOTE_SCALE 1000U
 #define INTERCONNECT_INVALID_NODE       0xFFFFU
 
 STATIC InterconnectDeviceContext mInterconnectContext;
@@ -181,7 +181,16 @@ InitializeBcms(IN OUT InterconnectDeviceContext *Context)
     Runtime->Unit = ReadLe32(Aux);
     Runtime->Width = ReadLe16(&Aux[4]);
     Runtime->Vcd = Aux[6];
-    if (Runtime->Unit == 0 || Runtime->Width == 0) {
+    /*
+     * Linux's bcm-voter keeps the CmdDB record for every BCM, but BCMs
+     * carrying an enable_mask are encoded as a one-hot on/off vote and do
+     * not use the unit/width conversion fields.  SM8450's ACV entry is one
+     * such BCM; its CmdDB aux record is present but has zero unit/width.
+     * Keep rejecting malformed conversion metadata for bandwidth BCMs while
+     * accepting the zero fields that are valid for mask-only BCMs.
+     */
+    if ((Runtime->Unit == 0 || Runtime->Width == 0) &&
+        Target->EnableMask == 0) {
       log_err(
           "ICB: invalid CmdDB aux data for " CR_LOG_CHAR8_STR_FMT,
           Target->Name);
@@ -194,6 +203,28 @@ InitializeBcms(IN OUT InterconnectDeviceContext *Context)
   return CR_SUCCESS;
 }
 
+STATIC CR_STATUS
+ValidateVcdCapacity(IN InterconnectDeviceContext *Context)
+{
+  UINT16 Maximum = Context->Io.MaxRpmhCommands;
+  UINT16 Index;
+  UINT16 Other;
+
+  if (Maximum == 0 || Maximum > INTERCONNECT_MAX_RPMH_COMMANDS) {
+    Maximum = INTERCONNECT_MAX_RPMH_COMMANDS;
+  }
+  /* Every VCD must fit even when all its BCMs become dirty during recovery.
+     Check before the first hardware vote, including inactive BCMs. */
+  for (Index = 0; Index < Context->Target->BcmCount; ++Index) {
+    UINT16 Count = 0;
+    for (Other = 0; Other < Context->Target->BcmCount; ++Other) {
+      if (Context->Bcm[Index].Vcd == Context->Bcm[Other].Vcd) ++Count;
+    }
+    if (Count > Maximum) return CR_OUT_OF_RESOURCES;
+  }
+  return CR_SUCCESS;
+}
+
 STATIC UINT64
 CalculateBcmVote(
     IN InterconnectDeviceContext *Context, IN UINT16 BcmIndex,
@@ -202,6 +233,8 @@ CalculateBcmVote(
   CONST InterconnectTargetBcm *Bcm = &Context->Target->Bcms[BcmIndex];
   InterconnectBcmRuntime *Runtime = &Context->Bcm[BcmIndex];
   UINT64 Vote = 0;
+  UINT32 VoteScale = Bcm->VoteScale != 0 ? Bcm->VoteScale :
+                      INTERCONNECT_DEFAULT_VOTE_SCALE;
   UINT16 Index;
 
   for (Index = 0; Index < Bcm->NodeCount; Index++) {
@@ -229,7 +262,7 @@ CalculateBcmVote(
   }
 
   return DivideRoundUp64(
-      SaturatingMultiply64(Vote, INTERCONNECT_VOTE_SCALE), Runtime->Unit);
+      SaturatingMultiply64(Vote, VoteScale), Runtime->Unit);
 }
 
 STATIC VOID
@@ -366,6 +399,12 @@ WriteBcmBatch(
   Status = Context->Io.WriteRpmh(
       Context->Io.RpmhContext, Commands, Count);
   if (CR_ERROR(Status)) {
+    /* A timeout may follow a committed command. Force restoration of every
+     * register in the failed batch instead of assuming no hardware change. */
+    for (Index = 0; Index < Count; ++Index) {
+      Context->Bcm[Indices[Index]].Programmed = FALSE;
+      Context->Bcm[Indices[Index]].Dirty = TRUE;
+    }
     return Status;
   }
   for (Index = 0; Index < Count; Index++) {
@@ -435,7 +474,7 @@ CommitVotes(IN OUT InterconnectDeviceContext *Context)
   return CR_SUCCESS;
 }
 
-STATIC VOID
+STATIC CR_STATUS
 RollbackVotesAfterFailure(IN OUT InterconnectDeviceContext *Context)
 {
   CR_STATUS Status;
@@ -444,12 +483,15 @@ RollbackVotesAfterFailure(IN OUT InterconnectDeviceContext *Context)
    * dirty state from the restored paths and push the old votes back so the
    * RPMh state cannot remain ahead of the caller-visible state. */
   Status = CommitVotes(Context);
+  Context->LastRollbackStatus = Status;
+  Context->RollbackPending = CR_ERROR(Status);
   if (CR_ERROR(Status)) {
     log_err("ICB: vote rollback retry failed, Status=0x%X", Status);
   }
+  return Status;
 }
 
-STATIC VOID
+STATIC CR_STATUS
 BestEffortClearVotes(IN OUT InterconnectDeviceContext *Context)
 {
   UINT16 Index;
@@ -466,6 +508,25 @@ BestEffortClearVotes(IN OUT InterconnectDeviceContext *Context)
   if (CR_ERROR(Status)) {
     log_err("ICB: BCM vote rollback failed, Status=0x%X", Status);
   }
+  Context->LastRollbackStatus = Status;
+  return Status;
+}
+
+CR_STATUS
+InterconnectRecoverVotes(IN OUT InterconnectDeviceContext *Context)
+{
+  CR_STATUS Status;
+
+  if (Context == NULL || !Context->Initialized || Context->DeinitPending) {
+    return CR_INVALID_PARAMETER;
+  }
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
+  Status = Context->Initialized && !Context->DeinitPending ?
+      (Context->RollbackPending ? RollbackVotesAfterFailure(Context) : CR_SUCCESS) :
+      CR_ABORT;
+  CrMutexRelease(&Context->Lock);
+  return Status;
 }
 
 STATIC CR_STATUS
@@ -564,6 +625,7 @@ InterconnectLibInit(
 {
   CR_STATUS Status;
 
+  if (CR_ERROR(CrMutexCheckLevel())) return CR_INVALID_PARAMETER;
   if (Context == NULL || Target == NULL || Io == NULL || Io->GetAddress == NULL ||
       Io->GetAuxData == NULL || Io->WriteRpmh == NULL) {
     return CR_INVALID_PARAMETER;
@@ -571,7 +633,7 @@ InterconnectLibInit(
   if (*Context == NULL) {
     *Context = &mInterconnectContext;
   }
-  if ((*Context)->DeinitPending) {
+  if ((*Context)->DeinitPending || (*Context)->RollbackPending) {
     return CR_BUSY;
   }
   if ((*Context)->Initialized) {
@@ -586,8 +648,9 @@ InterconnectLibInit(
     cr_memset(*Context, 0, sizeof(**Context));
     return Status;
   }
-  CrLockInit(&(*Context)->Lock);
+  CrMutexInit(&(*Context)->Lock);
   Status = InitializeBcms(*Context);
+  if (!CR_ERROR(Status)) Status = ValidateVcdCapacity(*Context);
   if (CR_ERROR(Status)) {
     cr_memset(*Context, 0, sizeof(**Context));
     return Status;
@@ -596,12 +659,57 @@ InterconnectLibInit(
   RecalculateVotes(*Context);
   Status = CommitVotes(*Context);
   if (CR_ERROR(Status)) {
-    BestEffortClearVotes(*Context);
-    cr_memset(*Context, 0, sizeof(**Context));
+    if (CR_ERROR(BestEffortClearVotes(*Context))) {
+      (*Context)->DeinitPending = TRUE;
+    } else {
+      cr_memset(*Context, 0, sizeof(**Context));
+    }
     return Status;
   }
   (*Context)->Initialized = TRUE;
   return CR_SUCCESS;
+}
+
+CR_STATUS InterconnectValidatePath(InterconnectDeviceContext *Context,
+    CONST CHAR8 *Provider, UINT32 SourceId, UINT32 DestinationId)
+{
+  if (Context == NULL || Provider == NULL || CR_ERROR(CrMutexCheckLevel()))
+    return CR_INVALID_PARAMETER;
+  if (!Context->Initialized || Context->DeinitPending) return CR_NOT_READY;
+  CR_STATUS Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
+  if (!Context->Initialized || Context->DeinitPending || Context->RollbackPending) {
+    Status = CR_NOT_READY;
+  } else {
+    UINT16 ProviderIndex, Source, Destination;
+    UINT64 Mask[INTERCONNECT_MAX_NODES / 64] = {0};
+    Status = FindProvider(Context, Provider, &ProviderIndex);
+    if (!CR_ERROR(Status)) Status = FindEndpointNode(Context, ProviderIndex, SourceId, &Source);
+    if (!CR_ERROR(Status)) Status = FindEndpointNode(Context, ProviderIndex, DestinationId, &Destination);
+    if (!CR_ERROR(Status)) Status = BuildPath(Context, Source, Destination, Mask);
+  }
+  CrMutexRelease(&Context->Lock);
+  return Status;
+}
+
+CR_STATUS InterconnectGetPathVote(InterconnectDeviceContext *Context,
+    INTERCONNECT_PATH_HANDLE Path, UINT64 *Average, UINT64 *Peak, BOOLEAN *Pending)
+{
+  if (Context == NULL || Average == NULL || Peak == NULL || Pending == NULL ||
+      Path == INTERCONNECT_INVALID_PATH || Path > INTERCONNECT_MAX_PATHS ||
+      CR_ERROR(CrMutexCheckLevel())) return CR_INVALID_PARAMETER;
+  if (!Context->Initialized || Context->DeinitPending) return CR_NOT_READY;
+  CR_STATUS Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
+  if (!Context->Initialized || Context->DeinitPending) Status = CR_NOT_READY;
+  else if (!Context->Paths[Path - 1].InUse) Status = CR_NOT_FOUND;
+  else {
+    *Average = Context->Paths[Path - 1].AverageBandwidth;
+    *Peak = Context->Paths[Path - 1].PeakBandwidth;
+    *Pending = Context->RollbackPending;
+  }
+  CrMutexRelease(&Context->Lock);
+  return Status;
 }
 
 CR_STATUS
@@ -610,16 +718,17 @@ InterconnectLibDeinit(IN OUT InterconnectDeviceContext *Context)
   UINT16 Index;
   CR_STATUS Status;
 
-  if (Context == NULL) {
+  if (Context == NULL || CR_ERROR(CrMutexCheckLevel())) {
     return CR_INVALID_PARAMETER;
   }
   if (!Context->Initialized && !Context->DeinitPending) {
     return CR_SUCCESS;
   }
 
-  CrLockAcquire(&Context->Lock);
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
   if (!Context->Initialized && !Context->DeinitPending) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_SUCCESS;
   }
 
@@ -635,11 +744,14 @@ InterconnectLibDeinit(IN OUT InterconnectDeviceContext *Context)
   }
   Context->DeinitPending = TRUE;
   Status = CommitVotes(Context);
+  Context->LastRollbackStatus = Status;
   if (!CR_ERROR(Status)) {
     Context->Initialized = FALSE;
     Context->DeinitPending = FALSE;
+    Context->RollbackPending = FALSE;
+    Context->LastRollbackStatus = CR_SUCCESS;
   }
-  CrLockRelease(&Context->Lock);
+  CrMutexRelease(&Context->Lock);
   return Status;
 }
 
@@ -672,10 +784,18 @@ InterconnectAcquirePath(
     return Status;
   }
 
-  CrLockAcquire(&Context->Lock);
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
   if (!Context->Initialized || Context->DeinitPending) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_ABORT;
+  }
+  if (Context->RollbackPending) {
+    Status = RollbackVotesAfterFailure(Context);
+    if (CR_ERROR(Status)) {
+      CrMutexRelease(&Context->Lock);
+      return Status;
+    }
   }
   for (Slot = 0; Slot < INTERCONNECT_MAX_PATHS; Slot++) {
     if (!Context->Paths[Slot].InUse) {
@@ -683,7 +803,7 @@ InterconnectAcquirePath(
     }
   }
   if (Slot == INTERCONNECT_MAX_PATHS) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_OUT_OF_RESOURCES;
   }
 
@@ -697,7 +817,7 @@ InterconnectAcquirePath(
     Context->Paths[Slot].InUse = TRUE;
     *Path = (INTERCONNECT_PATH_HANDLE)(Slot + 1);
   }
-  CrLockRelease(&Context->Lock);
+  CrMutexRelease(&Context->Lock);
   return Status;
 }
 
@@ -718,15 +838,23 @@ InterconnectSetBandwidth(
     return CR_INVALID_PARAMETER;
   }
 
-  CrLockAcquire(&Context->Lock);
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
   if (!Context->Initialized || Context->DeinitPending) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_ABORT;
   }
   Runtime = &Context->Paths[Path - 1];
   if (!Runtime->InUse) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_NOT_FOUND;
+  }
+  if (Context->RollbackPending) {
+    Status = RollbackVotesAfterFailure(Context);
+    if (CR_ERROR(Status)) {
+      CrMutexRelease(&Context->Lock);
+      return Status;
+    }
   }
   PreviousAverage = Runtime->AverageBandwidth;
   PreviousPeak = Runtime->PeakBandwidth;
@@ -741,7 +869,7 @@ InterconnectSetBandwidth(
     RecalculateVotes(Context);
     RollbackVotesAfterFailure(Context);
   }
-  CrLockRelease(&Context->Lock);
+  CrMutexRelease(&Context->Lock);
   return Status;
 }
 
@@ -758,15 +886,23 @@ InterconnectReleasePath(
     return CR_INVALID_PARAMETER;
   }
 
-  CrLockAcquire(&Context->Lock);
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return Status;
   if (!Context->Initialized || Context->DeinitPending) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_ABORT;
   }
   Runtime = &Context->Paths[Path - 1];
   if (!Runtime->InUse) {
-    CrLockRelease(&Context->Lock);
+    CrMutexRelease(&Context->Lock);
     return CR_NOT_FOUND;
+  }
+  if (Context->RollbackPending) {
+    Status = RollbackVotesAfterFailure(Context);
+    if (CR_ERROR(Status)) {
+      CrMutexRelease(&Context->Lock);
+      return Status;
+    }
   }
   {
     InterconnectPathRuntime Saved = *Runtime;
@@ -780,7 +916,7 @@ InterconnectReleasePath(
       RollbackVotesAfterFailure(Context);
     }
   }
-  CrLockRelease(&Context->Lock);
+  CrMutexRelease(&Context->Lock);
   return Status;
 }
 
@@ -788,14 +924,16 @@ UINT16
 InterconnectGetProviderCount(IN InterconnectDeviceContext *Context)
 {
   UINT16 ProviderCount;
+  CR_STATUS Status;
 
   if (Context == NULL || !Context->Initialized || Context->DeinitPending) {
     return 0;
   }
-  CrLockAcquire(&Context->Lock);
+  Status = CrMutexAcquire(&Context->Lock);
+  if (CR_ERROR(Status)) return 0;
   ProviderCount = Context->Initialized && !Context->DeinitPending
                       ? Context->Target->ProviderCount
                       : 0;
-  CrLockRelease(&Context->Lock);
+  CrMutexRelease(&Context->Lock);
   return ProviderCount;
 }

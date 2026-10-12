@@ -1,0 +1,40 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = ButtonsCrDxe
+  FILE_GUID = c859e84f-a439-4d23-8a75-cec922b23c96
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = ButtonsCrEntryPoint
+  UNLOAD_IMAGE = ButtonsCrUnload
+[Sources]
+  ButtonsCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  OemPkg/OemPkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  ButtonsCrLib
+  CrDalLib
+  DebugLib
+  IoLib
+  OskInterruptLib
+  PmicGpioLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiCrDalProtocolGuid ## CONSUMES
+  gEfiCrSpmiProtocolGuid ## CONSUMES
+  gEfiSimpleTextInProtocolGuid ## PRODUCES
+  gEfiSimpleTextInputExProtocolGuid ## PRODUCES
+  gMsButtonServicesProtocolGuid ## PRODUCES
+  gEfiCrButtonStateProtocolGuid ## PRODUCES
+  gEfiDevicePathProtocolGuid ## PRODUCES
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiCrDalProtocolGuid AND gEfiCrSpmiProtocolGuid

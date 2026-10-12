@@ -2,8 +2,9 @@
  *  EFI protocol exposing the platform interconnect path voter.
  *
  *  The protocol deliberately carries paths rather than raw BCM/node writes.
- *  ICBCrDxe adapts those paths to the platform's native ICB owner; consumers
- *  only describe the source, destination, and bandwidth they need.
+ *  ICBCrDxe aggregates those paths into Linux-derived BCM votes and submits
+ *  them through Crane RPMh. Consumers describe the source, destination and
+ *  bandwidth they need; no Qualcomm ICB/NPA protocol is required.
  *
  *  SPDX-License-Identifier: MIT
  */

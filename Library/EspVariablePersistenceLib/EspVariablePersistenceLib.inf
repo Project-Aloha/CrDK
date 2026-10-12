@@ -1,0 +1,34 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = EspVariablePersistenceLib
+  FILE_GUID = 29A44B78-F88C-4A07-8312-A2E8552D9506
+  MODULE_TYPE = DXE_RUNTIME_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = VariablePersistenceLib|DXE_RUNTIME_DRIVER
+[Sources]
+  EspVariablePersistence.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  DevicePathLib
+  UefiLib
+  UefiRuntimeLib
+[Protocols]
+  gEdkiiUfsHostControllerProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiExtScsiPassThruProtocolGuid
+  gEfiScsiPassThruProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEmbeddedMmcHostProtocolGuid
+[Guids]
+  gEfiAuthenticatedVariableGuid
+  gEfiPartTypeSystemPartGuid

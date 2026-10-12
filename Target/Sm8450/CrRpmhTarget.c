@@ -6,6 +6,7 @@
 // Rpmh platform specific Target Information
 STATIC RpmhDeviceContext RpmhContext = {
     .drv_base_address = 0x17a20000,
+    .drv_size = 0x10000,
     .drv_id           = 2,
     .tcs_offset       = 0xd00,
     .InterruptConfig =

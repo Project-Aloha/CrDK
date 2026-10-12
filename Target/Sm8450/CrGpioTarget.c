@@ -5,6 +5,7 @@
 STATIC GpioDeviceContext GpioTargetContext = {
     .TlmmBaseAddress = 0xF000000,
     .PullUpNoKeeper  = FALSE,
+    .EgpioFunction  = GPIO_FUNC_9,
     .InterruptConfig =
         {
             .InterruptNumber = GIC_SPI(208),

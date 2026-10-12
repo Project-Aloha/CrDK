@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AdrenoHfiCrLib
+  FILE_GUID = A593BB25-E25C-457D-A18B-53B144D8E42C
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoHfiCrLib
+[Sources]
+  AdrenoHfi.c
+  Sm8450Hfi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  SynchronizationLib

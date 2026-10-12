@@ -1,0 +1,25 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = UcsiCrLib
+  FILE_GUID = 7a5023ee-b90d-4592-9a40-1f314621bf32
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UcsiCrLib
+[Sources]
+  Ipcc.c
+  IpccReceive.c
+  Glink.c
+  PmicGlink.c
+  Qrtr.c
+  ChargerLog.c
+  Ppm.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  OskInterruptLib
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  IoLib
+  SynchronizationLib

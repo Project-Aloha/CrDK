@@ -1,0 +1,33 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = FocalTechTouchCrDxe
+  FILE_GUID = A7D25356-516B-47D0-982D-8897E60B030E
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = FocalTechTouchCrEntry
+  UNLOAD_IMAGE = FocalTechTouchCrUnload
+[Sources]
+  FocalTechTouchCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  CrTargetTouchLib
+  DebugLib
+  FocalTechTouchCrLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid ## PRODUCES
+  gEfiDevicePathProtocolGuid ## PRODUCES
+  gEfiLoadedImageProtocolGuid ## CONSUMES
+  gEfiI2cCrProtocolGuid ## CONSUMES
+  gEfiGpioCrProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid ## CONSUMES
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiI2cCrProtocolGuid AND gEfiGpioCrProtocolGuid AND gEfiRpmhCrProtocolGuid

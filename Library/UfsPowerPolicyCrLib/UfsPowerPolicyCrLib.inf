@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UfsPowerPolicyCrLib
+  FILE_GUID = 641f458e-e7e1-42b7-966f-32befa36c810
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UfsPowerPolicyCrLib
+[Sources]
+  UfsPowerPolicy.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

@@ -1,0 +1,2634 @@
+diff --git a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.c b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.c
+index 14fc5e6..edaade1 100644
+--- a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.c
++++ b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.c
+@@ -38,7 +38,6 @@ UFS_PASS_THRU_PRIVATE_DATA  gUfsPassThruTemplate = {
+   0,                                                                                                                                               // UfsHcBase
+   { 0,                                                                                                                                    0     }, // UfsHcInfo
+   { NULL,                                                                                                                                 NULL  }, // UfsHcDriverInterface
+-  0,                                                                                                                                               // TaskTag
+   0,                                                                                                                                               // UtpTrlBase
+   0,                                                                                                                                               // Nutrs
+   0,                                                                                                                                               // TrlMapping
+@@ -67,7 +66,8 @@ UFS_PASS_THRU_PRIVATE_DATA  gUfsPassThruTemplate = {
+   {                               // Queue
+     NULL,
+     NULL
+-  }
++  },
++  NULL, NULL, FALSE, FALSE, FALSE, 0, FALSE, FALSE // Retained ownership and reserved slots
+ };
+ 
+ EFI_DRIVER_BINDING_PROTOCOL  gUfsPassThruDriverBinding = {
+@@ -167,6 +167,13 @@ UfsPassThruPassThru (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
++  // The UFS command descriptor has one data direction and one PRDT.  A
++  // bidirectional ExtScsi packet cannot be represented without dropping one
++  // of its buffers, so reject it before allocating or submitting anything.
++  if (Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_BIDIRECTIONAL) {
++    return EFI_UNSUPPORTED;
++  }
++
+   if ((Packet->SenseDataLength != 0) && (Packet->SenseData == NULL)) {
+     return EFI_INVALID_PARAMETER;
+   }
+@@ -757,9 +764,11 @@ UfsFinishDeviceInitialization (
+   EFI_STATUS  Status;
+   UINT8       DeviceInitStatus;
+   UINT32      Timeout;
++  UINT64      CounterStart, CounterEnd, Previous, Current, Ticks, ElapsedUs = 0;
+ 
+   DeviceInitStatus = 0xFF;
+   Timeout          = PcdGet32 (PcdUfsInitialCompletionTimeout);
++  if (Timeout == 0) return EFI_TIMEOUT;
+ 
+   //
+   // The host enables the device initialization completion by setting fDeviceInit flag.
+@@ -769,23 +778,31 @@ UfsFinishDeviceInitialization (
+     return Status;
+   }
+ 
++  // Linux ufshcd_complete_dev_init uses elapsed time, including query latency,
++  // and treats a cleared flag as success even on the final poll.
++  GetPerformanceCounterProperties (&CounterStart, &CounterEnd);
++  Previous = GetPerformanceCounter ();
+   do {
+     Status = UfsReadFlag (Private, UfsFlagDevInit, &DeviceInitStatus);
+-    if (EFI_ERROR (Status)) {
+-      return Status;
+-    }
+-
+-    MicroSecondDelay (1);
+-    Timeout--;
+-  } while (DeviceInitStatus != 0 && Timeout != 0);
++    if (EFI_ERROR (Status)) return Status;
++    if (DeviceInitStatus == 0) return EFI_SUCCESS;
+ 
+-  if (Timeout == 0) {
+-    DEBUG ((DEBUG_ERROR, "UfsFinishDeviceInitialization DeviceInitStatus=%x EFI_TIMEOUT \n", DeviceInitStatus));
+-    return EFI_TIMEOUT;
+-  } else {
+-    DEBUG ((DEBUG_INFO, "UfsFinishDeviceInitialization Timeout left=%x EFI_SUCCESS \n", Timeout));
+-    return EFI_SUCCESS;
+-  }
++    Current = GetPerformanceCounter ();
++    if (CounterStart < CounterEnd) {
++      Ticks = Current >= Previous ? Current - Previous :
++              (CounterEnd - Previous) + (Current - CounterStart) + 1;
++    } else {
++      Ticks = Previous >= Current ? Previous - Current :
++              (Previous - CounterEnd) + (CounterStart - Current) + 1;
++    }
++    ElapsedUs += DivU64x32 (GetTimeInNanoSecond (Ticks), 1000);
++    Previous = Current;
++    if (ElapsedUs >= Timeout) break;
++    MicroSecondDelay ((UINTN)MIN (500ULL, Timeout - ElapsedUs));
++  } while (TRUE);
++
++  DEBUG ((DEBUG_ERROR, "UfsFinishDeviceInitialization: fDeviceInit not cleared\n"));
++  return EFI_TIMEOUT;
+ }
+ 
+ /**
+@@ -823,6 +840,237 @@ UfsFinishDeviceInitialization (
+   @retval Others                   The driver failded to start the device.
+ 
+ **/
++// A failed Start must retain DMA ownership until HCE and mappings are fenced.
++// Retain independently per controller, retryable through either Start or Stop.
++STATIC EFI_STATUS
++UfsDiscoverLuns (UFS_PASS_THRU_PRIVATE_DATA *Private)
++{
++  EFI_STATUS Status;
++  UINT32                                 Index;
++  UFS_UNIT_DESC                          UnitDescriptor;
++  UFS_DEV_DESC                           DeviceDescriptor;
++  UINT32                                 UnitDescriptorSize;
++  UINT32                                 DeviceDescriptorSize;
++
++  Private->Luns.BitMask = 0;
++  //
++  // Check if 8 common luns are active and set corresponding bit mask.
++  //
++  for (Index = 0; Index < 8; Index++) {
++    UnitDescriptorSize = sizeof (UFS_UNIT_DESC);
++    ZeroMem (&UnitDescriptor, sizeof (UnitDescriptor));
++    Status = UfsRwDeviceDesc (Private, TRUE, UfsUnitDesc, (UINT8)Index, 0, &UnitDescriptor, &UnitDescriptorSize);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "Failed to read unit descriptor, index = %X, status = %r\n", Index, Status));
++      // Invalid Index/IDN identifies an absent LUN. Transport failures abort
++      // discovery instead of repeating a full timeout budget for every LUN.
++      if (Status != EFI_INVALID_PARAMETER) {
++        return Status;
++      }
++      continue;
++    }
++
++    // Linux ufshcd_read_desc_param validates header type/length before use.
++    if (UnitDescriptorSize <= OFFSET_OF (UFS_UNIT_DESC, LunEn) ||
++        UnitDescriptor.Length <= OFFSET_OF (UFS_UNIT_DESC, LunEn) ||
++        UnitDescriptor.DescType != UfsUnitDesc) continue;
++    if (UnitDescriptor.LunEn == 0x1) {
++      DEBUG ((DEBUG_INFO, "UFS LUN %X is enabled\n", Index));
++      Private->Luns.BitMask |= (BIT0 << Index);
++    }
++  }
++
++  //
++  // Check if RPMB WLUN is supported and set corresponding bit mask.
++  //
++  ZeroMem (&DeviceDescriptor, sizeof (DeviceDescriptor));
++  DeviceDescriptorSize = sizeof (UFS_DEV_DESC);
++  Status               = UfsRwDeviceDesc (Private, TRUE, UfsDeviceDesc, 0, 0, &DeviceDescriptor, &DeviceDescriptorSize);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "Failed to read device descriptor, status = %r\n", Status));
++    if (Status != EFI_INVALID_PARAMETER) {
++      return Status;
++    }
++  } else {
++    if (DeviceDescriptorSize > OFFSET_OF (UFS_DEV_DESC, SecurityLun) &&
++        DeviceDescriptor.Length > OFFSET_OF (UFS_DEV_DESC, SecurityLun) &&
++        DeviceDescriptor.DescType == UfsDeviceDesc &&
++        DeviceDescriptor.SecurityLun == 0x1) {
++      DEBUG ((DEBUG_INFO, "UFS WLUN RPMB is supported\n"));
++      Private->Luns.BitMask |= BIT11;
++    }
++  }
++
++  return EFI_SUCCESS;
++}
++
++STATIC UFS_PASS_THRU_PRIVATE_DATA *mFailedStart;
++
++STATIC UFS_PASS_THRU_PRIVATE_DATA *
++UfsFindRetained (EFI_HANDLE Controller)
++{
++  UFS_PASS_THRU_PRIVATE_DATA *Entry;
++  for (Entry = mFailedStart; Entry != NULL; Entry = Entry->RetainedNext) {
++    if (Entry->Handle == Controller) return Entry;
++  }
++  return NULL;
++}
++
++// This helper never owns caller lifetime or the queue node. A detached request
++// (Packet == NULL) can only release its private staging/mappings, never copy back.
++EFI_STATUS
++UfsReleaseRequestResources (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                            UFS_PASS_THRU_TRANS_REQ *Request, BOOLEAN CopyRead)
++{
++  EFI_STATUS Status;
++  EDKII_UFS_HOST_CONTROLLER_PROTOCOL *Host = Private->UfsHostController;
++  if (Request->Submitted && !Request->DmaFenced) return EFI_NOT_READY;
++  if (Request->DataBufMapping != NULL) {
++    Status = Host->Unmap (Host, Request->DataBufMapping);
++    if (EFI_ERROR (Status)) return Status;
++    Request->DataBufMapping = NULL;
++  }
++  if (CopyRead && !Request->DataCopied && Request->ResponseValidated &&
++      Request->Packet != NULL && Request->AlignedDataBuf != NULL &&
++      Request->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
++    if (Request->Packet->InTransferLength > Request->AlignedDataBufSize)
++      return EFI_COMPROMISED_DATA;
++    CopyMem (Request->Packet->InDataBuffer, Request->AlignedDataBuf,
++             Request->Packet->InTransferLength);
++    Request->DataCopied = TRUE;
++  }
++  if (Request->CmdDescFromPool) {
++    // Returning a fenced slot does not retire the controller-owned DMA pool.
++    Request->CmdDescHost = NULL;
++    Request->CmdDescFromPool = FALSE;
++  }
++  if (Request->CmdDescMapping != NULL) {
++    Status = Host->Unmap (Host, Request->CmdDescMapping);
++    if (EFI_ERROR (Status)) return Status;
++    Request->CmdDescMapping = NULL;
++  }
++  if (Request->CmdDescHost != NULL) {
++    Status = Host->FreeBuffer (Host, EFI_SIZE_TO_PAGES (Request->CmdDescSize), Request->CmdDescHost);
++    if (EFI_ERROR (Status)) return Status;
++    Request->CmdDescHost = NULL;
++  }
++  if (Request->AlignedDataBuf != NULL) {
++    ZeroMem (Request->AlignedDataBuf, Request->AlignedDataBufSize);
++    Status = Host->FreeBuffer (Host, EFI_SIZE_TO_PAGES (Request->AlignedDataBufSize), Request->AlignedDataBuf);
++    if (EFI_ERROR (Status)) return Status;
++    Request->AlignedDataBuf = NULL;
++  }
++  return EFI_SUCCESS;
++}
++
++// HCE is disabled before this path; request nodes without Packet/Event are
++// detached synchronous failures retained solely for private resource cleanup.
++STATIC EFI_STATUS
++UfsReleaseFencedRequest (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                         UFS_PASS_THRU_TRANS_REQ *Request)
++{
++  EFI_STATUS Status;
++  Request->DmaFenced = TRUE;
++  Status = UfsReleaseRequestResources (Private, Request, FALSE);
++  if (EFI_ERROR (Status)) return Status;
++  if (Request->CallerEvent != NULL) {
++    Status = gBS->SignalEvent (Request->CallerEvent);
++    if (EFI_ERROR (Status)) return Status;
++  }
++  RemoveEntryList (&Request->TransferList);
++  if (Request->OwnsSlot) UfsReleaseSlot (Private, Request->Slot);
++  FreePool (Request);
++  return EFI_SUCCESS;
++}
++
++STATIC EFI_STATUS
++UfsCleanupFailedStart (UFS_PASS_THRU_PRIVATE_DATA *Private)
++{
++  EFI_STATUS Status;
++  UFS_PASS_THRU_PRIVATE_DATA **Link;
++  LIST_ENTRY *Entry, *Next;
++  UFS_PASS_THRU_TRANS_REQ *Request;
++  EDKII_UFS_HOST_CONTROLLER_PROTOCOL *Host;
++  if (Private == NULL) return EFI_SUCCESS;
++  if (Private->CleanupInProgress) return EFI_NOT_READY;
++  Private->CleanupInProgress = TRUE;
++  Host = Private->UfsHostController;
++  if (Private->RetainedConfigInstalled) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Private->Handle, &gEfiUfsDeviceConfigProtocolGuid,
++                    &Private->UfsDevConfig, NULL);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->RetainedConfigInstalled = FALSE;
++  }
++  if (Private->TimerEvent != NULL) {
++    Status = gBS->SetTimer (Private->TimerEvent, TimerCancel, 0);
++    if (EFI_ERROR (Status)) goto Failed;
++    Status = gBS->CloseEvent (Private->TimerEvent);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->TimerEvent = NULL;
++  }
++  if (Private->RetainedControllerAttempted) {
++    Status = UfsControllerStop (Private);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->RetainedControllerAttempted = FALSE;
++  }
++  // Only signal/free queued requests after HCE disable has been confirmed.
++  BASE_LIST_FOR_EACH_SAFE (Entry, Next, &Private->Queue) {
++    Request = UFS_PASS_THRU_TRANS_REQ_FROM_THIS (Entry);
++    if (Request->Packet != NULL)
++      Request->Packet->HostAdapterStatus = EFI_EXT_SCSI_STATUS_HOST_ADAPTER_PHASE_ERROR;
++    Status = UfsReleaseFencedRequest (Private, Request);
++    if (EFI_ERROR (Status)) goto Failed;
++  }
++  if (Private->TmrlMapping != NULL) {
++    Status = Host->Unmap (Host, Private->TmrlMapping);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->TmrlMapping = NULL;
++  }
++  if (Private->UtpTmrlBase != NULL) {
++    Status = Host->FreeBuffer (Host, EFI_SIZE_TO_PAGES (Private->Nutmrs * sizeof (UTP_TMRD)), Private->UtpTmrlBase);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->UtpTmrlBase = NULL;
++  }
++  if (Private->TrlMapping != NULL) {
++    Status = Host->Unmap (Host, Private->TrlMapping);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->TrlMapping = NULL;
++  }
++  if (Private->UtpTrlBase != NULL) {
++    Status = Host->FreeBuffer (Host, EFI_SIZE_TO_PAGES (Private->Nutrs * sizeof (UTP_TRD)), Private->UtpTrlBase);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->UtpTrlBase = NULL;
++  }
++  // Every request has been fenced and released; retire the permanent UCD last.
++  if (Private->UcdMapping != NULL) {
++    Status = Host->Unmap (Host, Private->UcdMapping);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->UcdMapping = NULL;
++  }
++  if (Private->UtpUcdBase != NULL) {
++    Status = Host->FreeBuffer (Host, EFI_SIZE_TO_PAGES (Private->UcdPoolSize), Private->UtpUcdBase);
++    if (EFI_ERROR (Status)) goto Failed;
++    Private->UtpUcdBase = NULL;
++    Private->UcdPoolSize = 0;
++    Private->UcdDeviceAddress = 0;
++  }
++  Status = gBS->CloseProtocol (Private->Handle, &gEdkiiUfsHostControllerProtocolGuid,
++                              Private->RetainedAgent, Private->Handle);
++  if (EFI_ERROR (Status)) goto Failed;
++  for (Link = &mFailedStart; *Link != NULL; Link = &(*Link)->RetainedNext) {
++    if (*Link == Private) {
++      *Link = Private->RetainedNext;
++      break;
++    }
++  }
++  FreePool (Private);
++  return EFI_SUCCESS;
++Failed:
++  Private->CleanupInProgress = FALSE;
++  return Status;
++}
++
+ EFI_STATUS
+ EFIAPI
+ UfsPassThruDriverBindingStart (
+@@ -832,17 +1080,21 @@ UfsPassThruDriverBindingStart (
+   )
+ {
+   EFI_STATUS                             Status;
++  EFI_STATUS                             CleanupStatus;
++  BOOLEAN                                ControllerAttempted = FALSE;
++  BOOLEAN                                ConfigInstalled = FALSE;
+   EDKII_UFS_HOST_CONTROLLER_PROTOCOL     *UfsHc;
+   UFS_PASS_THRU_PRIVATE_DATA             *Private;
+   UINTN                                  UfsHcBase;
+-  UINT32                                 Index;
+-  UFS_UNIT_DESC                          UnitDescriptor;
+-  UFS_DEV_DESC                           DeviceDescriptor;
+-  UINT32                                 UnitDescriptorSize;
+-  UINT32                                 DeviceDescriptorSize;
+   EDKII_UFS_CARD_REF_CLK_FREQ_ATTRIBUTE  Attributes;
+   UINT8                                  RefClkAttr;
+ 
++  Private = UfsFindRetained (Controller);
++  if (Private != NULL) {
++    Status = UfsCleanupFailedStart (Private);
++    if (EFI_ERROR (Status)) return Status;
++  }
++
+   Status    = EFI_SUCCESS;
+   UfsHc     = NULL;
+   Private   = NULL;
+@@ -901,6 +1153,10 @@ UfsPassThruDriverBindingStart (
+     }
+   }
+ 
++  // GetUfsHcMmioBar() may have powered the platform resources before the
++  // version/capability reads below.  Mark the controller attempted before
++  // entering this path so every failure follows the same Stop cleanup.
++  ControllerAttempted = TRUE;
+   Status = GetUfsHcInfo (Private);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "Failed to initialize UfsHcInfo\n"));
+@@ -958,6 +1214,7 @@ UfsPassThruDriverBindingStart (
+              mUfsHcPlatform->RefClkFreq,
+              Status)
+             );
++          goto Error;
+         }
+       }
+     } else {
+@@ -966,6 +1223,7 @@ UfsPassThruDriverBindingStart (
+          "Failed to Read Reference Clock Attribute, Status = %r \n",
+          Status)
+         );
++      goto Error;
+     }
+   }
+ 
+@@ -977,7 +1235,7 @@ UfsPassThruDriverBindingStart (
+          "Failure from platform driver during EdkiiUfsHcPostLinkStartup, Status = %r\n",
+          Status)
+         );
+-      return Status;
++      goto Error;
+     }
+   }
+ 
+@@ -989,37 +1247,11 @@ UfsPassThruDriverBindingStart (
+                   NULL
+                   );
+   // MU_CHANGE [END]
++  if (EFI_ERROR (Status)) goto Error;
++  ConfigInstalled = TRUE;
+ 
+-  //
+-  // Check if 8 common luns are active and set corresponding bit mask.
+-  //
+-  UnitDescriptorSize = sizeof (UFS_UNIT_DESC);
+-  for (Index = 0; Index < 8; Index++) {
+-    Status = UfsRwDeviceDesc (Private, TRUE, UfsUnitDesc, (UINT8)Index, 0, &UnitDescriptor, &UnitDescriptorSize);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "Failed to read unit descriptor, index = %X, status = %r\n", Index, Status));
+-      continue;
+-    }
+-
+-    if (UnitDescriptor.LunEn == 0x1) {
+-      DEBUG ((DEBUG_INFO, "UFS LUN %X is enabled\n", Index));
+-      Private->Luns.BitMask |= (BIT0 << Index);
+-    }
+-  }
+-
+-  //
+-  // Check if RPMB WLUN is supported and set corresponding bit mask.
+-  //
+-  DeviceDescriptorSize = sizeof (UFS_DEV_DESC);
+-  Status               = UfsRwDeviceDesc (Private, TRUE, UfsDeviceDesc, 0, 0, &DeviceDescriptor, &DeviceDescriptorSize);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "Failed to read device descriptor, status = %r\n", Status));
+-  } else {
+-    if (DeviceDescriptor.SecurityLun == 0x1) {
+-      DEBUG ((DEBUG_INFO, "UFS WLUN RPMB is supported\n"));
+-      Private->Luns.BitMask |= BIT11;
+-    }
+-  }
++  Status = UfsDiscoverLuns (Private);
++  if (EFI_ERROR (Status)) goto Error;
+ 
+   //
+   // Start the asynchronous interrupt monitor
+@@ -1054,44 +1286,26 @@ UfsPassThruDriverBindingStart (
+                   NULL
+                   );
+   // MU_CHANGE [END]
+-  ASSERT_EFI_ERROR (Status);
++  if (EFI_ERROR (Status)) goto Error;
+ 
+   return EFI_SUCCESS;
+ 
+ Error:
+   if (Private != NULL) {
+-    if (Private->TmrlMapping != NULL) {
+-      UfsHc->Unmap (UfsHc, Private->TmrlMapping);
+-    }
+-
+-    if (Private->UtpTmrlBase != NULL) {
+-      UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (Private->Nutmrs * sizeof (UTP_TMRD)), Private->UtpTmrlBase);
+-    }
+-
+-    if (Private->TrlMapping != NULL) {
+-      UfsHc->Unmap (UfsHc, Private->TrlMapping);
+-    }
+-
+-    if (Private->UtpTrlBase != NULL) {
+-      UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (Private->Nutrs * sizeof (UTP_TMRD)), Private->UtpTrlBase);
+-    }
+-
+-    if (Private->TimerEvent != NULL) {
+-      gBS->CloseEvent (Private->TimerEvent);
++    Private->RetainedNext = mFailedStart;
++    mFailedStart = Private;
++    Private->RetainedAgent = This->DriverBindingHandle;
++    Private->RetainedControllerAttempted = ControllerAttempted;
++    Private->RetainedConfigInstalled = ConfigInstalled;
++    CleanupStatus = UfsCleanupFailedStart (Private);
++    if (EFI_ERROR (CleanupStatus)) {
++      DEBUG ((DEBUG_ERROR, "UFS failed Start retains DMA ownership: %r\n", CleanupStatus));
++      return CleanupStatus;
+     }
+-
+-    FreePool (Private);
+-  }
+-
+-  if (UfsHc != NULL) {
+-    gBS->CloseProtocol (
+-           Controller,
+-           &gEdkiiUfsHostControllerProtocolGuid,
+-           This->DriverBindingHandle,
+-           Controller
+-           );
++  } else if (UfsHc != NULL) {
++    gBS->CloseProtocol (Controller, &gEdkiiUfsHostControllerProtocolGuid,
++                        This->DriverBindingHandle, Controller);
+   }
+-
+   return Status;
+ }
+ 
+@@ -1130,102 +1344,29 @@ UfsPassThruDriverBindingStop (
+   IN  EFI_HANDLE                   *ChildHandleBuffer
+   )
+ {
+-  EFI_STATUS                          Status;
+-  UFS_PASS_THRU_PRIVATE_DATA          *Private;
+-  EFI_EXT_SCSI_PASS_THRU_PROTOCOL     *ExtScsiPassThru;
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
+-  UFS_PASS_THRU_TRANS_REQ             *TransReq;
+-  LIST_ENTRY                          *Entry;
+-  LIST_ENTRY                          *NextEntry;
+-
+-  DEBUG ((DEBUG_INFO, "==UfsPassThru Stop== Controller Controller = %x\n", Controller));
+-
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiExtScsiPassThruProtocolGuid,
+-                  (VOID **)&ExtScsiPassThru,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-
+-  if (EFI_ERROR (Status)) {
+-    return EFI_DEVICE_ERROR;
+-  }
+-
++  EFI_STATUS Status;
++  UFS_PASS_THRU_PRIVATE_DATA *Private;
++  EFI_EXT_SCSI_PASS_THRU_PROTOCOL *ExtScsiPassThru;
++
++  Private = UfsFindRetained (Controller);
++  if (Private != NULL) return UfsCleanupFailedStart (Private);
++  Status = gBS->OpenProtocol (Controller, &gEfiExtScsiPassThruProtocolGuid,
++                              (VOID **)&ExtScsiPassThru, This->DriverBindingHandle,
++                              Controller, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
++  if (EFI_ERROR (Status)) return Status;
+   Private = UFS_PASS_THRU_PRIVATE_DATA_FROM_THIS (ExtScsiPassThru);
+-  UfsHc   = Private->UfsHostController;
+-
+-  //
+-  // Cleanup the resources of I/O requests in the async I/O queue
+-  //
+-  if (!IsListEmpty (&Private->Queue)) {
+-    BASE_LIST_FOR_EACH_SAFE (Entry, NextEntry, &Private->Queue) {
+-      TransReq = UFS_PASS_THRU_TRANS_REQ_FROM_THIS (Entry);
+-
+-      //
+-      // TODO: Should find/add a proper host adapter return status for this
+-      // case.
+-      //
+-      TransReq->Packet->HostAdapterStatus =
+-        EFI_EXT_SCSI_STATUS_HOST_ADAPTER_PHASE_ERROR;
+-
+-      SignalCallerEvent (Private, TransReq);
+-    }
+-  }
+-
++  if (Private->CleanupInProgress) return EFI_NOT_READY;
++  // A consumer refusal must leave the active timer, queue and controller untouched.
+   Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  Controller,
+-                  &gEfiExtScsiPassThruProtocolGuid,
+-                  &(Private->ExtScsiPassThru),
+-                  &gEfiUfsDeviceConfigProtocolGuid,
+-                  &(Private->UfsDevConfig),
+-                  NULL
+-                  );
+-
+-  if (EFI_ERROR (Status)) {
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  //
+-  // Stop Ufs Host Controller
+-  //
+-  Status = UfsControllerStop (Private);
+-  ASSERT_EFI_ERROR (Status);
+-
+-  if (Private->TmrlMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, Private->TmrlMapping);
+-  }
+-
+-  if (Private->UtpTmrlBase != NULL) {
+-    UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (Private->Nutmrs * sizeof (UTP_TMRD)), Private->UtpTmrlBase);
+-  }
+-
+-  if (Private->TrlMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, Private->TrlMapping);
+-  }
+-
+-  if (Private->UtpTrlBase != NULL) {
+-    UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (Private->Nutrs * sizeof (UTP_TMRD)), Private->UtpTrlBase);
+-  }
+-
+-  if (Private->TimerEvent != NULL) {
+-    gBS->CloseEvent (Private->TimerEvent);
+-  }
+-
+-  FreePool (Private);
+-
+-  //
+-  // Close protocols opened by UfsPassThru controller driver
+-  //
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEdkiiUfsHostControllerProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  return Status;
++                  Controller, &gEfiExtScsiPassThruProtocolGuid, &Private->ExtScsiPassThru,
++                  &gEfiUfsDeviceConfigProtocolGuid, &Private->UfsDevConfig, NULL);
++  if (EFI_ERROR (Status)) return Status;
++  Private->RetainedAgent = This->DriverBindingHandle;
++  Private->RetainedControllerAttempted = TRUE;
++  Private->RetainedConfigInstalled = FALSE;
++  Private->RetainedNext = mFailedStart;
++  mFailedStart = Private;
++  return UfsCleanupFailedStart (Private);
+ }
+ 
+ /**
+diff --git a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.h b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.h
+index 6cba29f..819c4c5 100644
+--- a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.h
++++ b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.h
+@@ -60,8 +60,6 @@ typedef struct _UFS_PASS_THRU_PRIVATE_DATA {
+   EDKII_UFS_HC_INFO                     UfsHcInfo;
+   EDKII_UFS_HC_DRIVER_INTERFACE         UfsHcDriverInterface;
+ 
+-  UINT8                                 TaskTag;
+-
+   VOID                                  *UtpTrlBase;
+   UINT8                                 Nutrs;
+   VOID                                  *TrlMapping;
+@@ -76,8 +74,36 @@ typedef struct _UFS_PASS_THRU_PRIVATE_DATA {
+   //
+   EFI_EVENT                             TimerEvent;
+   LIST_ENTRY                            Queue;
++  struct _UFS_PASS_THRU_PRIVATE_DATA     *RetainedNext;
++  EFI_HANDLE                            RetainedAgent;
++  BOOLEAN                               RetainedControllerAttempted;
++  BOOLEAN                               RetainedConfigInstalled;
++  BOOLEAN                               CleanupInProgress;
++  UINT32                                ReservedSlots;
++  BOOLEAN                               IoUnavailable;
++  BOOLEAN                               FenceFailed;
++  UINT32                                FatalError; // Sticky until this instance is retired.
++  UINT32                                TraceCount;
++  UINT32                                DoorbellAttempts;
++  UINT32                                DoorbellWrites;
++  UINT32                                LastDoorbellMask;
++  // Public Android keeps the all-slot command descriptor array until stop.
++  VOID                                  *UtpUcdBase;
++  VOID                                  *UcdMapping;
++  EFI_PHYSICAL_ADDRESS                  UcdDeviceAddress;
++  UINTN                                 UcdPoolSize;
+ } UFS_PASS_THRU_PRIVATE_DATA;
+ 
++// Public Android/Linux ufshci.h INT_FATAL_ERRORS; generic UIC_ERROR is separate.
++#define UFS_HC_FATAL_ERROR_MASK (BIT7 | BIT11 | BIT12 | BIT16 | BIT17 | BIT18)
++
++// Public Android/Linux ALIGNED_UPIU_SIZE for command and response regions.
++#define UFS_UPIU_REGION_SIZE  512U
++// Waipio Android SG_ALL = SG_CHUNK_SIZE = 128, with 16-byte PRD entries.
++#define UFS_MAX_PRDT_ENTRIES  128U
++#define UFS_UCD_SLOT_SIZE     (2 * UFS_UPIU_REGION_SIZE + UFS_MAX_PRDT_ENTRIES * sizeof (UTP_TR_PRD))
++#define UFS_MAX_TRANSFER_BYTES (UFS_MAX_PRDT_ENTRIES * UFS_MAX_DATA_LEN_PER_PRD)
++
+ #define UFS_PASS_THRU_TRANS_REQ_SIG  SIGNATURE_32 ('U', 'F', 'S', 'T')
+ 
+ typedef struct {
+@@ -96,8 +122,20 @@ typedef struct {
+   EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET    *Packet;
+   UINT64                                        TimeoutRemain;
+   EFI_EVENT                                     CallerEvent;
++  BOOLEAN                                       OwnsSlot;
++  BOOLEAN                                       Submitted;
++  BOOLEAN                                       DmaFenced;
++  BOOLEAN                                       OnQueue;
++  BOOLEAN                                       ResponseValidated;
++  BOOLEAN                                       DataCopied;
++  EFI_STATUS                                    CompletionStatus;
++  BOOLEAN                                       CmdDescFromPool;
+ } UFS_PASS_THRU_TRANS_REQ;
+ 
++// Releases only request-owned DMA resources; caller owns node/event lifetime.
++EFI_STATUS UfsReleaseRequestResources (UFS_PASS_THRU_PRIVATE_DATA *Private,
++  UFS_PASS_THRU_TRANS_REQ *Request, BOOLEAN CopyRead);
++
+ #define UFS_PASS_THRU_TRANS_REQ_FROM_THIS(a) \
+     CR(a, UFS_PASS_THRU_TRANS_REQ, TransferList, UFS_PASS_THRU_TRANS_REQ_SIG)
+ 
+@@ -857,6 +895,9 @@ ProcessAsyncTaskList (
+                        structure.
+ 
+ **/
++VOID
++UfsReleaseSlot (IN UFS_PASS_THRU_PRIVATE_DATA *Private, IN UINT8 Slot);
++
+ VOID
+ EFIAPI
+ SignalCallerEvent (
+diff --git a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
+index 47a7212..df4cc86 100644
+--- a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
++++ b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
+@@ -10,6 +10,10 @@
+ 
+ #include "UfsPassThru.h"
+ 
++STATIC VOID UfsQueueOwnedRequest (UFS_PASS_THRU_PRIVATE_DATA *Private, UFS_PASS_THRU_TRANS_REQ *Request);
++STATIC EFI_STATUS UfsFinishOwnedRequest (UFS_PASS_THRU_PRIVATE_DATA *Private, UFS_PASS_THRU_TRANS_REQ *Request);
++
++
+ /**
+   Read 32bits data from specified UFS MMIO register.
+ 
+@@ -70,6 +74,74 @@ UfsMmioWrite32 (
+   return Status;
+ }
+ 
++
++STATIC EFI_STATUS
++UfsCheckControllerErrors (UFS_PASS_THRU_PRIVATE_DATA *Private)
++{
++  STATIC CONST UINT32 Offsets[] = {
++    UFS_HC_STATUS_OFFSET, UFS_HC_ENABLE_OFFSET,
++    UFS_HC_UTRLBA_OFFSET, UFS_HC_UTRLBAU_OFFSET,
++    UFS_HC_UTRLDBR_OFFSET, UFS_HC_UTRLRSR_OFFSET,
++    UFS_HC_CAP_OFFSET, UFS_HC_VER_OFFSET,
++    UFS_HC_UTMRLBA_OFFSET, UFS_HC_UTMRLBAU_OFFSET,
++    UFS_HC_UTMRLDBR_OFFSET, UFS_HC_UTMRLRSR_OFFSET,
++    UFS_HC_UECPA_OFFSET, UFS_HC_UECDL_OFFSET, UFS_HC_UECN_OFFSET,
++    UFS_HC_UECT_OFFSET, UFS_HC_UECDME_OFFSET
++  };
++  UINT32 Is, Value;
++  UINTN Index;
++  EFI_STATUS Status;
++  if (Private->FatalError != 0) return EFI_DEVICE_ERROR;
++  Status = UfsMmioRead32 (Private, UFS_HC_IS_OFFSET, &Is);
++  if (EFI_ERROR (Status)) return Status;
++  if ((Is & UFS_HC_FATAL_ERROR_MASK) == 0) return EFI_SUCCESS;
++  Private->FatalError = Is & UFS_HC_FATAL_ERROR_MASK;
++  Private->IoUnavailable = TRUE;
++  // Read before HCE/UTRLCLR or SMMU revocation can alter the failing state.
++  DEBUG ((DEBUG_ERROR, "UFS: fatal IS=%08x; controller submissions closed\n", Is));
++  DEBUG ((DEBUG_ERROR, "UFS: fatal doorbell attempts=%u writes=%u last-mask=%08x\n",
++          Private->DoorbellAttempts, Private->DoorbellWrites, Private->LastDoorbellMask));
++  for (Index = 0; Index < ARRAY_SIZE (Offsets); Index++) {
++    Value = 0;
++    Status = UfsMmioRead32 (Private, Offsets[Index], &Value);
++    DEBUG ((DEBUG_ERROR, "UFS: fatal reg[%02x]=%08x (%r)\n", Offsets[Index], Value, Status));
++  }
++  if (Private->UtpTrlBase != NULL) {
++    for (Index = 0; Index < 32; Index++) {
++      if ((Private->ReservedSlots & (1U << Index)) != 0) {
++        UTP_TRD *Trd = (UTP_TRD *)Private->UtpTrlBase + Index;
++        DEBUG ((DEBUG_ERROR, "UFS: fatal slot=%u OCS=%x UCD=%Lx response=%u/%u PRDT=%u/%u\n",
++          (UINT32)Index, Trd->Ocs,
++          ((UINT64)Trd->UcdBaU << 32) | ((UINT64)Trd->UcdBa << 7),
++          Trd->RuO * 4, Trd->RuL * 4, Trd->PrdtO * 4, Trd->PrdtL));
++      }
++    }
++  }
++  return EFI_DEVICE_ERROR;
++}
++
++// Read only CPU-owned descriptor bytes; never dereference the device IOVA.
++// Bound boot traces to four requests so fDeviceInit polling stays practical.
++STATIC VOID
++UfsTraceRequest (UFS_PASS_THRU_PRIVATE_DATA *Private, UTP_TRD *Trd,
++                 VOID *Host, UINT32 Size, UINT8 Slot)
++{
++  UINT32 Dw[8], Up[8];
++  UINT64 Device;
++  if (Private->TraceCount >= 4 || Host == NULL || Size < sizeof (Up)) return;
++  Private->TraceCount++;
++  CopyMem (Dw, Trd, sizeof (Dw));
++  CopyMem (Up, Host, sizeof (Up));
++  Device = ((UINT64)Trd->UcdBaU << 32) | ((UINT64)Trd->UcdBa << 7);
++  DEBUG ((DEBUG_WARN, "UFS: prepared slot=%u host=%p UCD=%Lx bytes=%u slot-end=%Lx pool-end=%Lx\n",
++          Slot, Host, Device, Size, Device + UFS_UCD_SLOT_SIZE,
++          Private->UcdDeviceAddress + Private->UcdPoolSize));
++  DEBUG ((DEBUG_WARN, "UFS: TRD %08x %08x %08x %08x %08x %08x %08x %08x\n",
++          Dw[0], Dw[1], Dw[2], Dw[3], Dw[4], Dw[5], Dw[6], Dw[7]));
++  DEBUG ((DEBUG_WARN, "UFS: UPIU %08x %08x %08x %08x %08x %08x %08x %08x\n",
++          Up[0], Up[1], Up[2], Up[3], Up[4], Up[5], Up[6], Up[7]));
++}
++
+ /**
+   Wait for the value of the specified system memory set to the test value.
+ 
+@@ -116,6 +188,13 @@ UfsWaitMemSet (
+       return Status;
+     }
+ 
++    // Completion polling must observe sticky fatal status even if DBR is
++    // already clear. Cleanup polling still needs to verify the HCI stop.
++    if (Offset == UFS_HC_UTRLDBR_OFFSET && TestValue == 0 &&
++        !Private->CleanupInProgress) {
++      Status = UfsCheckControllerErrors (Private);
++      if (EFI_ERROR (Status)) return Status;
++    }
+     Value &= MaskValue;
+ 
+     if (Value == TestValue) {
+@@ -476,21 +555,141 @@ UfsInitQueryRequestUpiu (
+   return EFI_SUCCESS;
+ }
+ 
++// Borrow the reserved slot's permanent UCD; the controller owns its mapping.
++// No device address is ever used as a CPU pointer.
++STATIC EFI_STATUS
++UfsAcquireCommandDescriptor (
++  IN UFS_PASS_THRU_PRIVATE_DATA *Private,
++  IN UTP_TRD                   *Trd,
++  OUT VOID                     **Host,
++  OUT EFI_PHYSICAL_ADDRESS     *Device,
++  OUT VOID                     **Mapping
++  )
++{
++  UINTN Offset, Slot;
++  *Host = NULL;
++  *Device = 0;
++  *Mapping = NULL;
++  if (Private->UtpUcdBase == NULL || Private->UtpTrlBase == NULL || Private->Nutrs == 0)
++    return EFI_NOT_READY;
++  if ((UINTN)Trd < (UINTN)Private->UtpTrlBase) return EFI_INVALID_PARAMETER;
++  Offset = (UINTN)Trd - (UINTN)Private->UtpTrlBase;
++  if (Offset % sizeof (*Trd) != 0 || Offset / sizeof (*Trd) >= Private->Nutrs)
++    return EFI_INVALID_PARAMETER;
++  Slot = Offset / sizeof (*Trd);
++  Offset = Slot * UFS_UCD_SLOT_SIZE;
++  if (Offset > Private->UcdPoolSize || UFS_UCD_SLOT_SIZE > Private->UcdPoolSize - Offset)
++    return EFI_COMPROMISED_DATA;
++  *Host = (UINT8 *)Private->UtpUcdBase + Offset;
++  *Device = Private->UcdDeviceAddress + Offset;
++  // Reuse must remove stale response, PRDT and command payload bytes.
++  ZeroMem (*Host, UFS_UCD_SLOT_SIZE);
++  return EFI_SUCCESS;
++}
++
+ /**
+-  Allocate COMMAND/RESPONSE UPIU for filling UTP TRD's command descriptor field.
++  Prepare COMMAND/RESPONSE UPIU in the reserved slot's permanent UCD.
+ 
+   @param[in]  Private           The pointer to the UFS_PASS_THRU_PRIVATE_DATA data structure.
+   @param[in]  Lun               The Lun on which the SCSI command is executed.
+   @param[in]  Packet            The pointer to the EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET data structure.
+   @param[in]  Trd               The pointer to the UTP Transfer Request Descriptor.
+-  @param[out] CmdDescHost       A pointer to store the base system memory address of the allocated range.
+-  @param[out] CmdDescMapping    A resulting value to pass to Unmap().
++  @param[out] CmdDescHost       Borrowed CPU address; the controller owns its backing.
++  @param[out] CmdDescMapping    Always NULL; the request does not own the pool mapping.
+ 
+   @retval EFI_SUCCESS           The creation succeed.
+   @retval EFI_DEVICE_ERROR      The creation failed.
+   @retval EFI_OUT_OF_RESOURCES  The memory resource is insufficient.
+ 
+ **/
++STATIC EFI_STATUS
++UfsAlignedTransferLength (UINT32 Length, UINT32 *Aligned)
++{
++  if (Length > MAX_UINT32 - 3U) return EFI_BAD_BUFFER_SIZE;
++  *Aligned = (Length + 3U) & ~3U;
++  return EFI_SUCCESS;
++}
++
++STATIC EFI_STATUS
++UfsValidateScsiResponse (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                         UFS_PASS_THRU_TRANS_REQ *Request)
++{
++  EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET *Packet = Request->Packet;
++  UTP_COMMAND_UPIU *Command = Request->CmdDescHost;
++  UTP_RESPONSE_UPIU *Response = (UTP_RESPONSE_UPIU *)
++    ((UINT8 *)Request->CmdDescHost + Request->Trd->RuO * sizeof (UINT32));
++  UINT16 SenseLength = Response->SenseDataLen;
++  UINT16 SegmentLength = Response->DataSegLen;
++  UINT16 CopyLength = 0;
++  UINT32 Residual = Response->ResTranCount;
++  UINT32 *Length = Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ ?
++                   &Packet->InTransferLength : &Packet->OutTransferLength;
++  UINT32 Expected = *Length;
++  BOOLEAN Valid;
++  EFI_STATUS Status = EFI_SUCCESS;
++  SwapLittleEndianToBigEndian ((UINT8 *)&SenseLength, sizeof (SenseLength));
++  SwapLittleEndianToBigEndian ((UINT8 *)&SegmentLength, sizeof (SegmentLength));
++  SwapLittleEndianToBigEndian ((UINT8 *)&Residual, sizeof (Residual));
++  Packet->TargetStatus = Response->Status;
++  // Like Linux, classify the transport by OCS/type and the target by SCSI
++  // status. A nonzero Response byte does not erase valid CHECK CONDITION.
++  Valid = Request->Trd->Ocs == 0 && Response->TransCode == 0x21 && Response->EhsLen == 0 &&
++          Response->TaskTag == Command->TaskTag && Response->Lun == Command->Lun;
++  if (Valid && SegmentLength != 0) {
++    if (SegmentLength < sizeof (UINT16) || SenseLength > SegmentLength - sizeof (UINT16)) {
++      Valid = FALSE;
++    } else if (Packet->SenseData != NULL) {
++      // The host retains an 18-byte prefix; both wire and client may declare
++      // longer buffers. Expose the available prefix without reading past it.
++      CopyLength = (UINT16)MIN (SenseLength, sizeof (Response->SenseData));
++      CopyLength = MIN (CopyLength, Packet->SenseDataLength);
++      if (CopyLength != 0) CopyMem (Packet->SenseData, Response->SenseData, CopyLength);
++    }
++  }
++  Packet->SenseDataLength = (UINT8)CopyLength;
++  if (!Valid || (Response->Flags & BIT6) != 0 || Residual > Expected) {
++    Packet->HostAdapterStatus = EFI_EXT_SCSI_STATUS_HOST_ADAPTER_PHASE_ERROR;
++    *Length = 0; // No validated data may be copied from a bounce buffer.
++    Status = EFI_DEVICE_ERROR;
++  } else {
++    // Some UFS devices omit the underflow flag even with a residual count.
++    *Length -= Residual;
++    Packet->HostAdapterStatus = EFI_EXT_SCSI_STATUS_HOST_ADAPTER_OK;
++  }
++  if (EFI_ERROR (Status) || Response->Status != 0 || Response->Response != 0) {
++    DEBUG ((EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_WARN,
++            "UFS: SCSI op=%02x slot=%u request-lun=%x request-tag=%u lun=%x tag=%u OCS=%x type=%02x response=%02x status=%02x flags=%02x ehs=%u segment=%u sense=%u/%u residual=%u expected=%u: %r\n",
++            Packet->Cdb != NULL && Packet->CdbLength != 0 ? ((UINT8 *)Packet->Cdb)[0] : 0,
++            Request->Slot, Command->Lun, Command->TaskTag,
++            Response->Lun, Response->TaskTag, Request->Trd->Ocs, Response->TransCode,
++            Response->Response, Response->Status, Response->Flags, Response->EhsLen,
++            SegmentLength, SenseLength, CopyLength, Residual, Expected, Status));
++  }
++  if (EFI_ERROR (Status)) {
++    STATIC CONST UINTN Offsets[] = {
++      UFS_HC_IS_OFFSET, UFS_HC_STATUS_OFFSET, UFS_HC_ENABLE_OFFSET,
++      UFS_HC_UTRLBA_OFFSET, UFS_HC_UTRLBAU_OFFSET,
++      UFS_HC_UTRLRSR_OFFSET, UFS_HC_UTRLDBR_OFFSET,
++      UFS_HC_UECPA_OFFSET, UFS_HC_UECDL_OFFSET, UFS_HC_UECN_OFFSET,
++      UFS_HC_UECT_OFFSET, UFS_HC_UECDME_OFFSET
++    };
++    UINTN Index;
++    UINT32 Value;
++    EFI_STATUS ReadStatus;
++    // Capture the failing transport before cleanup revokes its DMA mappings.
++    DEBUG ((DEBUG_ERROR, "UFS: TRD command=%08x:%08x response=%u/%u PRDT=%u/%u\n",
++            Request->Trd->UcdBaU, (UINT32)Request->Trd->UcdBa << 7,
++            Request->Trd->RuO, Request->Trd->RuL,
++            Request->Trd->PrdtO, Request->Trd->PrdtL));
++    for (Index = 0; Index < ARRAY_SIZE (Offsets); Index++) {
++      Value = 0;
++      ReadStatus = UfsMmioRead32 (Private, Offsets[Index], &Value);
++      DEBUG ((DEBUG_ERROR, "UFS: SCSI reg[%02x]=%08x (%r)\n", (UINT32)Offsets[Index], Value, ReadStatus));
++    }
++  }
++  return Status;
++}
++
+ EFI_STATUS
+ UfsCreateScsiCommandDesc (
+   IN     UFS_PASS_THRU_PRIVATE_DATA                  *Private,
+@@ -501,12 +700,12 @@ UfsCreateScsiCommandDesc (
+   OUT VOID                                           **CmdDescMapping
+   )
+ {
+-  UINTN                 TotalLen;
+   UINTN                 PrdtNumber;
+   UTP_COMMAND_UPIU      *CommandUpiu;
+   EFI_PHYSICAL_ADDRESS  CmdDescPhyAddr;
+   EFI_STATUS            Status;
+   UINT32                DataLen;
++  UINT32                AlignedLength;
+   UFS_DATA_DIRECTION    DataDirection;
+ 
+   ASSERT ((Private != NULL) && (Packet != NULL) && (Trd != NULL));
+@@ -523,45 +722,57 @@ UfsCreateScsiCommandDesc (
+     DataDirection = UfsNoData;
+   }
+ 
+-  PrdtNumber = (UINTN)DivU64x32 ((UINT64)DataLen + UFS_MAX_DATA_LEN_PER_PRD - 1, UFS_MAX_DATA_LEN_PER_PRD);
+-
+-  TotalLen = ROUNDUP8 (sizeof (UTP_COMMAND_UPIU)) + ROUNDUP8 (sizeof (UTP_RESPONSE_UPIU)) + PrdtNumber * sizeof (UTP_TR_PRD);
++  // Fixed Android-sized PRDT capacity: report the supported transfer size.
++  if (DataLen > UFS_MAX_TRANSFER_BYTES) {
++    if (DataDirection == UfsDataIn) Packet->InTransferLength = UFS_MAX_TRANSFER_BYTES;
++    else Packet->OutTransferLength = UFS_MAX_TRANSFER_BYTES;
++    return EFI_BAD_BUFFER_SIZE;
++  }
++  Status = UfsAlignedTransferLength (DataLen, &AlignedLength);
++  if (EFI_ERROR (Status)) return Status;
++  PrdtNumber = (UINTN)DivU64x32 ((UINT64)AlignedLength + UFS_MAX_DATA_LEN_PER_PRD - 1, UFS_MAX_DATA_LEN_PER_PRD);
+ 
+-  Status = UfsAllocateAlignCommonBuffer (Private, TotalLen, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
++  Status = UfsAcquireCommandDescriptor (Private, Trd, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+ 
+   CommandUpiu = (UTP_COMMAND_UPIU *)*CmdDescHost;
+ 
+-  UfsInitCommandUpiu (CommandUpiu, Lun, Private->TaskTag++, Packet->Cdb, Packet->CdbLength, DataDirection, DataLen);
++  // Android/Linux use the reserved UTRL slot as the wire task tag.
++  // An independent 8-bit counter can collide with an outstanding request
++  // after wrap and disagrees with the HCI slot identity.
++  UfsInitCommandUpiu (CommandUpiu, Lun, (UINT8)(Trd - (UTP_TRD *)Private->UtpTrlBase),
++                     Packet->Cdb, Packet->CdbLength, DataDirection, DataLen);
+ 
+   //
+   // Fill UTP_TRD associated fields
+   // NOTE: Some UFS host controllers request the Response UPIU and the Physical Region Description Table
+   // *MUST* be located at a 64-bit aligned boundary.
+   //
++  // Overwrite the whole header, including HCI crypto/EHS bits on slot reuse.
++  ZeroMem (Trd, sizeof (*Trd));
+   Trd->Int    = UFS_INTERRUPT_COMMAND;
+   Trd->Dd     = DataDirection;
+   Trd->Ct     = UFS_STORAGE_COMMAND_TYPE;
+   Trd->Ocs    = UFS_HC_TRD_OCS_INIT_VALUE;
+   Trd->UcdBa  = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 7);
+   Trd->UcdBaU = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 32);
+-  Trd->RuL    = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_RESPONSE_UPIU)), sizeof (UINT32));
+-  Trd->RuO    = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_COMMAND_UPIU)), sizeof (UINT32));
++  Trd->RuL    = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  Trd->RuO    = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
+   Trd->PrdtL  = (UINT16)PrdtNumber;
+-  Trd->PrdtO  = (UINT16)DivU64x32 ((UINT64)(ROUNDUP8 (sizeof (UTP_COMMAND_UPIU)) + ROUNDUP8 (sizeof (UTP_RESPONSE_UPIU))), sizeof (UINT32));
++  Trd->PrdtO  = 2 * UFS_UPIU_REGION_SIZE / sizeof (UINT32);
+   return EFI_SUCCESS;
+ }
+ 
+ /**
+-  Allocate QUERY REQUEST/QUERY RESPONSE UPIU for filling UTP TRD's command descriptor field.
++  Prepare QUERY REQUEST/QUERY RESPONSE UPIU in the reserved slot's permanent UCD.
+ 
+   @param[in]  Private           The pointer to the UFS_PASS_THRU_PRIVATE_DATA data structure.
+   @param[in]  Packet            The pointer to the UFS_DEVICE_MANAGEMENT_REQUEST_PACKET data structure.
+   @param[in]  Trd               The pointer to the UTP Transfer Request Descriptor.
+-  @param[out] CmdDescHost       A pointer to store the base system memory address of the allocated range.
+-  @param[out] CmdDescMapping    A resulting value to pass to Unmap().
++  @param[out] CmdDescHost       Borrowed CPU address; the controller owns its backing.
++  @param[out] CmdDescMapping    Always NULL; the request does not own the pool mapping.
+ 
+   @retval EFI_SUCCESS           The creation succeed.
+   @retval EFI_DEVICE_ERROR      The creation failed.
+@@ -578,12 +789,10 @@ UfsCreateDMCommandDesc (
+   OUT VOID                                     **CmdDescMapping
+   )
+ {
+-  UINTN                 TotalLen;
+   UTP_QUERY_REQ_UPIU    *QueryReqUpiu;
+   UINT8                 Opcode;
+   UINT32                DataSize;
+   UINT8                 *Data;
+-  UINT8                 DataDirection;
+   EFI_PHYSICAL_ADDRESS  CmdDescPhyAddr;
+   EFI_STATUS            Status;
+ 
+@@ -594,21 +803,17 @@ UfsCreateDMCommandDesc (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  DataDirection = Packet->DataDirection;
+-  DataSize      = Packet->TransferLength;
+-  Data          = Packet->DataBuffer;
++  DataSize = Packet->TransferLength;
++  Data     = Packet->DataBuffer;
+ 
+   if ((Opcode == UtpQueryFuncOpcodeWrDesc) || (Opcode == UtpQueryFuncOpcodeRdDesc)) {
+-    if ((DataSize == 0) || (Data == NULL)) {
++    // Android QUERY_DESC_MAX_SIZE is 255; its data segment fits in one UPIU.
++    if ((DataSize == 0) || (DataSize > MAX_UINT8) || (Data == NULL)) {
+       return EFI_INVALID_PARAMETER;
+     }
+ 
+-    TotalLen = ROUNDUP8 (sizeof (UTP_QUERY_REQ_UPIU)) + ROUNDUP8 (sizeof (UTP_QUERY_RESP_UPIU)) + ROUNDUP8 (DataSize);
+-  } else {
+-    TotalLen = ROUNDUP8 (sizeof (UTP_QUERY_REQ_UPIU)) + ROUNDUP8 (sizeof (UTP_QUERY_RESP_UPIU));
+   }
+-
+-  Status = UfsAllocateAlignCommonBuffer (Private, TotalLen, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
++  Status = UfsAcquireCommandDescriptor (Private, Trd, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+@@ -620,7 +825,7 @@ UfsCreateDMCommandDesc (
+   ASSERT (QueryReqUpiu != NULL);
+   UfsInitQueryRequestUpiu (
+     QueryReqUpiu,
+-    Private->TaskTag++,
++    (UINT8)(Trd - (UTP_TRD *)Private->UtpTrlBase),
+     Opcode,
+     Packet->DescId,
+     Packet->Index,
+@@ -633,30 +838,32 @@ UfsCreateDMCommandDesc (
+   // Fill UTP_TRD associated fields
+   // NOTE: Some UFS host controllers request the Query Response UPIU *MUST* be located at a 64-bit aligned boundary.
+   //
++  // Overwrite the whole header, including HCI crypto/EHS bits on slot reuse.
++  ZeroMem (Trd, sizeof (*Trd));
+   Trd->Int    = UFS_INTERRUPT_COMMAND;
+-  Trd->Dd     = DataDirection;
++  // Management data is carried in the Query UPIU, not through a PRDT.
++  // UFSHCI requires no data transfer here (Linux devman uses DMA_NONE).
++  Trd->Dd     = UfsNoData;
+   Trd->Ct     = UFS_STORAGE_COMMAND_TYPE;
+   Trd->Ocs    = UFS_HC_TRD_OCS_INIT_VALUE;
+   Trd->UcdBa  = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 7);
+   Trd->UcdBaU = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 32);
+-  if (Opcode == UtpQueryFuncOpcodeWrDesc) {
+-    Trd->RuL = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_RESP_UPIU)), sizeof (UINT32));
+-    Trd->RuO = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_REQ_UPIU)) + ROUNDUP8 (DataSize), sizeof (UINT32));
+-  } else {
+-    Trd->RuL = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_RESP_UPIU)) + ROUNDUP8 (DataSize), sizeof (UINT32));
+-    Trd->RuO = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_REQ_UPIU)), sizeof (UINT32));
+-  }
++  Trd->RuL = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  Trd->RuO = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  // Android preserves the fixed PRDT offset even when length is zero.
++  Trd->PrdtL = 0;
++  Trd->PrdtO = 2 * UFS_UPIU_REGION_SIZE / sizeof (UINT32);
+ 
+   return EFI_SUCCESS;
+ }
+ 
+ /**
+-  Allocate NOP IN and NOP OUT UPIU for filling UTP TRD's command descriptor field.
++  Prepare NOP IN and NOP OUT UPIU in the reserved slot's permanent UCD.
+ 
+   @param[in]  Private           The pointer to the UFS_PASS_THRU_PRIVATE_DATA data structure.
+   @param[in]  Trd               The pointer to the UTP Transfer Request Descriptor.
+-  @param[out] CmdDescHost       A pointer to store the base system memory address of the allocated range.
+-  @param[out] CmdDescMapping    A resulting value to pass to Unmap().
++  @param[out] CmdDescHost       Borrowed CPU address; the controller owns its backing.
++  @param[out] CmdDescMapping    Always NULL; the request does not own the pool mapping.
+ 
+   @retval EFI_SUCCESS           The creation succeed.
+   @retval EFI_DEVICE_ERROR      The creation failed.
+@@ -671,35 +878,38 @@ UfsCreateNopCommandDesc (
+   OUT VOID                           **CmdDescMapping
+   )
+ {
+-  UINTN                 TotalLen;
+   UTP_NOP_OUT_UPIU      *NopOutUpiu;
+   EFI_STATUS            Status;
+   EFI_PHYSICAL_ADDRESS  CmdDescPhyAddr;
+ 
+   ASSERT ((Private != NULL) && (Trd != NULL));
+ 
+-  TotalLen = ROUNDUP8 (sizeof (UTP_NOP_OUT_UPIU)) + ROUNDUP8 (sizeof (UTP_NOP_IN_UPIU));
+-  Status   = UfsAllocateAlignCommonBuffer (Private, TotalLen, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
++  Status = UfsAcquireCommandDescriptor (Private, Trd, CmdDescHost, &CmdDescPhyAddr, CmdDescMapping);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+ 
+   NopOutUpiu = (UTP_NOP_OUT_UPIU *)*CmdDescHost;
+   ASSERT (NopOutUpiu != NULL);
+-  NopOutUpiu->TaskTag = Private->TaskTag++;
++  NopOutUpiu->TaskTag = (UINT8)(Trd - (UTP_TRD *)Private->UtpTrlBase);
+ 
+   //
+   // Fill UTP_TRD associated fields
+   // NOTE: Some UFS host controllers request the Nop Out UPIU *MUST* be located at a 64-bit aligned boundary.
+   //
++  // Overwrite the whole header, including HCI crypto/EHS bits on slot reuse.
++  ZeroMem (Trd, sizeof (*Trd));
+   Trd->Int    = UFS_INTERRUPT_COMMAND;
+   Trd->Dd     = 0x00;
+   Trd->Ct     = UFS_STORAGE_COMMAND_TYPE;
+   Trd->Ocs    = UFS_HC_TRD_OCS_INIT_VALUE;
+   Trd->UcdBa  = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 7);
+   Trd->UcdBaU = (UINT32)RShiftU64 ((UINT64)CmdDescPhyAddr, 32);
+-  Trd->RuL    = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_NOP_IN_UPIU)), sizeof (UINT32));
+-  Trd->RuO    = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_NOP_OUT_UPIU)), sizeof (UINT32));
++  Trd->RuL    = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  Trd->RuO    = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  // Android preserves the fixed PRDT offset even when length is zero.
++  Trd->PrdtL = 0;
++  Trd->PrdtO = 2 * UFS_UPIU_REGION_SIZE / sizeof (UINT32);
+ 
+   return EFI_SUCCESS;
+ }
+@@ -720,28 +930,41 @@ UfsFindAvailableSlotInTrl (
+   OUT UINT8                          *Slot
+   )
+ {
+-  UINT8       Nutrs;
+-  UINT8       Index;
+-  UINT32      Data;
+-  EFI_STATUS  Status;
++  UINT8 Index, Nutrs;
++  UINT32 Data;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
+ 
+   ASSERT ((Private != NULL) && (Slot != NULL));
+-
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+   Status = UfsMmioRead32 (Private, UFS_HC_UTRLDBR_OFFSET, &Data);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  Nutrs = (UINT8)((Private->UfsHcInfo.Capabilities & UFS_HC_CAP_NUTRS) + 1);
+-
+-  for (Index = 0; Index < Nutrs; Index++) {
+-    if ((Data & (BIT0 << Index)) == 0) {
+-      *Slot = Index;
+-      return EFI_SUCCESS;
++  if (!EFI_ERROR (Status)) {
++    Data |= Private->ReservedSlots;
++    Nutrs = (UINT8)((Private->UfsHcInfo.Capabilities & UFS_HC_CAP_NUTRS) + 1);
++    Status = EFI_NOT_READY;
++    for (Index = 0; Index < Nutrs; Index++) {
++      if ((Data & (1U << Index)) == 0) {
++        Private->ReservedSlots |= 1U << Index;
++        *Slot = Index;
++        Status = EFI_SUCCESS;
++        break;
++      }
+     }
+   }
++  gBS->RestoreTPL (OldTpl);
++  return Status;
++}
+ 
+-  return EFI_NOT_READY;
++// A cleared doorbell is not sufficient: response processing and mapping
++// cleanup still own the TRD until its request has been completely released.
++VOID
++UfsReleaseSlot (IN UFS_PASS_THRU_PRIVATE_DATA *Private, IN UINT8 Slot)
++{
++  EFI_TPL OldTpl;
++  ASSERT (Slot < 32);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Private->ReservedSlots &= ~(1U << Slot);
++  gBS->RestoreTPL (OldTpl);
+ }
+ 
+ /**
+@@ -760,6 +983,9 @@ UfsStartExecCmd (
+   UINT32      Data;
+   EFI_STATUS  Status;
+ 
++  Status = UfsCheckControllerErrors (Private);
++  if (EFI_ERROR (Status)) return Status;
++
+   Status = UfsMmioRead32 (Private, UFS_HC_UTRLRSR_OFFSET, &Data);
+   if (EFI_ERROR (Status)) {
+     return Status;
+@@ -772,10 +998,21 @@ UfsStartExecCmd (
+     }
+   }
+ 
+-  Status = UfsMmioWrite32 (Private, UFS_HC_UTRLDBR_OFFSET, BIT0 << Slot);
++  Private->LastDoorbellMask = 1U << Slot;
++  Private->DoorbellAttempts++;
++  if (Private->DoorbellAttempts <= 4) {
++    DEBUG ((DEBUG_WARN, "UFS: doorbell attempt=%u slot=%u RSR-before=%08x\n",
++            Private->DoorbellAttempts, Slot, Data));
++  }
++  Status = UfsMmioWrite32 (Private, UFS_HC_UTRLDBR_OFFSET, 1U << Slot);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
++  Private->DoorbellWrites++;
++  if (Private->DoorbellWrites <= 4) {
++    DEBUG ((DEBUG_WARN, "UFS: doorbell write=%u mask=%08x accepted\n",
++            Private->DoorbellWrites, Private->LastDoorbellMask));
++  }
+ 
+   return EFI_SUCCESS;
+ }
+@@ -793,27 +1030,20 @@ UfsStopExecCmd (
+   IN  UINT8                       Slot
+   )
+ {
+-  UINT32      Data;
+-  EFI_STATUS  Status;
+-
++  UINT32 Data;
++  EFI_STATUS Status;
++  if (Slot >= 32) return EFI_INVALID_PARAMETER;
+   Status = UfsMmioRead32 (Private, UFS_HC_UTRLDBR_OFFSET, &Data);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  if ((Data & (BIT0 << Slot)) != 0) {
+-    Status = UfsMmioRead32 (Private, UFS_HC_UTRLCLR_OFFSET, &Data);
+-    if (EFI_ERROR (Status)) {
+-      return Status;
+-    }
+-
+-    Status = UfsMmioWrite32 (Private, UFS_HC_UTRLCLR_OFFSET, Data & ~(BIT0 << Slot));
+-    if (EFI_ERROR (Status)) {
+-      return Status;
+-    }
+-  }
+-
+-  return EFI_SUCCESS;
++  if (EFI_ERROR (Status)) return Status;
++  if ((Data & (1U << Slot)) == 0) return EFI_SUCCESS;
++  // UFSHCI: zero clears the selected slot, ones leave other slots alone.
++  // Linux ufshcd_clear_cmd writes ~mask and then polls the doorbell.
++  Status = UfsMmioRead32 (Private, UFS_HC_UTRLRSR_OFFSET, &Data);
++  if (EFI_ERROR (Status)) return Status;
++  if ((Data & UFS_HC_UTRLRSR) == 0) return EFI_NOT_READY;
++  Status = UfsMmioWrite32 (Private, UFS_HC_UTRLCLR_OFFSET, ~(1U << Slot));
++  if (EFI_ERROR (Status)) return Status;
++  return UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, 1U << Slot, 0, UFS_TIMEOUT);
+ }
+ 
+ /**
+@@ -842,7 +1072,9 @@ UfsGetReturnDataFromQueryResponse (
+ 
+   switch (Packet->Opcode) {
+     case UtpQueryFuncOpcodeRdDesc:
+-      ReturnDataSize = QueryResp->Tsf.Length;
++      // Linux ufshcd_copy_query_response bounds/copies the actual UPIU data
++      // segment, not the query OSF length, which cannot prove payload bytes.
++      ReturnDataSize = QueryResp->DataSegLen;
+       SwapLittleEndianToBigEndian ((UINT8 *)&ReturnDataSize, sizeof (UINT16));
+       //
+       // Make sure the hardware device does not return more data than expected.
+@@ -894,6 +1126,33 @@ UfsGetReturnDataFromQueryResponse (
+   @retval EFI_TIMEOUT           A timeout occurred while waiting for the completion of r/w the device descriptor.
+ 
+ **/
++STATIC VOID
++UfsDumpQueryFailure (
++  IN UFS_PASS_THRU_PRIVATE_DATA            *Private,
++  IN UFS_DEVICE_MANAGEMENT_REQUEST_PACKET  *Packet,
++  IN UINT8                               Slot,
++  IN UTP_TRD                             *Trd
++  )
++{
++  STATIC CONST UINT32 Offsets[] = {
++    UFS_HC_IS_OFFSET, UFS_HC_STATUS_OFFSET, UFS_HC_UTRLDBR_OFFSET,
++    UFS_HC_UECPA_OFFSET, UFS_HC_UECDL_OFFSET, UFS_HC_UECN_OFFSET,
++    UFS_HC_UECT_OFFSET, UFS_HC_UECDME_OFFSET
++  };
++  UINTN      Index;
++  UINT32     Value;
++  EFI_STATUS Status;
++
++  DEBUG ((DEBUG_ERROR, "UFS query stalled: opcode=%x IDN=%x index=%x slot=%u OCS=%x\n",
++          Packet->Opcode, Packet->DescId, Packet->Index, Slot, Trd->Ocs));
++  // Capture before aborting the slot or disabling HCE changes the evidence.
++  for (Index = 0; Index < ARRAY_SIZE (Offsets); Index++) {
++    Value = 0;
++    Status = UfsMmioRead32 (Private, Offsets[Index], &Value);
++    DEBUG ((DEBUG_ERROR, "UFS query reg[%02x]=%08x (%r)\n", Offsets[Index], Value, Status));
++  }
++}
++
+ EFI_STATUS
+ UfsSendDmRequestRetry (
+   IN UFS_PASS_THRU_PRIVATE_DATA            *Private,
+@@ -905,15 +1164,21 @@ UfsSendDmRequestRetry (
+   VOID                                *CmdDescHost;
+   VOID                                *CmdDescMapping;
+   UINT32                              CmdDescSize;
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
++  UFS_PASS_THRU_TRANS_REQ             *Owner;
++  EFI_TPL                            OldTpl;
+   UTP_QUERY_RESP_UPIU                 *QueryResp;
+   EFI_STATUS                          Status;
+ 
++  if (Private->IoUnavailable || Private->CleanupInProgress) return EFI_NOT_READY;
++  Owner = AllocateZeroPool (sizeof (*Owner));
++  if (Owner == NULL) return EFI_OUT_OF_RESOURCES;
++  Owner->Signature = UFS_PASS_THRU_TRANS_REQ_SIG;
+   //
+   // Find out which slot of transfer request list is available.
+   //
+   Status = UfsFindAvailableSlotInTrl (Private, &Slot);
+   if (EFI_ERROR (Status)) {
++    FreePool (Owner);
+     return Status;
+   }
+ 
+@@ -924,10 +1189,16 @@ UfsSendDmRequestRetry (
+   Status = UfsCreateDMCommandDesc (Private, Packet, Trd, &CmdDescHost, &CmdDescMapping);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "Failed to create DM command descriptor\n"));
++    UfsReleaseSlot (Private, Slot);
++    FreePool (Owner);
+     return Status;
+   }
+ 
+-  UfsHc     = Private->UfsHostController;
++  Owner->OwnsSlot = TRUE;
++  Owner->Slot = Slot;
++  Owner->CmdDescHost = CmdDescHost;
++  Owner->CmdDescMapping = CmdDescMapping;
++  Owner->CmdDescFromPool = TRUE;
+   QueryResp = (UTP_QUERY_RESP_UPIU *)((UINT8 *)CmdDescHost + Trd->RuO * sizeof (UINT32));
+   ASSERT (QueryResp != NULL);
+   CmdDescSize = Trd->RuO * sizeof (UINT32) + Trd->RuL * sizeof (UINT32);
+@@ -935,16 +1206,34 @@ UfsSendDmRequestRetry (
+   //
+   // Start to execute the transfer request.
+   //
+-  UfsStartExecCmd (Private, Slot);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->IoUnavailable || Private->CleanupInProgress) {
++    gBS->RestoreTPL (OldTpl);
++    Status = EFI_NOT_READY;
++    goto Exit;
++  }
++  UfsTraceRequest (Private, Trd, CmdDescHost, CmdDescSize, Slot);
++  Owner->Submitted = TRUE;
++  Status = UfsStartExecCmd (Private, Slot);
++  gBS->RestoreTPL (OldTpl);
++  if (EFI_ERROR (Status)) goto Exit;
+ 
+   //
+   // Wait for the completion of the transfer request.
+   //
+-  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, BIT0, 0, Packet->Timeout);
++  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, 1U << Slot, 0, Packet->Timeout);
+   if (EFI_ERROR (Status)) {
++    UfsDumpQueryFailure (Private, Packet, Slot, Trd);
+     goto Exit;
+   }
++  Owner->DmaFenced = TRUE;
+ 
++  // Linux ufshcd_dev_cmd_completion rejects unexpected transaction types.
++  if (QueryResp->TransCode != 0x36 ||
++      QueryResp->TaskTag != ((UTP_QUERY_REQ_UPIU *)CmdDescHost)->TaskTag) {
++    Status = EFI_DEVICE_ERROR;
++    goto Exit;
++  }
+   if ((Trd->Ocs != 0) || (QueryResp->QueryResp != UfsUtpQueryResponseSuccess)) {
+     DEBUG ((DEBUG_ERROR, "Failed to send query request, OCS = %X, QueryResp = %X\n", Trd->Ocs, QueryResp->QueryResp));
+     DumpQueryResponseResult (QueryResp->QueryResp);
+@@ -968,18 +1257,13 @@ UfsSendDmRequestRetry (
+   }
+ 
+ Exit:
+-  UfsHc->Flush (UfsHc);
+-
+-  UfsStopExecCmd (Private, Slot);
+-
+-  if (CmdDescMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, CmdDescMapping);
+-  }
+-
+-  if (CmdDescHost != NULL) {
+-    UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (CmdDescSize), CmdDescHost);
+-  }
+-
++  Owner->CmdDescSize = CmdDescSize;
++  Owner->CompletionStatus = Status;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Private->CleanupInProgress = TRUE;
++  Status = UfsFinishOwnedRequest (Private, Owner);
++  Private->CleanupInProgress = FALSE;
++  gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+ 
+@@ -1012,6 +1296,10 @@ UfsSendDmRequest (
+     if (!EFI_ERROR (Status)) {
+       return EFI_SUCCESS;
+     }
++    if (Private->IoUnavailable || (Status == EFI_INVALID_PARAMETER) ||
++        (Status == EFI_OUT_OF_RESOURCES) || (Status == EFI_NOT_READY)) {
++      return Status;
++    }
+   }
+ 
+   DEBUG ((DEBUG_ERROR, "Failed to get response from the device after %d retries\n", Retry));
+@@ -1262,26 +1550,38 @@ UfsExecNopCmds (
+   UINT32                              CmdDescSize;
+   VOID                                *CmdDescHost;
+   VOID                                *CmdDescMapping;
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
++  UFS_PASS_THRU_TRANS_REQ             *Owner;
++  EFI_TPL                            OldTpl;
+ 
++  if (Private->IoUnavailable || Private->CleanupInProgress) return EFI_NOT_READY;
++  Owner = AllocateZeroPool (sizeof (*Owner));
++  if (Owner == NULL) return EFI_OUT_OF_RESOURCES;
++  Owner->Signature = UFS_PASS_THRU_TRANS_REQ_SIG;
+   //
+   // Find out which slot of transfer request list is available.
+   //
+   Status = UfsFindAvailableSlotInTrl (Private, &Slot);
+   if (EFI_ERROR (Status)) {
++    FreePool (Owner);
+     return Status;
+   }
+ 
+   Trd    = ((UTP_TRD *)Private->UtpTrlBase) + Slot;
+   Status = UfsCreateNopCommandDesc (Private, Trd, &CmdDescHost, &CmdDescMapping);
+   if (EFI_ERROR (Status)) {
++    UfsReleaseSlot (Private, Slot);
++    FreePool (Owner);
+     return Status;
+   }
+ 
+   //
+   // Check the transfer request result.
+   //
+-  UfsHc     = Private->UfsHostController;
++  Owner->OwnsSlot = TRUE;
++  Owner->Slot = Slot;
++  Owner->CmdDescHost = CmdDescHost;
++  Owner->CmdDescMapping = CmdDescMapping;
++  Owner->CmdDescFromPool = TRUE;
+   NopInUpiu = (UTP_NOP_IN_UPIU *)((UINT8 *)CmdDescHost + Trd->RuO * sizeof (UINT32));
+   ASSERT (NopInUpiu != NULL);
+   CmdDescSize = Trd->RuO * sizeof (UINT32) + Trd->RuL * sizeof (UINT32);
+@@ -1289,79 +1589,46 @@ UfsExecNopCmds (
+   //
+   // Start to execute the transfer request.
+   //
+-  UfsStartExecCmd (Private, Slot);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->IoUnavailable || Private->CleanupInProgress) {
++    gBS->RestoreTPL (OldTpl);
++    Status = EFI_NOT_READY;
++    goto Exit;
++  }
++  UfsTraceRequest (Private, Trd, CmdDescHost, CmdDescSize, Slot);
++  Owner->Submitted = TRUE;
++  Status = UfsStartExecCmd (Private, Slot);
++  gBS->RestoreTPL (OldTpl);
++  if (EFI_ERROR (Status)) goto Exit;
+ 
+   //
+   // Wait for the completion of the transfer request.
+   //
+-  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, BIT0 << Slot, 0, UFS_TIMEOUT);
++  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, 1U << Slot, 0, UFS_TIMEOUT);
+   if (EFI_ERROR (Status)) {
+     goto Exit;
+   }
++  Owner->DmaFenced = TRUE;
+ 
+-  if (NopInUpiu->Resp != 0) {
++  // NOP readiness requires a NOP IN, not just a successful descriptor OCS.
++  if (Trd->Ocs != 0 || NopInUpiu->TransCode != 0x20 || NopInUpiu->Resp != 0 ||
++      NopInUpiu->TaskTag != ((UTP_NOP_OUT_UPIU *)CmdDescHost)->TaskTag) {
+     Status = EFI_DEVICE_ERROR;
+   } else {
+     Status = EFI_SUCCESS;
+   }
+ 
+ Exit:
+-  UfsHc->Flush (UfsHc);
+-
+-  UfsStopExecCmd (Private, Slot);
+-
+-  if (CmdDescMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, CmdDescMapping);
+-  }
+-
+-  if (CmdDescHost != NULL) {
+-    UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (CmdDescSize), CmdDescHost);
+-  }
+-
++  Owner->CmdDescSize = CmdDescSize;
++  Owner->CompletionStatus = Status;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Private->CleanupInProgress = TRUE;
++  Status = UfsFinishOwnedRequest (Private, Owner);
++  Private->CleanupInProgress = FALSE;
++  gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+ 
+-/**
+-  Cleanup data buffers after data transfer. This function
+-  also takes care to copy all data to user memory pool for
+-  unaligned data transfers.
+-
+-  @param[in] Private   Pointer to the UFS_PASS_THRU_PRIVATE_DATA
+-  @param[in] TransReq  Pointer to the transfer request
+-**/
+-VOID
+-UfsReconcileDataTransferBuffer (
+-  IN UFS_PASS_THRU_PRIVATE_DATA  *Private,
+-  IN UFS_PASS_THRU_TRANS_REQ     *TransReq
+-  )
+-{
+-  if (TransReq->DataBufMapping != NULL) {
+-    Private->UfsHostController->Unmap (
+-                                  Private->UfsHostController,
+-                                  TransReq->DataBufMapping
+-                                  );
+-  }
+-
+-  //
+-  // Check if unaligned transfer was performed. If it was and we read
+-  // data from device copy memory to user data buffers before cleanup.
+-  // The assumption is if auxiliary aligned data buffer is not NULL then
+-  // unaligned transfer has been performed.
+-  //
+-  if (TransReq->AlignedDataBuf != NULL) {
+-    if (TransReq->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
+-      CopyMem (TransReq->Packet->InDataBuffer, TransReq->AlignedDataBuf, TransReq->Packet->InTransferLength);
+-    }
+-
+-    //
+-    // Wipe out the transfer buffer in case it contains sensitive data.
+-    //
+-    ZeroMem (TransReq->AlignedDataBuf, TransReq->AlignedDataBufSize);
+-    FreeAlignedPages (TransReq->AlignedDataBuf, EFI_SIZE_TO_PAGES (TransReq->AlignedDataBufSize));
+-    TransReq->AlignedDataBuf = NULL;
+-  }
+-}
+-
+ /**
+   Prepare data buffer for transfer.
+ 
+@@ -1377,90 +1644,37 @@ UfsPrepareDataTransferBuffer (
+   IN OUT UFS_PASS_THRU_TRANS_REQ     *TransReq
+   )
+ {
+-  EFI_STATUS                           Status;
+-  VOID                                 *DataBuf;
+-  UINT32                               DataLen;
+-  UINTN                                MapLength;
+-  EFI_PHYSICAL_ADDRESS                 DataBufPhyAddr;
+-  EDKII_UFS_HOST_CONTROLLER_OPERATION  Flag;
+-  UTP_TR_PRD                           *PrdtBase;
+-
+-  DataBufPhyAddr = 0;
+-  DataBuf        = NULL;
+-
+-  //
+-  // For unaligned data transfers we allocate auxiliary DWORD aligned memory pool.
+-  // When command is finished auxiliary memory pool is copied into actual user memory.
+-  // This is requiered to assure data transfer safety(DWORD alignment required by UFS spec.)
+-  //
+-  if (TransReq->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
+-    if (((UINTN)TransReq->Packet->InDataBuffer % 4 != 0) || (TransReq->Packet->InTransferLength % 4 != 0)) {
+-      DataLen = TransReq->Packet->InTransferLength + (4 - (TransReq->Packet->InTransferLength % 4));
+-      DataBuf = AllocateAlignedPages (EFI_SIZE_TO_PAGES (DataLen), 4);
+-      if (DataBuf == NULL) {
+-        return EFI_DEVICE_ERROR;
+-      }
+-
+-      ZeroMem (DataBuf, DataLen);
+-      TransReq->AlignedDataBuf     = DataBuf;
+-      TransReq->AlignedDataBufSize = DataLen;
+-    } else {
+-      DataLen = TransReq->Packet->InTransferLength;
+-      DataBuf = TransReq->Packet->InDataBuffer;
+-    }
+-
+-    Flag = EdkiiUfsHcOperationBusMasterWrite;
+-  } else {
+-    if (((UINTN)TransReq->Packet->OutDataBuffer % 4 != 0) || (TransReq->Packet->OutTransferLength % 4 != 0)) {
+-      DataLen = TransReq->Packet->OutTransferLength + (4 - (TransReq->Packet->OutTransferLength % 4));
+-      DataBuf = AllocateAlignedPages (EFI_SIZE_TO_PAGES (DataLen), 4);
+-      if (DataBuf == NULL) {
+-        return EFI_DEVICE_ERROR;
+-      }
+-
+-      CopyMem (DataBuf, TransReq->Packet->OutDataBuffer, TransReq->Packet->OutTransferLength);
+-      TransReq->AlignedDataBuf     = DataBuf;
+-      TransReq->AlignedDataBufSize = DataLen;
+-    } else {
+-      DataLen = TransReq->Packet->OutTransferLength;
+-      DataBuf = TransReq->Packet->OutDataBuffer;
+-    }
+-
+-    Flag = EdkiiUfsHcOperationBusMasterRead;
+-  }
+-
+-  if (DataLen != 0) {
+-    MapLength = DataLen;
+-    Status    = Private->UfsHostController->Map (
+-                                              Private->UfsHostController,
+-                                              Flag,
+-                                              DataBuf,
+-                                              &MapLength,
+-                                              &DataBufPhyAddr,
+-                                              &TransReq->DataBufMapping
+-                                              );
+-
+-    if (EFI_ERROR (Status) || (DataLen != MapLength)) {
+-      if (TransReq->AlignedDataBuf != NULL) {
+-        //
+-        // Wipe out the transfer buffer in case it contains sensitive data.
+-        //
+-        ZeroMem (TransReq->AlignedDataBuf, TransReq->AlignedDataBufSize);
+-        FreeAlignedPages (TransReq->AlignedDataBuf, EFI_SIZE_TO_PAGES (TransReq->AlignedDataBufSize));
+-        TransReq->AlignedDataBuf = NULL;
+-      }
+-
+-      return EFI_DEVICE_ERROR;
+-    }
+-  }
+-
+-  //
+-  // Fill PRDT table of Command UPIU for executed SCSI cmd.
+-  //
+-  PrdtBase = (UTP_TR_PRD *)((UINT8 *)TransReq->CmdDescHost + ROUNDUP8 (sizeof (UTP_COMMAND_UPIU)) + ROUNDUP8 (sizeof (UTP_RESPONSE_UPIU)));
+-  ASSERT (PrdtBase != NULL);
+-  UfsInitUtpPrdt (PrdtBase, (VOID *)(UINTN)DataBufPhyAddr, DataLen);
+-
++  EFI_STATUS Status;
++  UINT32 Length, Aligned;
++  UINTN MapLength;
++  EFI_PHYSICAL_ADDRESS Device;
++  VOID *Caller;
++  BOOLEAN Read = TransReq->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ;
++  UTP_TR_PRD *Prdt;
++  Length = Read ? TransReq->Packet->InTransferLength : TransReq->Packet->OutTransferLength;
++  Caller = Read ? TransReq->Packet->InDataBuffer : TransReq->Packet->OutDataBuffer;
++  Status = UfsAlignedTransferLength (Length, &Aligned);
++  if (EFI_ERROR (Status)) return Status;
++  if (Length == 0) return EFI_SUCCESS;
++  if (Caller == NULL) return EFI_INVALID_PARAMETER;
++  // Always stage, including aligned caller buffers: deferred provider Unmap
++  // may copy back later, after a synchronous caller has returned/freed memory.
++  TransReq->AlignedDataBufSize = Aligned;
++  Status = Private->UfsHostController->AllocateBuffer (Private->UfsHostController,
++             AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES (Aligned),
++             &TransReq->AlignedDataBuf, 0);
++  if (EFI_ERROR (Status)) return Status;
++  ZeroMem (TransReq->AlignedDataBuf, Aligned);
++  if (!Read) CopyMem (TransReq->AlignedDataBuf, Caller, Length);
++  MapLength = Aligned;
++  Status = Private->UfsHostController->Map (Private->UfsHostController,
++             Read ? EdkiiUfsHcOperationBusMasterWrite : EdkiiUfsHcOperationBusMasterRead,
++             TransReq->AlignedDataBuf, &MapLength, &Device, &TransReq->DataBufMapping);
++  if (EFI_ERROR (Status)) return Status;
++  if (MapLength != Aligned) return EFI_BAD_BUFFER_SIZE;
++  Prdt = (UTP_TR_PRD *)((UINT8 *)TransReq->CmdDescHost +
++          TransReq->Trd->PrdtO * sizeof (UINT32));
++  UfsInitUtpPrdt (Prdt, (VOID *)(UINTN)Device, Aligned);
+   return EFI_SUCCESS;
+ }
+ 
+@@ -1488,162 +1702,148 @@ UfsPrepareDataTransferBuffer (
+   @retval EFI_TIMEOUT           A timeout occurred while waiting for the SCSI Request Packet to execute.
+ 
+ **/
+-EFI_STATUS
+-UfsExecScsiCmds (
+-  IN     UFS_PASS_THRU_PRIVATE_DATA                  *Private,
+-  IN     UINT8                                       Lun,
+-  IN OUT EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET  *Packet,
+-  IN     EFI_EVENT                                   Event    OPTIONAL
+-  )
++STATIC VOID UfsQueueOwnedRequest (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                                  UFS_PASS_THRU_TRANS_REQ *Request)
+ {
+-  EFI_STATUS                          Status;
+-  UTP_RESPONSE_UPIU                   *Response;
+-  UINT16                              SenseDataLen;
+-  UINT32                              ResTranCount;
+-  EFI_TPL                             OldTpl;
+-  UFS_PASS_THRU_TRANS_REQ             *TransReq;
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
+-
+-  TransReq = AllocateZeroPool (sizeof (UFS_PASS_THRU_TRANS_REQ));
+-  if (TransReq == NULL) {
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  TransReq->Signature     = UFS_PASS_THRU_TRANS_REQ_SIG;
+-  TransReq->TimeoutRemain = Packet->Timeout;
+-  TransReq->Packet        = Packet;
+-
+-  UfsHc = Private->UfsHostController;
+-  //
+-  // Find out which slot of transfer request list is available.
+-  //
+-  Status = UfsFindAvailableSlotInTrl (Private, &TransReq->Slot);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (!Request->OnQueue) {
++    InsertTailList (&Private->Queue, &Request->TransferList);
++    Request->OnQueue = TRUE;
+   }
++}
+ 
+-  TransReq->Trd = ((UTP_TRD *)Private->UtpTrlBase) + TransReq->Slot;
+-
+-  //
+-  // Fill transfer request descriptor to this slot.
+-  //
+-  Status = UfsCreateScsiCommandDesc (
+-             Private,
+-             Lun,
+-             Packet,
+-             TransReq->Trd,
+-             &TransReq->CmdDescHost,
+-             &TransReq->CmdDescMapping
+-             );
++STATIC EFI_STATUS UfsFenceRequest (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                                   UFS_PASS_THRU_TRANS_REQ *Request)
++{
++  EFI_STATUS Status;
++  LIST_ENTRY *Entry;
++  if (!Request->Submitted || Request->DmaFenced) return EFI_SUCCESS;
++  if (Private->FenceFailed) return EFI_NOT_READY;
++  // Linux fatal recovery skips per-slot clears and resets the whole HCI.
++  // A successful UTRLCLR cannot restore a controller with a sticky SBFE.
++  if (Private->FatalError == 0) {
++    Status = UfsStopExecCmd (Private, Request->Slot);
++    if (!EFI_ERROR (Status)) { Request->DmaFenced = TRUE; return EFI_SUCCESS; }
++  }
++  Private->IoUnavailable = TRUE;
++  Status = UfsControllerStop (Private);
+   if (EFI_ERROR (Status)) {
++    // A failed controller fence requires explicit Stop recovery, not a
++    // multi-second retry for every request on the 1ms async timer.
++    Private->FenceFailed = TRUE;
+     return Status;
+   }
+-
+-  TransReq->CmdDescSize = TransReq->Trd->PrdtO * sizeof (UINT32) + TransReq->Trd->PrdtL * sizeof (UTP_TR_PRD);
+-
+-  Status = UfsPrepareDataTransferBuffer (Private, TransReq);
+-  if (EFI_ERROR (Status)) {
+-    goto Exit1;
+-  }
+-
+-  //
+-  // Insert the async SCSI cmd to the Async I/O list
+-  //
+-  if (Event != NULL) {
+-    OldTpl                = gBS->RaiseTPL (TPL_NOTIFY);
+-    TransReq->CallerEvent = Event;
+-    InsertTailList (&Private->Queue, &TransReq->TransferList);
+-    gBS->RestoreTPL (OldTpl);
+-  }
+-
+-  //
+-  // Start to execute the transfer request.
+-  //
+-  UfsStartExecCmd (Private, TransReq->Slot);
+-
+-  //
+-  // Immediately return for async I/O.
+-  //
+-  if (Event != NULL) {
+-    return EFI_SUCCESS;
+-  }
+-
+-  //
+-  // Wait for the completion of the transfer request.
+-  //
+-  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, BIT0 << TransReq->Slot, 0, Packet->Timeout);
+-  if (EFI_ERROR (Status)) {
+-    goto Exit;
++  Request->DmaFenced = TRUE;
++  BASE_LIST_FOR_EACH (Entry, &Private->Queue) {
++    UFS_PASS_THRU_TRANS_REQ *Other = UFS_PASS_THRU_TRANS_REQ_FROM_THIS (Entry);
++    Other->DmaFenced = TRUE;
++    Other->CompletionStatus = EFI_DEVICE_ERROR;
++    Other->ResponseValidated = FALSE;
+   }
++  return EFI_SUCCESS;
++}
+ 
+-  //
+-  // Get sense data if exists
+-  //
+-  Response = (UTP_RESPONSE_UPIU *)((UINT8 *)TransReq->CmdDescHost + TransReq->Trd->RuO * sizeof (UINT32));
+-  ASSERT (Response != NULL);
+-  SenseDataLen = Response->SenseDataLen;
+-  SwapLittleEndianToBigEndian ((UINT8 *)&SenseDataLen, sizeof (UINT16));
+-
+-  if ((Packet->SenseDataLength != 0) && (Packet->SenseData != NULL)) {
+-    //
+-    // Make sure the hardware device does not return more data than expected.
+-    //
+-    if (SenseDataLen <= Packet->SenseDataLength) {
+-      CopyMem (Packet->SenseData, Response->SenseData, SenseDataLen);
+-      Packet->SenseDataLength = (UINT8)SenseDataLen;
++// Caller invokes with TPL_NOTIFY and CleanupInProgress set across callbacks.
++STATIC EFI_STATUS UfsFinishOwnedRequest (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                                        UFS_PASS_THRU_TRANS_REQ *Request)
++{
++  EFI_STATUS Status, Result = Request->CompletionStatus;
++  EFI_EVENT Event = Request->CallerEvent;
++  Status = UfsFenceRequest (Private, Request);
++  if (!EFI_ERROR (Status))
++    Status = UfsReleaseRequestResources (Private, Request, !EFI_ERROR (Result));
++  if (EFI_ERROR (Status) && !EFI_ERROR (Result)) Result = Status;
++  if (Request->Packet != NULL && EFI_ERROR (Result)) {
++    Request->Packet->HostAdapterStatus = Result == EFI_TIMEOUT ?
++      EFI_EXT_SCSI_STATUS_HOST_ADAPTER_TIMEOUT_COMMAND : EFI_EXT_SCSI_STATUS_HOST_ADAPTER_PHASE_ERROR;
++    if (Request->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
++      Request->Packet->InTransferLength = 0;
++    } else if (Request->Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_WRITE) {
++      Request->Packet->OutTransferLength = 0;
+     } else {
+-      Packet->SenseDataLength = 0;
++      Request->Packet->InTransferLength = 0;
++      Request->Packet->OutTransferLength = 0;
+     }
+   }
+-
+-  //
+-  // Check the transfer request result.
+-  //
+-  Packet->TargetStatus = Response->Status;
+-  if (Response->Response != 0) {
+-    DEBUG ((DEBUG_ERROR, "UfsExecScsiCmds() fails with Target Failure\n"));
+-    Status = EFI_DEVICE_ERROR;
+-    goto Exit;
+-  }
+-
+-  if (TransReq->Trd->Ocs == 0) {
+-    if (Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
+-      if ((Response->Flags & BIT5) == BIT5) {
+-        ResTranCount = Response->ResTranCount;
+-        SwapLittleEndianToBigEndian ((UINT8 *)&ResTranCount, sizeof (UINT32));
+-        Packet->InTransferLength -= ResTranCount;
+-      }
+-    } else {
+-      if ((Response->Flags & BIT5) == BIT5) {
+-        ResTranCount = Response->ResTranCount;
+-        SwapLittleEndianToBigEndian ((UINT8 *)&ResTranCount, sizeof (UINT32));
+-        Packet->OutTransferLength -= ResTranCount;
+-      }
++  // From here on even a delayed SMMU copyback can touch only owned staging.
++  Request->Packet = NULL;
++  Request->CallerEvent = NULL;
++  Request->CompletionStatus = Result;
++  if (Event != NULL) {
++    EFI_STATUS EventStatus = gBS->SignalEvent (Event);
++    if (EFI_ERROR (EventStatus)) {
++      Request->CallerEvent = Event;
++      UfsQueueOwnedRequest (Private, Request);
++      return EFI_ERROR (Result) ? Result : EventStatus;
+     }
+-  } else {
+-    Status = EFI_DEVICE_ERROR;
+-  }
+-
+-Exit:
+-  UfsHc->Flush (UfsHc);
+-
+-  UfsStopExecCmd (Private, TransReq->Slot);
+-
+-  UfsReconcileDataTransferBuffer (Private, TransReq);
+-
+-Exit1:
+-  if (TransReq->CmdDescMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, TransReq->CmdDescMapping);
+-  }
+-
+-  if (TransReq->CmdDescHost != NULL) {
+-    UfsHc->FreeBuffer (UfsHc, EFI_SIZE_TO_PAGES (TransReq->CmdDescSize), TransReq->CmdDescHost);
+   }
+-
+-  if (TransReq != NULL) {
+-    FreePool (TransReq);
++  if (EFI_ERROR (Status)) {
++    UfsQueueOwnedRequest (Private, Request);
++  } else {
++    if (Request->OnQueue) RemoveEntryList (&Request->TransferList);
++    if (Request->OwnsSlot) UfsReleaseSlot (Private, Request->Slot);
++    FreePool (Request);
+   }
++  return Result;
++}
+ 
++EFI_STATUS
++UfsExecScsiCmds (
++  IN     UFS_PASS_THRU_PRIVATE_DATA                  *Private,
++  IN     UINT8                                       Lun,
++  IN OUT EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET  *Packet,
++  IN     EFI_EVENT                                   Event    OPTIONAL
++  )
++{
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  UFS_PASS_THRU_TRANS_REQ *Request;
++  if (Private->IoUnavailable || Private->CleanupInProgress) return EFI_NOT_READY;
++  Request = AllocateZeroPool (sizeof (*Request));
++  if (Request == NULL) return EFI_OUT_OF_RESOURCES;
++  Request->Signature = UFS_PASS_THRU_TRANS_REQ_SIG;
++  Request->Packet = Packet;
++  Request->TimeoutRemain = Packet->Timeout;
++  Status = UfsFindAvailableSlotInTrl (Private, &Request->Slot);
++  if (EFI_ERROR (Status)) { FreePool (Request); return Status; }
++  Request->OwnsSlot = TRUE;
++  Request->Trd = (UTP_TRD *)Private->UtpTrlBase + Request->Slot;
++  Status = UfsCreateScsiCommandDesc (Private, Lun, Packet, Request->Trd,
++                                    &Request->CmdDescHost, &Request->CmdDescMapping);
++  if (EFI_ERROR (Status)) goto Finish;
++  Request->CmdDescFromPool = TRUE;
++  Request->CmdDescSize = Request->Trd->PrdtO * sizeof (UINT32) + Request->Trd->PrdtL * sizeof (UTP_TR_PRD);
++  Status = UfsPrepareDataTransferBuffer (Private, Request);
++  if (EFI_ERROR (Status)) goto Finish;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (Private->IoUnavailable || Private->CleanupInProgress) {
++    gBS->RestoreTPL (OldTpl);
++    Status = EFI_NOT_READY;
++    goto Finish;
++  }
++  // A failed MMIO return does not prove the doorbell write never reached HW.
++  UfsTraceRequest (Private, Request->Trd, Request->CmdDescHost, Request->CmdDescSize, Request->Slot);
++  Request->Submitted = TRUE;
++  Status = UfsStartExecCmd (Private, Request->Slot);
++  if (!EFI_ERROR (Status) && Event != NULL) {
++    Request->CallerEvent = Event;
++    UfsQueueOwnedRequest (Private, Request);
++  }
++  gBS->RestoreTPL (OldTpl);
++  if (EFI_ERROR (Status)) goto Finish;
++  if (Event != NULL) return EFI_SUCCESS;
++  Status = UfsWaitMemSet (Private, UFS_HC_UTRLDBR_OFFSET, 1U << Request->Slot, 0, Packet->Timeout);
++  if (!EFI_ERROR (Status)) {
++    Request->DmaFenced = TRUE;
++    Status = UfsValidateScsiResponse (Private, Request);
++    Request->ResponseValidated = !EFI_ERROR (Status);
++  }
++Finish:
++  Request->CompletionStatus = Status;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Private->CleanupInProgress = TRUE;
++  Status = UfsFinishOwnedRequest (Private, Request);
++  Private->CleanupInProgress = FALSE;
++  gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+ 
+@@ -1665,22 +1865,38 @@ UfsExecUicCommands (
+ {
+   EFI_STATUS  Status;
+   UINT32      Data;
++  UINT32      ClearMask;
++  BOOLEAN     PowerModeChange;
++
++  // Linux ufshcd_uic_change_pwr_mode()/ufshcd_uic_pwr_ctrl(): a DME_SET
++  // PA_PWRMODE command has a separate asynchronous UPMS completion. UCCS
++  // alone only reports command acceptance, not a usable negotiated link.
++  PowerModeChange = (UicCommand->Opcode == UfsUicDmeSet) &&
++                    ((UicCommand->Arg1 >> 16) == 0x1571);
+ 
+   Status = UfsMmioRead32 (Private, UFS_HC_IS_OFFSET, &Data);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+ 
+-  if ((Data & UFS_HC_IS_UCCS) == UFS_HC_IS_UCCS) {
++  ClearMask = Data & (UFS_HC_IS_UCCS | (PowerModeChange ? BIT4 : 0));
++  if (ClearMask != 0) {
+     //
+-    // Clear IS.BIT10 UIC Command Completion Status (UCCS) at first.
++    // Clear only stale events owned by this command; preserve other W1C bits.
+     //
+-    Status = UfsMmioWrite32 (Private, UFS_HC_IS_OFFSET, Data);
++    Status = UfsMmioWrite32 (Private, UFS_HC_IS_OFFSET, ClearMask);
+     if (EFI_ERROR (Status)) {
+       return Status;
+     }
+   }
+ 
++  // Do not overwrite arguments while the controller is still processing a
++  // prior UIC command. Linux ufshcd checks UCRDY before dispatch as well.
++  Status = UfsWaitMemSet (Private, UFS_HC_STATUS_OFFSET, UFS_HC_HCS_UCRDY, UFS_HC_HCS_UCRDY, UFS_TIMEOUT);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
+   //
+   // When programming UIC command registers, host software shall set the register UICCMD
+   // only after all the UIC command argument registers (UICCMDARG1, UICCMDARG2 and UICCMDARG3)
+@@ -1701,14 +1917,6 @@ UfsExecUicCommands (
+     return Status;
+   }
+ 
+-  //
+-  // Host software shall only set the UICCMD if HCS.UCRDY is set to 1.
+-  //
+-  Status = UfsWaitMemSet (Private, UFS_HC_STATUS_OFFSET, UFS_HC_HCS_UCRDY, UFS_HC_HCS_UCRDY, UFS_TIMEOUT);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+   Status = UfsMmioWrite32 (Private, UFS_HC_UIC_CMD_OFFSET, UicCommand->Opcode);
+   if (EFI_ERROR (Status)) {
+     return Status;
+@@ -1742,6 +1950,28 @@ UfsExecUicCommands (
+     }
+   }
+ 
++  if (PowerModeChange) {
++    Status = UfsWaitMemSet (Private, UFS_HC_IS_OFFSET, BIT4, BIT4, UFS_TIMEOUT);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    Status = UfsMmioRead32 (Private, UFS_HC_STATUS_OFFSET, &Data);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    // HCS.UPMCRS[10:8] must report PWR_LOCAL (1), not PWR_OK (0).
++    Status = UfsMmioWrite32 (Private, UFS_HC_IS_OFFSET, BIT4);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    if (((Data >> 8) & 7) != 1) {
++      return EFI_DEVICE_ERROR;
++    }
++  }
++
+   return EFI_SUCCESS;
+ }
+ 
+@@ -1768,72 +1998,41 @@ UfsAllocateAlignCommonBuffer (
+   OUT VOID                           **CmdDescMapping
+   )
+ {
+-  EFI_STATUS                          Status;
+-  UINTN                               Bytes;
+-  BOOLEAN                             Is32BitAddr;
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
+-
+-  if ((Private->UfsHcInfo.Capabilities & UFS_HC_CAP_64ADDR) == UFS_HC_CAP_64ADDR) {
+-    Is32BitAddr = FALSE;
+-  } else {
+-    Is32BitAddr = TRUE;
+-  }
+-
+-  UfsHc  = Private->UfsHostController;
+-  Status = UfsHc->AllocateBuffer (
+-                    UfsHc,
+-                    AllocateAnyPages,
+-                    EfiBootServicesData,
+-                    EFI_SIZE_TO_PAGES (Size),
+-                    CmdDescHost,
+-                    0
+-                    );
++  EFI_STATUS Status, Cleanup;
++  EFI_TPL OldTpl;
++  UINTN Bytes;
++  UFS_PASS_THRU_TRANS_REQ *Owner;
++  EDKII_UFS_HOST_CONTROLLER_PROTOCOL *Host = Private->UfsHostController;
++  *CmdDescHost = NULL; *CmdDescMapping = NULL; *CmdDescPhyAddr = 0;
++  if (Size == 0 || Size > MAX_UINT32 || Size > MAX_UINTN - EFI_PAGE_MASK) return EFI_BAD_BUFFER_SIZE;
++  Owner = AllocateZeroPool (sizeof (*Owner));
++  if (Owner == NULL) return EFI_OUT_OF_RESOURCES;
++  Owner->Signature = UFS_PASS_THRU_TRANS_REQ_SIG;
++  Owner->CmdDescSize = (UINT32)Size;
++  Status = Host->AllocateBuffer (Host, AllocateAnyPages, EfiBootServicesData,
++                                 EFI_SIZE_TO_PAGES (Size), &Owner->CmdDescHost, 0);
++  if (EFI_ERROR (Status)) { FreePool (Owner); return Status; }
++  Bytes = EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size));
++  Status = Host->Map (Host, EdkiiUfsHcOperationBusMasterCommonBuffer,
++                      Owner->CmdDescHost, &Bytes, CmdDescPhyAddr, &Owner->CmdDescMapping);
++  if (!EFI_ERROR (Status) && Bytes != EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)))
++    Status = EFI_BAD_BUFFER_SIZE;
++  if (!EFI_ERROR (Status) && !(Private->UfsHcInfo.Capabilities & UFS_HC_CAP_64ADDR) &&
++      (*CmdDescPhyAddr > MAX_UINT32 || Bytes - 1 > MAX_UINT32 - *CmdDescPhyAddr))
++    Status = EFI_DEVICE_ERROR;
+   if (EFI_ERROR (Status)) {
+-    *CmdDescMapping = NULL;
+-    *CmdDescHost    = NULL;
++    OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++    Cleanup = UfsReleaseRequestResources (Private, Owner, FALSE);
++    if (EFI_ERROR (Cleanup)) UfsQueueOwnedRequest (Private, Owner);
++    else FreePool (Owner);
++    gBS->RestoreTPL (OldTpl);
+     *CmdDescPhyAddr = 0;
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  Bytes  = EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size));
+-  Status = UfsHc->Map (
+-                    UfsHc,
+-                    EdkiiUfsHcOperationBusMasterCommonBuffer,
+-                    *CmdDescHost,
+-                    &Bytes,
+-                    CmdDescPhyAddr,
+-                    CmdDescMapping
+-                    );
+-
+-  if (EFI_ERROR (Status) || (Bytes != EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)))) {
+-    UfsHc->FreeBuffer (
+-             UfsHc,
+-             EFI_SIZE_TO_PAGES (Size),
+-             *CmdDescHost
+-             );
+-    *CmdDescHost = NULL;
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  if (Is32BitAddr && ((*CmdDescPhyAddr) > 0x100000000ULL)) {
+-    //
+-    // The UFS host controller doesn't support 64bit addressing, so should not get a >4G UFS bus master address.
+-    //
+-    UfsHc->Unmap (
+-             UfsHc,
+-             *CmdDescMapping
+-             );
+-    UfsHc->FreeBuffer (
+-             UfsHc,
+-             EFI_SIZE_TO_PAGES (Size),
+-             *CmdDescHost
+-             );
+-    *CmdDescMapping = NULL;
+-    *CmdDescHost    = NULL;
+-    return EFI_DEVICE_ERROR;
++    return Status;
+   }
+-
+-  ZeroMem (*CmdDescHost, EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)));
++  ZeroMem (Owner->CmdDescHost, Bytes);
++  *CmdDescHost = Owner->CmdDescHost;
++  *CmdDescMapping = Owner->CmdDescMapping;
++  FreePool (Owner);
+   return EFI_SUCCESS;
+ }
+ 
+@@ -1854,14 +2053,6 @@ UfsEnableHostController (
+   EFI_STATUS  Status;
+   UINT32      Data;
+ 
+-  if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Callback != NULL)) {
+-    Status = mUfsHcPlatform->Callback (Private->Handle, EdkiiUfsHcPreHce, &Private->UfsHcDriverInterface);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "Failure from platform driver during EdkiiUfsHcPreHce, Status = %r\n", Status));
+-      return Status;
+-    }
+-  }
+-
+   if ((mUfsHcPlatform == NULL) ||
+       ((mUfsHcPlatform->Version >= 3) && !mUfsHcPlatform->SkipHceReenable))
+   {
+@@ -1892,7 +2083,21 @@ UfsEnableHostController (
+         return EFI_DEVICE_ERROR;
+       }
+     }
++  }
+ 
++  // Linux ufshcd_hba_execute_hce stops the controller before PRE_CHANGE.
++  // Platform callbacks may power down and recalibrate the PHY on retries.
++  if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Callback != NULL)) {
++    Status = mUfsHcPlatform->Callback (Private->Handle, EdkiiUfsHcPreHce, &Private->UfsHcDriverInterface);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "Failure from platform driver during EdkiiUfsHcPreHce, Status = %r\n", Status));
++      return Status;
++    }
++  }
++
++  if ((mUfsHcPlatform == NULL) ||
++      ((mUfsHcPlatform->Version >= 3) && !mUfsHcPlatform->SkipHceReenable))
++  {
+     //
+     // Write a 1 to the HCE register to enable the UFS host controller.
+     //
+@@ -1900,6 +2105,10 @@ UfsEnableHostController (
+     if (EFI_ERROR (Status)) {
+       return Status;
+     }
++
++    // HCE transitions 1 -> 0 -> 1 during initialization. As in Linux,
++    // delay before polling so the initial write is not mistaken for ready.
++    MicroSecondDelay (1000);
+   }
+ 
+   //
+@@ -1941,30 +2150,39 @@ UfsDeviceDetection (
+   UINT32             Data;
+   EDKII_UIC_COMMAND  LinkStartupCommand;
+ 
+-  if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Callback != NULL)) {
+-    Status = mUfsHcPlatform->Callback (Private->Handle, EdkiiUfsHcPreLinkStartup, &Private->UfsHcDriverInterface);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "Failure from platform driver during EdkiiUfsHcPreLinkStartup, Status = %r\n", Status));
+-      return Status;
+-    }
+-  }
+-
+-  if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Version >= 3) && mUfsHcPlatform->SkipLinkStartup) {
+-    return EFI_SUCCESS;
+-  }
+-
+   //
+-  // Start UFS device detection.
+-  // Try up to 3 times for establishing data link with device.
++  // Retry link startup after resetting the local UniPro through HCE, as in
++  // Linux ufshcd_link_startup(). Platform link setup must run after each reset.
+   //
+   for (Retry = 0; Retry < 3; Retry++) {
++    if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Callback != NULL)) {
++      Status = mUfsHcPlatform->Callback (Private->Handle, EdkiiUfsHcPreLinkStartup, &Private->UfsHcDriverInterface);
++      if (EFI_ERROR (Status)) {
++        DEBUG ((DEBUG_ERROR, "Failure from platform driver during EdkiiUfsHcPreLinkStartup, Status = %r\n", Status));
++        return Status;
++      }
++    }
++
++    if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Version >= 3) && mUfsHcPlatform->SkipLinkStartup) {
++      return EFI_SUCCESS;
++    }
++
+     LinkStartupCommand.Opcode = UfsUicDmeLinkStartup;
+     LinkStartupCommand.Arg1   = 0;
+     LinkStartupCommand.Arg2   = 0;
+     LinkStartupCommand.Arg3   = 0;
+     Status                    = UfsExecUicCommands (Private, &LinkStartupCommand);
+     if (EFI_ERROR (Status)) {
+-      return EFI_DEVICE_ERROR;
++      if (Retry == 2) {
++        return EFI_DEVICE_ERROR;
++      }
++
++      Status = UfsEnableHostController (Private);
++      if (EFI_ERROR (Status)) {
++        return Status;
++      }
++
++      continue;
+     }
+ 
+     Status = UfsMmioRead32 (Private, UFS_HC_STATUS_OFFSET, &Data);
+@@ -1972,14 +2190,13 @@ UfsDeviceDetection (
+       return EFI_DEVICE_ERROR;
+     }
+ 
++    // A successful LINKSTARTUP without HCS.DP means the device is absent.
++    // ULSS reports link loss and need not arrive for an absent device.
+     if ((Data & UFS_HC_HCS_DP) == 0) {
+-      Status = UfsWaitMemSet (Private, UFS_HC_IS_OFFSET, UFS_HC_IS_ULSS, UFS_HC_IS_ULSS, UFS_TIMEOUT);
+-      if (EFI_ERROR (Status)) {
+-        return EFI_DEVICE_ERROR;
+-      }
+-    } else {
+-      return EFI_SUCCESS;
++      return EFI_NOT_FOUND;
+     }
++
++    return EFI_SUCCESS;
+   }
+ 
+   return EFI_NOT_FOUND;
+@@ -2021,6 +2238,10 @@ UfsInitTaskManagementRequestList (
+     return Status;
+   }
+ 
++  Private->UtpTmrlBase = CmdDescHost;
++  Private->Nutmrs      = Nutmrs;
++  Private->TmrlMapping = CmdDescMapping;
++
+   //
+   // Program the UTP Task Management Request List Base Address and UTP Task Management
+   // Request List Base Address with a 64-bit address allocated at step 6.
+@@ -2035,9 +2256,6 @@ UfsInitTaskManagementRequestList (
+     return Status;
+   }
+ 
+-  Private->UtpTmrlBase = CmdDescHost;
+-  Private->Nutmrs      = Nutmrs;
+-  Private->TmrlMapping = CmdDescMapping;
+ 
+   //
+   // Enable the UTP Task Management Request List by setting the UTP Task Management
+@@ -2070,6 +2288,9 @@ UfsInitTransferRequestList (
+   EFI_PHYSICAL_ADDRESS  CmdDescPhyAddr;
+   VOID                  *CmdDescMapping;
+   EFI_STATUS            Status;
++  EFI_PHYSICAL_ADDRESS  UcdAddress;
++  UTP_TRD               *Trd;
++  UINTN                 Index;
+ 
+   //
+   // Initial h/w and s/w context for future operations.
+@@ -2081,12 +2302,37 @@ UfsInitTransferRequestList (
+   //
+   // Allocate and initialize UTP Transfer Request List.
+   //
++  if (Private->UtpUcdBase != NULL || Private->UtpTrlBase != NULL) return EFI_ALREADY_STARTED;
+   Nutrs  = (UINT8)((Private->UfsHcInfo.Capabilities & UFS_HC_CAP_NUTRS) + 1);
++  Private->Nutrs = Nutrs;
++  // Match public Android ufshcd_memory_alloc/host_memory_configure: allocate
++  // all UCD slots once and initialize every UTRD before setting RunStop.
++  Status = UfsAllocateAlignCommonBuffer (Private, Nutrs * UFS_UCD_SLOT_SIZE,
++                                       &Private->UtpUcdBase, &Private->UcdDeviceAddress,
++                                       &Private->UcdMapping);
++  if (EFI_ERROR (Status)) return Status;
++  Private->UcdPoolSize = Nutrs * UFS_UCD_SLOT_SIZE;
+   Status = UfsAllocateAlignCommonBuffer (Private, Nutrs * sizeof (UTP_TRD), &CmdDescHost, &CmdDescPhyAddr, &CmdDescMapping);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+ 
++  Private->UtpTrlBase = CmdDescHost;
++  Private->Nutrs      = Nutrs;
++  Private->TrlMapping = CmdDescMapping;
++  for (Index = 0; Index < Nutrs; Index++) {
++    Trd = (UTP_TRD *)Private->UtpTrlBase + Index;
++    UcdAddress = Private->UcdDeviceAddress + Index * UFS_UCD_SLOT_SIZE;
++    Trd->UcdBa = (UINT32)RShiftU64 (UcdAddress, 7);
++    Trd->UcdBaU = (UINT32)RShiftU64 (UcdAddress, 32);
++    Trd->RuO = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++    Trd->RuL = UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++    Trd->PrdtO = 2 * UFS_UPIU_REGION_SIZE / sizeof (UINT32);
++  }
++  DEBUG ((DEBUG_WARN, "UFS: UCD pool host=%p IOVA=%Lx bytes=%u slots=%u stride=%u PRDs=%u\n",
++          Private->UtpUcdBase, Private->UcdDeviceAddress, (UINT32)Private->UcdPoolSize,
++          Nutrs, (UINT32)UFS_UCD_SLOT_SIZE, UFS_MAX_PRDT_ENTRIES));
++
+   //
+   // Program the UTP Transfer Request List Base Address and UTP Transfer Request List
+   // Base Address with a 64-bit address allocated at step 8.
+@@ -2101,9 +2347,6 @@ UfsInitTransferRequestList (
+     return Status;
+   }
+ 
+-  Private->UtpTrlBase = CmdDescHost;
+-  Private->Nutrs      = Nutrs;
+-  Private->TrlMapping = CmdDescMapping;
+ 
+   //
+   // Enable the UTP Transfer Request List by setting the UTP Transfer Request List
+@@ -2204,7 +2447,7 @@ UfsControllerStop (
+     return Status;
+   }
+ 
+-  ASSERT ((Data & UFS_HC_HCE_EN) == UFS_HC_HCE_EN);
++  // Partial initialization and failed cleanup retries may already have HCE clear.
+ 
+   Status = UfsMmioWrite32 (Private, UFS_HC_ENABLE_OFFSET, 0);
+   if (EFI_ERROR (Status)) {
+@@ -2234,45 +2477,10 @@ UfsControllerStop (
+                        structure.
+ 
+ **/
+-VOID
+-EFIAPI
+-SignalCallerEvent (
+-  IN UFS_PASS_THRU_PRIVATE_DATA  *Private,
+-  IN UFS_PASS_THRU_TRANS_REQ     *TransReq
+-  )
++VOID EFIAPI SignalCallerEvent (UFS_PASS_THRU_PRIVATE_DATA *Private,
++                               UFS_PASS_THRU_TRANS_REQ *TransReq)
+ {
+-  EDKII_UFS_HOST_CONTROLLER_PROTOCOL  *UfsHc;
+-  EFI_EVENT                           CallerEvent;
+-
+-  ASSERT ((Private != NULL) && (TransReq != NULL));
+-
+-  UfsHc       = Private->UfsHostController;
+-  CallerEvent = TransReq->CallerEvent;
+-
+-  RemoveEntryList (&TransReq->TransferList);
+-
+-  UfsHc->Flush (UfsHc);
+-
+-  UfsStopExecCmd (Private, TransReq->Slot);
+-
+-  UfsReconcileDataTransferBuffer (Private, TransReq);
+-
+-  if (TransReq->CmdDescMapping != NULL) {
+-    UfsHc->Unmap (UfsHc, TransReq->CmdDescMapping);
+-  }
+-
+-  if (TransReq->CmdDescHost != NULL) {
+-    UfsHc->FreeBuffer (
+-             UfsHc,
+-             EFI_SIZE_TO_PAGES (TransReq->CmdDescSize),
+-             TransReq->CmdDescHost
+-             );
+-  }
+-
+-  FreePool (TransReq);
+-
+-  gBS->SignalEvent (CallerEvent);
+-  return;
++  UfsFinishOwnedRequest (Private, TransReq);
+ }
+ 
+ /**
+@@ -2284,126 +2492,49 @@ SignalCallerEvent (
+ **/
+ VOID
+ EFIAPI
+-ProcessAsyncTaskList (
+-  IN EFI_EVENT  Event,
+-  IN VOID       *Context
+-  )
++ProcessAsyncTaskList (EFI_EVENT Event, VOID *Context)
+ {
+-  UFS_PASS_THRU_PRIVATE_DATA                  *Private;
+-  LIST_ENTRY                                  *Entry;
+-  LIST_ENTRY                                  *NextEntry;
+-  UFS_PASS_THRU_TRANS_REQ                     *TransReq;
+-  EFI_EXT_SCSI_PASS_THRU_SCSI_REQUEST_PACKET  *Packet;
+-  UTP_RESPONSE_UPIU                           *Response;
+-  UINT16                                      SenseDataLen;
+-  UINT32                                      ResTranCount;
+-  UINT32                                      SlotsMap;
+-  UINT32                                      Value;
+-  EFI_STATUS                                  Status;
+-
+-  Private  = (UFS_PASS_THRU_PRIVATE_DATA *)Context;
+-  SlotsMap = 0;
+-
+-  //
+-  // Check the entries in the async I/O queue are done or not.
+-  //
+-  if (!IsListEmpty (&Private->Queue)) {
+-    BASE_LIST_FOR_EACH_SAFE (Entry, NextEntry, &Private->Queue) {
+-      TransReq = UFS_PASS_THRU_TRANS_REQ_FROM_THIS (Entry);
+-      Packet   = TransReq->Packet;
+-
+-      if ((SlotsMap & (BIT0 << TransReq->Slot)) != 0) {
+-        return;
+-      }
+-
+-      SlotsMap |= BIT0 << TransReq->Slot;
+-
+-      Status = UfsMmioRead32 (Private, UFS_HC_UTRLDBR_OFFSET, &Value);
+-      if (EFI_ERROR (Status)) {
+-        //
+-        // TODO: Should find/add a proper host adapter return status for this
+-        // case.
+-        //
+-        Packet->HostAdapterStatus = EFI_EXT_SCSI_STATUS_HOST_ADAPTER_PHASE_ERROR;
+-        DEBUG ((DEBUG_VERBOSE, "ProcessAsyncTaskList(): Signal Event %p UfsMmioRead32() Error.\n", TransReq->CallerEvent));
+-        SignalCallerEvent (Private, TransReq);
++  UFS_PASS_THRU_PRIVATE_DATA *Private = Context;
++  LIST_ENTRY *Entry, *Next;
++  UFS_PASS_THRU_TRANS_REQ *Request;
++  EFI_STATUS Status;
++  UINT32 Doorbell;
++  EFI_STATUS ControllerStatus = EFI_SUCCESS;
++  EFI_TPL OldTpl;
++  if (Private->CleanupInProgress) return;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Private->CleanupInProgress = TRUE;
++  if (Private->Queue.ForwardLink != &Private->Queue && !Private->IoUnavailable)
++    ControllerStatus = UfsCheckControllerErrors (Private);
++  BASE_LIST_FOR_EACH_SAFE (Entry, Next, &Private->Queue) {
++    Request = UFS_PASS_THRU_TRANS_REQ_FROM_THIS (Entry);
++    if (Request->Packet == NULL || Private->IoUnavailable) {
++      if (Request->Packet != NULL) Request->CompletionStatus = EFI_DEVICE_ERROR;
++      UfsFinishOwnedRequest (Private, Request);
++      continue;
++    }
++    Status = ControllerStatus;
++    if (!EFI_ERROR (Status))
++      Status = UfsMmioRead32 (Private, UFS_HC_UTRLDBR_OFFSET, &Doorbell);
++    if (!EFI_ERROR (Status))
++      Status = UfsCheckControllerErrors (Private);
++    if (!EFI_ERROR (Status) && (Doorbell & (1U << Request->Slot)) != 0) {
++      if (Request->TimeoutRemain == 0) continue; // Protocol: zero means no timeout.
++      if (Request->TimeoutRemain > UFS_HC_ASYNC_TIMER) {
++        Request->TimeoutRemain -= UFS_HC_ASYNC_TIMER;
+         continue;
+       }
+-
+-      if ((Value & (BIT0 << TransReq->Slot)) != 0) {
+-        //
+-        // Scsi cmd not finished yet.
+-        //
+-        if (TransReq->TimeoutRemain > UFS_HC_ASYNC_TIMER) {
+-          TransReq->TimeoutRemain -= UFS_HC_ASYNC_TIMER;
+-          continue;
+-        } else {
+-          //
+-          // Timeout occurs.
+-          //
+-          Packet->HostAdapterStatus = EFI_EXT_SCSI_STATUS_HOST_ADAPTER_TIMEOUT_COMMAND;
+-          DEBUG ((DEBUG_VERBOSE, "ProcessAsyncTaskList(): Signal Event %p EFI_TIMEOUT.\n", TransReq->CallerEvent));
+-          SignalCallerEvent (Private, TransReq);
+-          continue;
+-        }
+-      } else {
+-        //
+-        // Scsi cmd finished.
+-        //
+-        // Get sense data if exists
+-        //
+-        Response = (UTP_RESPONSE_UPIU *)((UINT8 *)TransReq->CmdDescHost + TransReq->Trd->RuO * sizeof (UINT32));
+-        ASSERT (Response != NULL);
+-        SenseDataLen = Response->SenseDataLen;
+-        SwapLittleEndianToBigEndian ((UINT8 *)&SenseDataLen, sizeof (UINT16));
+-
+-        if ((Packet->SenseDataLength != 0) && (Packet->SenseData != NULL)) {
+-          //
+-          // Make sure the hardware device does not return more data than expected.
+-          //
+-          if (SenseDataLen <= Packet->SenseDataLength) {
+-            CopyMem (Packet->SenseData, Response->SenseData, SenseDataLen);
+-            Packet->SenseDataLength = (UINT8)SenseDataLen;
+-          } else {
+-            Packet->SenseDataLength = 0;
+-          }
+-        }
+-
+-        //
+-        // Check the transfer request result.
+-        //
+-        Packet->TargetStatus = Response->Status;
+-        if (Response->Response != 0) {
+-          DEBUG ((DEBUG_VERBOSE, "ProcessAsyncTaskList(): Signal Event %p Target Failure.\n", TransReq->CallerEvent));
+-          SignalCallerEvent (Private, TransReq);
+-          continue;
+-        }
+-
+-        if (TransReq->Trd->Ocs == 0) {
+-          if (Packet->DataDirection == EFI_EXT_SCSI_DATA_DIRECTION_READ) {
+-            if ((Response->Flags & BIT5) == BIT5) {
+-              ResTranCount = Response->ResTranCount;
+-              SwapLittleEndianToBigEndian ((UINT8 *)&ResTranCount, sizeof (UINT32));
+-              Packet->InTransferLength -= ResTranCount;
+-            }
+-          } else {
+-            if ((Response->Flags & BIT5) == BIT5) {
+-              ResTranCount = Response->ResTranCount;
+-              SwapLittleEndianToBigEndian ((UINT8 *)&ResTranCount, sizeof (UINT32));
+-              Packet->OutTransferLength -= ResTranCount;
+-            }
+-          }
+-        } else {
+-          DEBUG ((DEBUG_VERBOSE, "ProcessAsyncTaskList(): Signal Event %p Target Device Error.\n", TransReq->CallerEvent));
+-          SignalCallerEvent (Private, TransReq);
+-          continue;
+-        }
+-
+-        DEBUG ((DEBUG_VERBOSE, "ProcessAsyncTaskList(): Signal Event %p Success.\n", TransReq->CallerEvent));
+-        SignalCallerEvent (Private, TransReq);
+-      }
++      Status = EFI_TIMEOUT;
++    } else if (!EFI_ERROR (Status)) {
++      Request->DmaFenced = TRUE;
++      Status = UfsValidateScsiResponse (Private, Request);
++      Request->ResponseValidated = !EFI_ERROR (Status);
+     }
++    Request->CompletionStatus = Status;
++    UfsFinishOwnedRequest (Private, Request);
+   }
++  Private->CleanupInProgress = FALSE;
++  gBS->RestoreTPL (OldTpl);
+ }
+ 
+ /**

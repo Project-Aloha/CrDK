@@ -1,0 +1,80 @@
+diff --git a/ShellPkg/Library/UefiShellLib/UefiShellLib.c b/ShellPkg/Library/UefiShellLib/UefiShellLib.c
+index fd8f58a5d0..a4f4b22711 100644
+--- a/ShellPkg/Library/UefiShellLib/UefiShellLib.c
++++ b/ShellPkg/Library/UefiShellLib/UefiShellLib.c
+@@ -735,10 +735,12 @@ ShellOpenFileByName (
+   //
+   ASSERT (FileName != NULL);
+ 
+-  if (FileName == NULL) {
++  if ((FileName == NULL) || (FileHandle == NULL)) {
+     return (EFI_INVALID_PARAMETER);
+   }
+ 
++  *FileHandle = NULL;
++
+   if (gEfiShellProtocol != NULL) {
+     if ((OpenMode & EFI_FILE_MODE_CREATE) == EFI_FILE_MODE_CREATE) {
+       //
+@@ -760,6 +762,7 @@ ShellOpenFileByName (
+       if (PathRemoveLastItem (FileNameCopy)) {
+         if (!EFI_ERROR (ShellCreateDirectory (FileNameCopy, FileHandle))) {
+           ShellCloseFile (FileHandle);
++          *FileHandle = NULL;
+         }
+       }
+ 
+@@ -775,13 +778,24 @@ ShellOpenFileByName (
+                                   OpenMode
+                                   );
+     if (EFI_ERROR (Status)) {
++      if ((OpenMode & (EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE)) != 0) {
++        DEBUG ((DEBUG_ERROR, "ShellOpenFileByName: open '%s' mode=0x%Lx: %r\n", FileName, OpenMode, Status));
++      }
++
++      *FileHandle = NULL;
+       return Status;
+     }
+ 
++    if (*FileHandle == NULL) {
++      DEBUG ((DEBUG_ERROR, "ShellOpenFileByName: open '%s' returned no handle\n", FileName));
++      return EFI_DEVICE_ERROR;
++    }
++
+     if (mUnicodeCollationProtocol == NULL) {
+       Status = gBS->LocateProtocol (&gEfiUnicodeCollation2ProtocolGuid, NULL, (VOID **)&mUnicodeCollationProtocol);
+       if (EFI_ERROR (Status)) {
+         gEfiShellProtocol->CloseFile (*FileHandle);
++        *FileHandle = NULL;
+         return Status;
+       }
+     }
+@@ -791,12 +805,27 @@ ShellOpenFileByName (
+         !EFI_ERROR (Status) && ((OpenMode & EFI_FILE_MODE_CREATE) != 0))
+     {
+       FileInfo = FileFunctionMap.GetFileInfo (*FileHandle);
+-      ASSERT (FileInfo != NULL);
++      if (FileInfo == NULL) {
++        DEBUG ((DEBUG_ERROR, "ShellOpenFileByName: get info '%s' failed\n", FileName));
++        gEfiShellProtocol->CloseFile (*FileHandle);
++        *FileHandle = NULL;
++        return EFI_DEVICE_ERROR;
++      }
++
++      //
++      // Only attributes are requested here. Zero time fields preserve the
++      // existing timestamps, including files created by older RTC firmware.
++      //
++      ZeroMem (&FileInfo->CreateTime, sizeof (EFI_TIME));
++      ZeroMem (&FileInfo->LastAccessTime, sizeof (EFI_TIME));
++      ZeroMem (&FileInfo->ModificationTime, sizeof (EFI_TIME));
+       FileInfo->Attribute = Attributes;
+       Status2             = FileFunctionMap.SetFileInfo (*FileHandle, FileInfo);
+       FreePool (FileInfo);
+       if (EFI_ERROR (Status2)) {
++        DEBUG ((DEBUG_ERROR, "ShellOpenFileByName: set attributes '%s' attributes=0x%Lx: %r\n", FileName, Attributes, Status2));
+         gEfiShellProtocol->CloseFile (*FileHandle);
++        *FileHandle = NULL;
+       }
+ 
+       Status = Status2;

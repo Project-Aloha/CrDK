@@ -80,6 +80,7 @@ static void InitBootServices(void) {
 
 static EFI_GUID *StandardGuid;
 static EFI_GUID *PrivateGuid;
+static EFI_GUID *OptionalQupGuid;
 static EFI_GUID *PublishedGuid;
 static VOID *StandardBackend;
 static VOID *PrivateBackend;
@@ -109,6 +110,7 @@ static EFI_STATUS EFIAPI OpenStandard(EFI_HANDLE Handle, EFI_GUID *Guid,
 }
 static EFI_STATUS EFIAPI LocatePrivate(EFI_GUID *Guid, VOID *Registration,
     VOID **Protocol) {
+  if (Guid == OptionalQupGuid) { *Protocol = NULL; return EFI_NOT_FOUND; }
   assert(Guid == PrivateGuid && Registration == NULL);
   ++PrivateLocateCalls;
   *Protocol = PrivateBackend;

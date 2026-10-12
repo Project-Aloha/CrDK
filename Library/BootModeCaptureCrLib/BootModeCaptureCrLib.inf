@@ -1,0 +1,24 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = BootModeCaptureCrLib
+  FILE_GUID = 4AEF089B-33AA-4B9E-BFCC-B2DFF79FC87B
+  MODULE_TYPE = SEC
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = BootModeCaptureLib|SEC
+[Sources]
+  BootModeCaptureCrLib.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  HobLib
+  PlatformMemoryMapLib
+[Guids]
+  gCrBootDataGuid

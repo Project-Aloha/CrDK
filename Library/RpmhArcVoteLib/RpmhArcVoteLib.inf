@@ -1,0 +1,17 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = RpmhArcVoteLib
+  FILE_GUID = 4CA7E52E-D041-4E9E-B641-7A0B6B743A63
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = RpmhArcVoteLib
+[Sources]
+  RpmhArcVote.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  SynchronizationLib

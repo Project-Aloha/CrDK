@@ -22,7 +22,7 @@
 
 [Protocols]
   gEfiSpiHcProtocolGuid         ## CONSUMES (optional PI backend)
-  gQcomSPIProtocolGuid          ## CONSUMES (MU SPIDxe)
+  gQcomSPIProtocolGuid          ## CONSUMES (legacy MU SPIDxe; not active)
   gEfiQupCrProtocolGuid         ## CONSUMES
   gEfiGpiCrProtocolGuid         ## CONSUMES
   gEfiInterconnectCrProtocolGuid ## CONSUMES

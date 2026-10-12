@@ -14,20 +14,33 @@
 
 [Sources]
   CrDALDxe.c
+  BootFdt.c
+  BootFdt.h
 
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  AndroidBootCrLib
+  BaseMemoryLib
+  FdtLib
+  MemoryAllocationLib
   CrDalRegistryLib
   CrTargetLib
   DebugLib
+  HobLib
+  UfsPowerFdtCrLib
+  UfsPowerPolicyCrLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 
 [Protocols]
   gEfiCrDalProtocolGuid          ## PRODUCES
+  gEfiCrFdtProtocolGuid          ## PRODUCES
+
+[Guids]
+  gCrBootDataGuid
 
 [Depex]
   TRUE

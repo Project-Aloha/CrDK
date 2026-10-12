@@ -66,6 +66,12 @@ enum RSC_SLAVE_ID_TYPE {
 
 BOOLEAN ValidateCmdDBHeader(IN CmdDbHeader *cmd_db_header);
 
+/* Validate the complete immutable mapped/copied region before using legacy
+ * lookup APIs. All resource tables and auxiliary spans must fit RegionSize.
+ * Validation is a memory-bounds check; it does not authenticate firmware.
+ */
+BOOLEAN ValidateCmdDBRegion(CONST CmdDbHeader *Header, UINTN RegionSize);
+
 VOID DumpCmdDBInfo(IN CmdDbHeader *cmd_db_header);
 
 CR_STATUS

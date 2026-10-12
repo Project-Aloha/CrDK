@@ -14,5 +14,8 @@
       <Value>$(CRANE_CRDK_LIB_RPMH_DIR)</Value>
     </BuildMacro>
     <ClCompile Include="$(CRANE_CRDK_LIB_RPMH_DIR)/rpmh.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_RPMH_DIR)/rpmh_rail.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_RPMH_DIR)/rpmh_rail_votes.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_RPMH_DIR)/rpmh_rail_observe.c" />
   </ItemGroup>
 </Project>

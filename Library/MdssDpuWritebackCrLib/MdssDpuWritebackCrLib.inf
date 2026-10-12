@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = MdssDpuWritebackCrLib
+  FILE_GUID                      = 9bac3e7f-e25c-4c4f-ad09-968c171cf63a
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = MdssDpuWritebackCrLib
+[Sources]
+  MdssDpuWriteback.c
+[Packages]
+  MdePkg/MdePkg.dec
+  Platforms/CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <oskal/cr_types.h>
 #include <oskal/common.h>
 #include <oskal/cr_interrupt.h>
 #include <oskal/cr_lock.h>
@@ -121,6 +122,7 @@ typedef struct {
 } SpmiMemoryRegion;
 
 typedef struct SpmiDeviceContext SpmiDeviceContext;
+typedef struct SpmiParentIrqJournal SpmiParentIrqJournal;
 
 typedef UINT32 (*SPMI_MMIO_READ32)(IN VOID *Context, IN UINTN Address);
 typedef VOID (*SPMI_MMIO_WRITE32)(IN VOID *Context, IN UINTN Address,
@@ -196,6 +198,9 @@ typedef struct {
   CR_INTERRUPT_HANDLER Handler;
   VOID *Param;
   BOOLEAN Enabled;
+  /* A failed enable/disable may have changed hardware. Retain the entry and
+     suppress delivery until an exact readback or successful disable. */
+  BOOLEAN EnableUncertain;
 } SpmiIrqEntry;
 
 struct SpmiDeviceContext {
@@ -212,8 +217,14 @@ struct SpmiDeviceContext {
   SpmiIrqEntry IrqEntries[SPMI_PMIC_ARB_MAX_IRQ_ENTRIES];
   BOOLEAN HasInterrupt;
   BOOLEAN InterruptExternallyManaged;
+  /* Explicit whole-parent owner policy, independent of IRQ registration.
+     Requires a source-masking owner when dispatch reports uncertainty. */
+  BOOLEAN SharedParentIrqScan;
+  SpmiParentIrqJournal *ParentIrq;
   BOOLEAN Initialized;
   BOOLEAN InterruptRegistered;
+  /* Saturating evidence: callers mask/retry or seal the parent on failures. */
+  UINT32 IrqAckFailures, IrqOrphans;
 };
 
 /**
@@ -223,12 +234,17 @@ CR_STATUS
 SpmiLibInit(IN OUT SpmiDeviceContext **Ctx);
 
 /**
- * Stop interrupt delivery and release all runtime state owned by the SPMI
+ * Stop interrupt delivery before releasing runtime state owned by the SPMI
  * controller. The target-supplied resource description remains reusable by a
  * subsequent SpmiLibInit call.
  */
 CR_STATUS
 SpmiLibDeinit(IN OUT SpmiDeviceContext *Ctx);
+
+/* Serialized adapter power/teardown operation. Stop drains OSKAL callbacks
+ * before retiring client handler storage. It preserves arbiter and IRQ entries
+ * for a later resume. External interrupt owners drain their own dispatch path. */
+CR_STATUS SpmiSetInterruptDelivery(IN OUT SpmiDeviceContext *Ctx,IN BOOLEAN Enable);
 
 /**
  * Read 1..8 bytes from a SPMI peripheral.
@@ -267,7 +283,9 @@ SpmiRegisterIrq(IN SpmiDeviceContext *Ctx, IN UINT8 Sid, IN UINT8 Periph,
                 IN CR_INTERRUPT_HANDLER Handler, IN VOID *Param);
 
 /**
- * Unregister an interrupt handler.
+ * Unregister an interrupt handler. The adapter first drains dispatch with
+ * SpmiSetInterruptDelivery(FALSE), or through its external IRQ owner, before
+ * retiring callback storage. It can then resume delivery for remaining clients.
  */
 CR_STATUS
 SpmiUnregisterIrq(IN SpmiDeviceContext *Ctx, IN UINT8 Sid, IN UINT8 Periph,
@@ -294,3 +312,24 @@ SpmiDispatchIrqs(IN SpmiDeviceContext *Ctx);
 CR_STATUS
 SpmiGetApid(IN SpmiDeviceContext *Ctx, IN UINT8 Sid, IN UINT8 Periph,
             OUT UINT16 *Apid);
+
+/* Optional whole-parent PIC delivery ownership. External adapter serializes
+ * lifecycle and drains callbacks before final release. All live operations run
+ * at <= DISPATCH and serialize with IRQ mutation through Bus.IrqLock. This is
+ * not a PDC lease. Initial acquisition snapshots and masks before publication.
+ * A partial failure keeps Context/Identity bound until exact-success release. */
+#define SPMI_PARENT_IRQ_MAX_APIDS 1024
+struct SpmiParentIrqJournal {
+  SpmiDeviceContext *Context;
+  SpmiParentIrqJournal *Identity;
+  UINT64 Generation;
+  UINT16 Count;
+  BOOLEAN Blocked,Faulted;
+  struct { UINTN Address; UINT8 Initial,Resume; } Slots[SPMI_PARENT_IRQ_MAX_APIDS];
+};
+CR_STATUS SpmiParentIrqAcquire(SpmiDeviceContext *,SpmiParentIrqJournal *);
+CR_STATUS SpmiParentIrqMask(SpmiParentIrqJournal *,BOOLEAN Fault);
+CR_STATUS SpmiParentIrqResume(SpmiParentIrqJournal *);
+/* Raw core is deinitialized, upstream delivery detached, callback/client calls
+ * drained, and original MMIO is still retained. Never call after source loss. */
+CR_STATUS SpmiParentIrqReleaseAfterDetach(SpmiParentIrqJournal *);

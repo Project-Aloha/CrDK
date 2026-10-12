@@ -1,0 +1,58 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = Dwc3CrDxe
+  FILE_GUID = 8E7D41FB-489D-4BC6-80AB-1CA1E304C917
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = Dwc3CrDxeEntryPoint
+  UNLOAD_IMAGE = Dwc3CrDxeUnload
+[Sources]
+  Dwc3CrDxe.c
+  Dwc3Core.c
+  Dwc3Handoff.c
+  Dwc3Function.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  PcdLib
+  Dwc3CrLib
+  UsbHandoffCrLib
+  DxeServicesTableLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  NonDiscoverableDeviceRegistrationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+[FixedPcd]
+  gCranePkgTokenSpaceGuid.PcdUsbLegacyPhysicalDmaHandoff
+
+[Protocols]
+  gEdkiiUsb2HcFreezeProtocolGuid
+  gEfiUsb2HcProtocolGuid
+  gEfiAcpiTableProtocolGuid
+  gEfiUsbTypeCCrProtocolGuid
+  gEfiUsbDpPhyCrProtocolGuid
+  gEfiClockCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiSmmuCrProtocolGuid
+  gEfiDmaIdentityCrProtocolGuid
+  gEdkiiIoMmuProtocolGuid
+  gEdkiiNonDiscoverableDeviceProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiUsbFunctionIoProtocolGuid
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gEfiEventReadyToBootGuid
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiUsbTypeCCrProtocolGuid AND gEfiUsbDpPhyCrProtocolGuid AND
+  gEfiClockCrProtocolGuid AND gEfiInterconnectCrProtocolGuid AND
+  gEfiSmmuCrProtocolGuid AND gEdkiiIoMmuProtocolGuid

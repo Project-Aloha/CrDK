@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Sm8450GpuResourcesCrLib
+  FILE_GUID = 586C79AF-3500-4D0D-A684-9D4352525EA1
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = Sm8450GpuResourcesCrLib
+[Sources]
+  Sm8450GpuResources.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

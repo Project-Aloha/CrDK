@@ -1,0 +1,43 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = HdkBootDisplayCrDxe
+  FILE_GUID = 678347C1-CE0C-4573-9B9E-5669FF28A415
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = HdkBootDisplayEntry
+  UNLOAD_IMAGE = HdkBootDisplayUnload
+[Sources]
+  HdkBootDisplayCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  DxeServicesTableLib
+  FrameBufferBltLib
+  Hdk8350BootDisplayCrLib
+  IoLib
+  MdssBoot8250CrLib
+  MemoryAllocationLib
+  PcdLib
+  PlatformMemoryMapLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+[FixedPcd]
+  gCranePkgTokenSpaceGuid.PcdHdkDisplayBoard
+[Protocols]
+  gEfiDevicePathProtocolGuid ## PRODUCES
+  gEfiGraphicsOutputProtocolGuid ## PRODUCES
+  gEfiSmmuCrProtocolGuid ## CONSUMES
+[Guids]
+  gEfiEventExitBootServicesGuid ## CONSUMES
+[Depex]
+  gEfiSmmuCrProtocolGuid

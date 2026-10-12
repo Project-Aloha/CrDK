@@ -1,0 +1,71 @@
+## @file
+# Implements a simple on-screen virtual keyboard for text input.
+#
+# Copyright (C) Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OnScreenKeyboardDxe
+  FILE_GUID                      = 917C56F2-2FE3-498F-AFFB-87AC0E19FE5E
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OSKDriverEntryPoint
+  UNLOAD_IMAGE                   = DriverUnload
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 IPF EBC
+#
+
+[Sources]
+  OnScreenKeyboardDriver.c
+  OnScreenKeyboardProtocol.c
+  DisplayTransform.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MsGraphicsPkg/MsGraphicsPkg.dec
+  MsCorePkg/MsCorePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  DebugLib
+  BaseLib
+  HiiLib
+  MemoryAllocationLib
+  DxeServicesTableLib
+  MsUiThemeLib
+  MsColorTableLib
+  MathLib
+  FltUsedLib
+  UIToolKitLib
+
+[Guids]
+  gEfiConsoleInDeviceGuid
+  gOSKDevicePathGuid
+  gEfiEventBeforeExitBootServicesGuid
+
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid    # CONSUMES
+  gEfiHiiFontProtocolGuid           # CONSUMES
+  gMsSWMProtocolGuid                # CONSUMES
+  gMsSREProtocolGuid                # CONSUMES
+
+  gMsOSKProtocolGuid                # PRODUCES
+  gEfiSimpleTextInProtocolGuid      # PRODUCES
+  gEfiSimpleTextInputExProtocolGuid # PRODUCES
+
+[Pcd]
+  gMsGraphicsPkgTokenSpaceGuid.PcdSmallAssetMaxScreenWidth
+  gMsGraphicsPkgTokenSpaceGuid.PcdEnableTypematicOSK
+
+[Depex]
+
+[BuildOptions]
+  *_VS2013x86_IA32_CC_FLAGS       = /Oi /Og /fp:fast /arch:SSE
+  *_VS2013x86_X64_CC_FLAGS       = /Oi /Og /fp:fast /arch:SSE

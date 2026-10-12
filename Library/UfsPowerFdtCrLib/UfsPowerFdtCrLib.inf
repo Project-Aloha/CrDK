@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UfsPowerFdtCrLib
+  FILE_GUID = 9E9849F2-B559-4F41-9E90-A7CB23820A80
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UfsPowerFdtCrLib
+[Sources]
+  UfsPowerFdt.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  FdtLib

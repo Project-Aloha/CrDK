@@ -1,0 +1,27 @@
+--- a/HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf
++++ b/HidPkg/UsbKbHidDxe/UsbKbHidDxe.inf
+@@ -52,4 +52,4 @@
+   gHidKeyboardProtocolGuid
+ 
+ [UserExtensions.TianoCore."ExtraFiles"]
+-  UsbHidKbDxeExtra.uni
++  UsbKbHidDxeExtra.uni
+--- a/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf
++++ b/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf
+@@ -24,6 +24,7 @@
+   GopOverrideDxe.c
+ 
+ [Packages]
++  CranePkg/CranePkg.dec
+   MdePkg/MdePkg.dec
+   MdeModulePkg/MdeModulePkg.dec
+   MsGraphicsPkg/MsGraphicsPkg.dec
+@@ -45,7 +46,7 @@
+   gEfiDevicePathProtocolGuid        # CONSUMES
+ 
+ [Pcd]
+-  gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid
++  gCranePkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid
+   gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideProtocolGuid
+ 
+ [Depex]

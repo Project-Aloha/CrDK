@@ -1,0 +1,30 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PILCrLib
+  FILE_GUID = B39505A2-94CF-4B5E-9F94-8B993E42C17B
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PILCrLib
+[Sources]
+  PilElf.c
+  Pil.c
+  PilClients.c
+  PilUefi.c
+  PilHandoffUefi.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  ArmLib
+  ArmSmcLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DxeServicesTableLib
+  DebugLib
+  IoLib
+  TimerLib
+  RpmhArcVoteLib
+  UefiBootServicesTableLib
+[Protocols]
+  gEfiAcpiTableProtocolGuid

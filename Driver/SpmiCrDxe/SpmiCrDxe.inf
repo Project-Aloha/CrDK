@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = SpmiCrDxe
+  FILE_GUID = f13026c5-f988-518b-a0ad-a9fb71fc6afb
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = SpmiCrEntryPoint
+  UNLOAD_IMAGE = SpmiCrUnload
+[Sources]
+  SpmiCrDxe.c
+  Board.c
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CrDalLib
+  DebugLib
+  FdtLib
+  IoLib
+  OskInterruptLib
+  PdcLib
+  SpmiLib
+  SpmiSharedCrLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiCrDalProtocolGuid ## CONSUMES
+  gEfiCrFdtProtocolGuid ## CONSUMES
+  gHardwareInterrupt2ProtocolGuid ## CONSUMES
+  gEfiCrSpmiProtocolGuid ## PRODUCES
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiCrDalProtocolGuid AND gEfiCrFdtProtocolGuid AND gHardwareInterrupt2ProtocolGuid

@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "purpose": "Explicit platform fork of the minimal complete INF module closure; functional source bytes unchanged at relocation",
+  "upstream_repository": "MU_BASECORE",
+  "upstream_commit": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "original_module": "EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf",
+  "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf",
+  "file_guid": "b6f44cc0-9e45-11df-be21-0002a5d5c51b",
+  "base_name": "MmcDxe",
+  "patch_sha256": "b4b986ca88611ed9af50038f807cdaa41155d34e381fff60d64b1cb5189ee0a9",
+  "files": [
+    {
+      "file": "ComponentName.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/ComponentName.c",
+      "source_sha256": "6e08b630e956b5e7ca91cb080241100d9c74c24ab32301bb8401dea3906a8a6f",
+      "upstream_sha256": "6e08b630e956b5e7ca91cb080241100d9c74c24ab32301bb8401dea3906a8a6f",
+      "fork_sha256": "6e08b630e956b5e7ca91cb080241100d9c74c24ab32301bb8401dea3906a8a6f",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "Diagnostics.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/Diagnostics.c",
+      "source_sha256": "83c3d9b016f37e5ad1adce91423ec70128175a1fc6eeec88ad6e2f024f84104b",
+      "upstream_sha256": "83c3d9b016f37e5ad1adce91423ec70128175a1fc6eeec88ad6e2f024f84104b",
+      "fork_sha256": "83c3d9b016f37e5ad1adce91423ec70128175a1fc6eeec88ad6e2f024f84104b",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "Mmc.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/Mmc.c",
+      "source_sha256": "36793e5f6375c461a19abc4e082171bd648e56236645880edcf1efe96536e7a3",
+      "upstream_sha256": "9341955070d871a05dfd17a5f9f09d1e6453164285fe130c65110bd9f2d4beeb",
+      "fork_sha256": "36793e5f6375c461a19abc4e082171bd648e56236645880edcf1efe96536e7a3",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "Mmc.h",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/Mmc.h",
+      "source_sha256": "4b406669ecb384175f26254b347713e8e36f12465c461844332c18628bf56aaa",
+      "upstream_sha256": "d3064e8cbf726b65a3e67b7d11e5234f002aa487e4c240e47ebf98f226cbb3aa",
+      "fork_sha256": "4b406669ecb384175f26254b347713e8e36f12465c461844332c18628bf56aaa",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "MmcBlockIo.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcBlockIo.c",
+      "source_sha256": "eaf8355ad5fb2df5451a32719cbbc3760e77e28f84dfe3ad6bc600a607c4e5fa",
+      "upstream_sha256": "089c584df87e0d1f3f172c1a673e4c3cc3fef0fb466f963e44ed6e78296e6f35",
+      "fork_sha256": "eaf8355ad5fb2df5451a32719cbbc3760e77e28f84dfe3ad6bc600a607c4e5fa",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "MmcDebug.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcDebug.c",
+      "source_sha256": "4aa6bd252cc930697372910e1fae96c21534d37c426c7a334fa8233f7f650814",
+      "upstream_sha256": "4aa6bd252cc930697372910e1fae96c21534d37c426c7a334fa8233f7f650814",
+      "fork_sha256": "4aa6bd252cc930697372910e1fae96c21534d37c426c7a334fa8233f7f650814",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "MmcDxe.inf",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf",
+      "source_sha256": "2da785395cdf059fbccba5ed6816cd5ae59e1bd03f6ecd3a48f52aad3a08732c",
+      "upstream_sha256": "2da785395cdf059fbccba5ed6816cd5ae59e1bd03f6ecd3a48f52aad3a08732c",
+      "fork_sha256": "2da785395cdf059fbccba5ed6816cd5ae59e1bd03f6ecd3a48f52aad3a08732c",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "MmcIdentification.c",
+      "source_path": "MU_BASECORE/EmbeddedPkg/Universal/MmcDxe/MmcIdentification.c",
+      "source_sha256": "ab1d41e14bc4dda4f23fa90285df4f39c46305ee73c269c3eb8ddd4eda39ee3a",
+      "upstream_sha256": "3bef4de51d05585d136243714cbd9feaf52e67d0387e604340c6d4b15204eafd",
+      "fork_sha256": "ab1d41e14bc4dda4f23fa90285df4f39c46305ee73c269c3eb8ddd4eda39ee3a",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o775",
+      "fork_mode": "0o775",
+      "upstream_mode": "0o755"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = CrTargetSm8350Lib
+  FILE_GUID = 0c5f88bc-2844-4727-8b79-e1f1de6e3835
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = CrTargetLib
+[Sources]
+  CrMdssTarget.c
+  CrPcieTarget.c
+  ../Common/CrPcieMmioBackend.c
+  CrTarget.c
+  CrPilTarget.c
+  CrGpioTarget.c
+  CrQupTarget.c
+  CrStorageClockTarget.c
+  CrStorageInterconnectTarget.c
+  CrRpmhArcTarget.c
+  CrUfsTarget.c
+  CrSmmuTarget.c
+  CrSdTarget.c
+  CrSdPowerTarget.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  ClockLib
+  TimerLib
+  IoLib
+  SynchronizationLib

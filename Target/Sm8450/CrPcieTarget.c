@@ -4,8 +4,8 @@
  * Values combine Linux sm8450 PCIe0/PCIe1 and QMP PHY descriptions with the
  * HDK board's supplies and link-speed limit. Resource owners
  * (RPMh, interconnect, clock, GPIO and SMMU) consume the metadata through the
- * PciHostBridgeLib adapter; this target library only supplies MMIO and delay
- * primitives and never reaches into those drivers.
+ * PciHostBridgeLib adapter. This descriptor contains no register access;
+ * native callbacks live in CrPcieBackend.c.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -14,10 +14,6 @@
 #include <Library/pcie.h>
 #include <oskal/cr_assert.h>
 #include <oskal/common.h>
-#include <oskal/cr_memory.h>
-#include <oskal/cr_status.h>
-#include <oskal/cr_string.h>
-#include <oskal/cr_time.h>
 
 #define SM8450_PCIE0_DOMAIN 0
 #define SM8450_PCIE1_DOMAIN 1
@@ -76,7 +72,12 @@
 
 /* The complete SM8450 gen3 table from phy-qcom-qmp-pcie.c, expressed as
  * offsets so the portable PCIe core can program it without Linux headers. */
-STATIC CONST PciePhyInitEntry mGen3PhyInit[] = {
+enum { SM8450_GEN3_PHY_INIT_COUNT = 76,
+       SM8450_GEN4_PHY_INIT_COUNT = 100 };
+
+/* Immutable concatenation preserves both complete tables and publishes no
+ * partially initialized PHY data to concurrent target consumers. */
+STATIC CONST PciePhyInitEntry mAllPhyInit[] = {
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x094, 0x08, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x154, 0x34, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x16c, 0x08, 1),
@@ -150,19 +151,19 @@ STATIC CONST PciePhyInitEntry mGen3PhyInit[] = {
 
     /* RC-only overrides. */
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x050, 0x07, 1),
-    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x178, 0xbf, 1),
-    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x17c, 0x3f, 1),
-    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x190, 0x38, 1),
+    /* QSERDES_V5_RX_RX_MODE_00_HIGH2/HIGH3 and RX_MODE_10_HIGH4.
+     * Linux register definitions and Android waipio-pcie.dtsi agree:
+     * absolute PHY offsets 0x1164, 0x1168 and 0x1194.  Do not overwrite
+     * the independent mode-01 and mode-10 HIGH3 settings above. */
+    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x164, 0xbf, 1),
+    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x168, 0x3f, 1),
+    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x194, 0x38, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x0d8, 0x07, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x044, 0xf0, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x0f4, 0x07, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x008, 0x09, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_RX, 0x014, 0x05, 1),
-};
-
-/* Gen4x2 entries are shared by both lanes; lane-mask 3 causes the portable
- * core to mirror TX/RX writes into the second lane block. */
-STATIC CONST PciePhyInitEntry mGen4PhyInit[] = {
+    /* Gen4x2: lane-mask3 mirrors TX/RX into the second lane. */
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x044, 0x14, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x058, 0x0f, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_BASE, PCIE_PHY_BLOCK_SERDES, 0x0a4, 0x46, 1),
@@ -263,8 +264,11 @@ STATIC CONST PciePhyInitEntry mGen4PhyInit[] = {
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x0dc, 0x55, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x0e0, 0x05, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x154, 0x34, 1),
-    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x174, 0x20, 1),
+    /* Vendor Waipio DTB qcom,phy-sequence uses 0x60 at absolute 0x1174. */
+    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_SERDES, 0x174, 0x60, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_PCS_MISC, 0x01c, 0xc1, 1),
+    /* Vendor Waipio DTB qcom,phy-sequence includes absolute 0x140c. */
+    PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_PCS_MISC, 0x00c, 0x1d, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_PCS_MISC, 0x090, 0x00, 1),
     PHY_ENTRY(PCIE_PHY_PHASE_RC, PCIE_PHY_BLOCK_PCS_MISC, 0x0e0, 0x00, 1),
 };
@@ -322,14 +326,26 @@ enum {
   SM8450_PCIE_RESET_TOTAL = 4,
 
   SM8450_PCIE0_SUPPLY_OFFSET = 0,
-  SM8450_PCIE_SUPPLY_COUNT = 2,
+  SM8450_PCIE0_SUPPLY_COUNT = 2,
   SM8450_PCIE1_SUPPLY_OFFSET =
-      SM8450_PCIE0_SUPPLY_OFFSET + SM8450_PCIE_SUPPLY_COUNT,
+      SM8450_PCIE0_SUPPLY_OFFSET + SM8450_PCIE0_SUPPLY_COUNT,
+  /* The vendor Waipio HDK DTB has qref, 1p8, and 0p9 rails.  qref is
+   * ldob5 and must be voted explicitly before the Gen4 PHY is released.
+   * Mainline sm8450-hdk.dts omits qref; the board DTB is authoritative for
+   * this firmware target. */
+  SM8450_PCIE1_SUPPLY_COUNT = 4,
   SM8450_PCIE_SUPPLY_TOTAL =
-      SM8450_PCIE1_SUPPLY_OFFSET + SM8450_PCIE_SUPPLY_COUNT,
+      SM8450_PCIE1_SUPPLY_OFFSET + SM8450_PCIE1_SUPPLY_COUNT,
+  /* Additional RPMh rails used by the sm8450-hdk UFS node.  They are
+   * outside either PCIe controller slice but are published to RpmhCrDxe. */
+  SM8450_UFS_SUPPLY_OFFSET = SM8450_PCIE_SUPPLY_TOTAL,
+  SM8450_UFS_SUPPLY_COUNT  = 3,
+  SM8450_WCN_SUPPLY_OFFSET = SM8450_UFS_SUPPLY_OFFSET + SM8450_UFS_SUPPLY_COUNT,
+  SM8450_WCN_SUPPLY_COUNT  = 5,
+  SM8450_SUPPLY_TOTAL      = SM8450_WCN_SUPPLY_OFFSET + SM8450_WCN_SUPPLY_COUNT,
 
   SM8450_PCIE0_GPIO_OFFSET = 0,
-  SM8450_PCIE_GPIO_COUNT = 2,
+  SM8450_PCIE_GPIO_COUNT = 3,
   SM8450_PCIE1_GPIO_OFFSET =
       SM8450_PCIE0_GPIO_OFFSET + SM8450_PCIE_GPIO_COUNT,
   SM8450_PCIE_GPIO_TOTAL =
@@ -397,9 +413,9 @@ STATIC CONST PcieTargetInterrupt mInterrupts[] = {
  * host adapter may collapse aliases (for example phy_pipe and pipe) while
  * preserving the ordering required by the cold initializer. */
 STATIC CONST PcieTargetClock mClocks[] = {
-    { "pipe_mux", "gcc", "gcc_pcie_0_pipe_clk_src", 250000000,
-      PCIE_CLOCK_PROVIDER_GCC },
     { "pipe", "gcc", "gcc_pcie_0_pipe_clk", 250000000,
+      PCIE_CLOCK_PROVIDER_GCC },
+    { "pipe_mux", "gcc", "gcc_pcie_0_pipe_clk_src", 250000000,
       PCIE_CLOCK_PROVIDER_GCC },
     { "phy_pipe", "pcie0_phy", "pcie_0_pipe_clk", 250000000,
       PCIE_CLOCK_PROVIDER_PHY_OUTPUT_ALIAS },
@@ -422,9 +438,9 @@ STATIC CONST PcieTargetClock mClocks[] = {
     { "aggre1", "gcc", "gcc_aggre_noc_pcie_1_axi_clk", 0,
       PCIE_CLOCK_PROVIDER_GCC },
 
-    { "pipe_mux", "gcc", "gcc_pcie_1_pipe_clk_src", 250000000,
-      PCIE_CLOCK_PROVIDER_GCC },
     { "pipe", "gcc", "gcc_pcie_1_pipe_clk", 250000000,
+      PCIE_CLOCK_PROVIDER_GCC },
+    { "pipe_mux", "gcc", "gcc_pcie_1_pipe_clk_src", 250000000,
       PCIE_CLOCK_PROVIDER_GCC },
     { "phy_pipe", "pcie1_phy", "pcie_1_pipe_clk", 250000000,
       PCIE_CLOCK_PROVIDER_PHY_OUTPUT_ALIAS },
@@ -481,15 +497,57 @@ STATIC CONST PcieTargetReset mResets[] = {
 STATIC CONST PcieTargetSupply mSupplies[] = {
     { "vdda-phy", "rpmh", "ldob5", 880, 0, 7 },
     { "vdda-pll", "rpmh", "ldob6", 1200, 0, 7 },
-    { "vdda-phy", "rpmh", "ldoh2", 880, 0, 7 },
+  /* HDK schematic sheets 52/64: S10B enables the external M.2 BOB and
+     supplies the selectable slot IO rail. Acquire it before qref/PHY/PERST.
+     The DC-fed VREG_3P3 buck has a hardware switch, not a TLMM enable. */
+    { "vdd-m2-io", "rpmh", "smpb10", 1800, 0, 6 },
+    { "qref",     "rpmh", "ldob5", 880, 0, 7 },
     { "vdda-pll", "rpmh", "ldob6", 1200, 0, 7 },
+    { "vdda-phy", "rpmh", "ldoh2", 912, 0, 7 },
+  /* sm8450-hdk.dts: vcc=l7b_2p5, vccq/vdd-hba=l9b_1p2. */
+    { "vcc",     "rpmh", "ldob7", 2504, 0, 7 },
+    { "vccq",    "rpmh", "ldob9", 1200, 0, 7 },
+    { "vdd-hba", "rpmh", "ldob9", 1200, 0, 7 },
+  /* HDK WCN6855 PMU: ten input aliases share these five physical rails.
+     S11B/S12B match the USB/UFS/PCIe parent votes (8mV selectors).
+     S2E and S1C use Android's 852/1856mV board defaults, within mainline
+     constraints. These are SMPS AUTO=6, not LDO HPM=7. */
+    { "wcn-vddio",    "rpmh", "smpb10", 1800, 0, 6 },
+    { "wcn-vddaon",   "rpmh", "smpb11",  968, 0, 6 },
+    { "wcn-vddpmu",   "rpmh", "smpb12", 1352, 0, 6 },
+    { "wcn-vddpmumx", "rpmh", "smpe2",   852, 0, 6 },
+    { "wcn-vddrfa1p9", "rpmh", "smpc1",  1856, 0, 6 },
+};
+
+/* sm8450-hdk.dts and schematic sheets 65/66: WCN6855 is PCIe0's
+   populated endpoint. BT_EN belongs to Bluetooth; SWCTRL is WCN feedback. */
+STATIC CONST PcieTargetEndpointPower mWcn6855Power = {
+    .Compatible = "qcom,wcn6855-pmu",
+    .SupplyOffset = SM8450_WCN_SUPPLY_OFFSET,
+    .SupplyCount = SM8450_WCN_SUPPLY_COUNT,
+    .EnableGpio = { "wlan-enable", "tlmm", 80, "GPIO_ACTIVE_HIGH", 0, 16,
+                    PCIE_GPIO_PULL_DOWN },
+    .XoGpio = { "wlan-xo", "tlmm", 204, "GPIO_ACTIVE_HIGH", 0, 16,
+                PCIE_GPIO_PULL_DOWN },
+    .BtEnablePin = 81,
+    .SwControlPin = 82,
 };
 
 STATIC CONST PcieTargetGpio mGpios[] = {
-    { "perst", "tlmm", 94, "GPIO_ACTIVE_LOW" },
-    { "wake", "tlmm", 96, "GPIO_ACTIVE_HIGH" },
-    { "perst", "tlmm", 97, "GPIO_ACTIVE_LOW" },
-    { "wake", "tlmm", 99, "GPIO_ACTIVE_HIGH" },
+    /* sm8450.dtsi default pinctrl: CLKREQ# is a PCIe input, not GPIO
+     * mux0.  Leaving it in its bootloader mux can gate the endpoint clock. */
+    { "perst", "tlmm", 94, "GPIO_ACTIVE_LOW", 0, 2,
+      PCIE_GPIO_PULL_DOWN },
+    { "clkreq", "tlmm", 95, "GPIO_ACTIVE_LOW", 1, 2,
+      PCIE_GPIO_PULL_UP },
+    { "wake", "tlmm", 96, "GPIO_ACTIVE_HIGH", 0, 2,
+      PCIE_GPIO_PULL_UP },
+    { "perst", "tlmm", 97, "GPIO_ACTIVE_LOW", 0, 2,
+      PCIE_GPIO_PULL_DOWN },
+    { "clkreq", "tlmm", 98, "GPIO_ACTIVE_LOW", 1, 2,
+      PCIE_GPIO_PULL_UP },
+    { "wake", "tlmm", 99, "GPIO_ACTIVE_HIGH", 0, 2,
+      PCIE_GPIO_PULL_UP },
 };
 
 STATIC CONST PcieTargetIommuMap mIommuMaps[] = {
@@ -515,7 +573,7 @@ STATIC CONST PcieTargetPhy mPhys[] = {
         .PowerDownControlValue = QMP_SW_PWRDN | QMP_REFCLK_DISABLE,
         .StatusMask = QMP_STATUS_GEN3,
         .InitOffset = 0,
-        .InitCount = ARRAY_SIZE(mGen3PhyInit),
+        .InitCount = SM8450_GEN3_PHY_INIT_COUNT,
         .ClockOffset = SM8450_PCIE0_PHY_CLOCK_OFFSET,
         .ClockCount = SM8450_PCIE_PHY_CLOCK_COUNT,
         .ResetOffset = SM8450_PCIE0_PHY_RESET_OFFSET,
@@ -535,21 +593,31 @@ STATIC CONST PcieTargetPhy mPhys[] = {
         .PowerDownControl = QMP_POWER_DOWN,
         .PowerDownControlValue = QMP_SW_PWRDN | QMP_REFCLK_DISABLE,
         .StatusMask = QMP_STATUS_GEN4,
-        .InitOffset = ARRAY_SIZE(mGen3PhyInit),
-        .InitCount = ARRAY_SIZE(mGen4PhyInit),
+        .InitOffset = SM8450_GEN3_PHY_INIT_COUNT,
+        .InitCount = SM8450_GEN4_PHY_INIT_COUNT,
         .ClockOffset = SM8450_PCIE1_PHY_CLOCK_OFFSET,
         .ClockCount = SM8450_PCIE_PHY_CLOCK_COUNT,
         .ResetOffset = SM8450_PCIE1_PHY_RESET_OFFSET,
         .ResetCount = SM8450_PCIE_RESET_COUNT,
+        .AuxMuxController = "gcc",
+        .AuxMuxId = "gcc_pcie_1_phy_aux_clk",
+        .AuxReferenceSource = 2,
+        .AuxPhySource = 0,
     },
 };
+
+/* Waipio msm_pcie_enable(): wake enables, disabled clock gating/removal,
+ * AUX power detection and asynchronous AUX/core clocks before L1SS setup. */
+#define SM8450_PCIE_PARF_SYS_CTRL_SET_MASK 0x365EU
 
 STATIC CONST PcieTargetController mControllers[] = {
     {
         .Label = "pcie0",
+        .EndpointPower = &mWcn6855Power,
         .Compatible = "qcom,pcie-sm8450-pcie0",
         .LinuxConfig = "pcie-qcom",
         .LinuxOps = "qcom,pcie-sm8450-pcie0",
+        .ParfSysControlSetMask = SM8450_PCIE_PARF_SYS_CTRL_SET_MASK,
         .Enabled = TRUE,
         /* RC supports 64-bit/DAC DMA; this is independent of BAR windows. */
         .DmaAbove4G = TRUE,
@@ -572,7 +640,7 @@ STATIC CONST PcieTargetController mControllers[] = {
         .ResetOffset = SM8450_PCIE0_RESET_OFFSET,
         .ResetCount = SM8450_PCIE_RESET_COUNT,
         .SupplyOffset = SM8450_PCIE0_SUPPLY_OFFSET,
-        .SupplyCount = SM8450_PCIE_SUPPLY_COUNT,
+        .SupplyCount = SM8450_PCIE0_SUPPLY_COUNT,
         .PowerDomainController = "gcc",
         .PowerDomainId = "pcie_0_gdsc",
         .GpioOffset = SM8450_PCIE0_GPIO_OFFSET,
@@ -597,10 +665,14 @@ STATIC CONST PcieTargetController mControllers[] = {
         .Compatible = "qcom,pcie-sm8450-pcie1",
         .LinuxConfig = "pcie-qcom",
         .LinuxOps = "qcom,pcie-sm8450-pcie1",
+        .ParfSysControlSetMask = SM8450_PCIE_PARF_SYS_CTRL_SET_MASK,
         .Enabled = TRUE,
         .DmaAbove4G = TRUE,
         .Domain = SM8450_PCIE1_DOMAIN,
-        .MaxLinkSpeed = 4,
+        /* The vendor Waipio HDK DTB sets qcom,target-link-speed = <3>.
+         * Mainline leaves this unset, but this target boots the vendor HDK
+         * DTB and must preserve its Gen3 board contract. */
+        .MaxLinkSpeed = 3,
         .BusStart = 0,
         .BusEnd = 0xff,
         .Lanes = 2,
@@ -617,7 +689,7 @@ STATIC CONST PcieTargetController mControllers[] = {
         .ResetOffset = SM8450_PCIE1_RESET_OFFSET,
         .ResetCount = SM8450_PCIE_RESET_COUNT,
         .SupplyOffset = SM8450_PCIE1_SUPPLY_OFFSET,
-        .SupplyCount = SM8450_PCIE_SUPPLY_COUNT,
+        .SupplyCount = SM8450_PCIE1_SUPPLY_COUNT,
         .PowerDomainController = "gcc",
         .PowerDomainId = "pcie_1_gdsc",
         .GpioOffset = SM8450_PCIE1_GPIO_OFFSET,
@@ -649,15 +721,16 @@ CR_STATIC_ASSERT(ARRAY_SIZE(mClocks) == SM8450_PCIE_CLOCK_TOTAL,
                  "PCIe clock slices must cover the complete table");
 CR_STATIC_ASSERT(ARRAY_SIZE(mResets) == SM8450_PCIE_RESET_TOTAL,
                  "PCIe reset slices must cover the complete table");
-CR_STATIC_ASSERT(ARRAY_SIZE(mSupplies) == SM8450_PCIE_SUPPLY_TOTAL,
+CR_STATIC_ASSERT(ARRAY_SIZE(mSupplies) == SM8450_SUPPLY_TOTAL,
                  "PCIe supply slices must cover the complete table");
 CR_STATIC_ASSERT(ARRAY_SIZE(mGpios) == SM8450_PCIE_GPIO_TOTAL,
                  "PCIe GPIO slices must cover the complete table");
 CR_STATIC_ASSERT(ARRAY_SIZE(mIommuMaps) == SM8450_PCIE_IOMMU_TOTAL,
                  "PCIe IOMMU slices must cover the complete table");
 
-STATIC PciePhyInitEntry mAllPhyInit[ARRAY_SIZE(mGen3PhyInit) +
-                                     ARRAY_SIZE(mGen4PhyInit)];
+CR_STATIC_ASSERT(ARRAY_SIZE(mAllPhyInit) ==
+                 SM8450_GEN3_PHY_INIT_COUNT + SM8450_GEN4_PHY_INIT_COUNT,
+                 "PCIe PHY slices must cover the complete immutable table");
 
 STATIC PcieTargetContext mPcieTarget = {
     .Controllers = mControllers,
@@ -684,176 +757,8 @@ STATIC PcieTargetContext mPcieTarget = {
     .PhyInitCount = ARRAY_SIZE(mAllPhyInit),
 };
 
-STATIC UINT32
-TargetPcieRead32(IN VOID *Context, IN UINT64 Address)
-{
-  UNREFERENCED_PARAMETER(Context);
-  return CrMmioRead32((UINTN)Address);
-}
-
-STATIC VOID
-TargetPcieWrite32(IN VOID *Context, IN UINT64 Address, IN UINT32 Value)
-{
-  UNREFERENCED_PARAMETER(Context);
-  (VOID)CrMmioWrite32((UINTN)Address, Value);
-}
-
-STATIC UINT8
-TargetPcieRead8(IN VOID *Context, IN UINT64 Address)
-{
-  UNREFERENCED_PARAMETER(Context);
-  return MmioRead8((UINTN)Address);
-}
-
-STATIC UINT16
-TargetPcieRead16(IN VOID *Context, IN UINT64 Address)
-{
-  UNREFERENCED_PARAMETER(Context);
-  return MmioRead16((UINTN)Address);
-}
-
-STATIC VOID
-TargetPcieWrite8(IN VOID *Context, IN UINT64 Address, IN UINT8 Value)
-{
-  UNREFERENCED_PARAMETER(Context);
-  (VOID)MmioWrite8((UINTN)Address, Value);
-}
-
-STATIC VOID
-TargetPcieWrite16(IN VOID *Context, IN UINT64 Address, IN UINT16 Value)
-{
-  UNREFERENCED_PARAMETER(Context);
-  (VOID)MmioWrite16((UINTN)Address, Value);
-}
-
-STATIC VOID
-TargetPcieDelayUs(IN VOID *Context, IN UINT32 Microseconds)
-{
-  UNREFERENCED_PARAMETER(Context);
-  cr_sleep(Microseconds);
-}
-
-/* These placeholders keep the portable callback table structurally complete
- * when a caller uses CrTargetLib on its own.  CranePcieHostLib replaces them
- * with adapters for the already-present MU drivers before PcieLibInit(). */
-STATIC CR_STATUS
-TargetPcieSetClock(IN VOID *Context, IN CONST PcieTargetClock *Clock,
-                   IN BOOLEAN Enable)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Clock);
-  UNREFERENCED_PARAMETER(Enable);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetReset(IN VOID *Context, IN CONST PcieTargetReset *Reset,
-                   IN BOOLEAN Assert)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Reset);
-  UNREFERENCED_PARAMETER(Assert);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetPowerDomain(IN VOID *Context,
-                         IN CONST PcieTargetController *Controller,
-                         IN BOOLEAN Enable)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Controller);
-  UNREFERENCED_PARAMETER(Enable);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetSupply(IN VOID *Context, IN CONST PcieTargetSupply *Supply,
-                    IN BOOLEAN Enable)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Supply);
-  UNREFERENCED_PARAMETER(Enable);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetInterconnect(IN VOID *Context,
-                          IN CONST PcieTargetController *Controller,
-                          IN BOOLEAN Enable)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Controller);
-  UNREFERENCED_PARAMETER(Enable);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetIommu(IN VOID *Context,
-                   IN CONST PcieTargetController *Controller,
-                   IN BOOLEAN Enable)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Controller);
-  UNREFERENCED_PARAMETER(Enable);
-  return CR_UNSUPPORTED;
-}
-
-STATIC CR_STATUS
-TargetPcieSetGpio(IN VOID *Context, IN CONST PcieTargetGpio *Gpio,
-                  IN PCIE_GPIO_DIRECTION Direction, IN BOOLEAN Active)
-{
-  UNREFERENCED_PARAMETER(Context);
-  UNREFERENCED_PARAMETER(Gpio);
-  UNREFERENCED_PARAMETER(Direction);
-  UNREFERENCED_PARAMETER(Active);
-  return CR_UNSUPPORTED;
-}
-
 PcieTargetContext *
 CrTargetGetPcieContext(VOID)
 {
-  STATIC BOOLEAN Initialized;
-  UINTN Index;
-
-  if (!Initialized) {
-    for (Index = 0; Index < ARRAY_SIZE(mGen3PhyInit); Index++) {
-      mAllPhyInit[Index] = mGen3PhyInit[Index];
-    }
-    for (Index = 0; Index < ARRAY_SIZE(mGen4PhyInit); Index++) {
-      mAllPhyInit[ARRAY_SIZE(mGen3PhyInit) + Index] = mGen4PhyInit[Index];
-    }
-    Initialized = TRUE;
-  }
-  return (PcieTargetContext *)&mPcieTarget;
-}
-
-CR_STATUS
-CrTargetGetPcieIo(OUT struct _PcieIoOps *Io)
-{
-  if (Io == NULL) {
-    return CR_INVALID_PARAMETER;
-  }
-
-  cr_memset(Io, 0, sizeof(*Io));
-
-  /* Resource callbacks are replaced by CranePcieHostLib, which owns the
-   * corresponding MU drivers.  The explicit stubs keep the ABI valid for
-   * callers which inspect the table before installing those adapters. */
-  Io->Read32 = TargetPcieRead32;
-  Io->Write32 = TargetPcieWrite32;
-  Io->Read8 = TargetPcieRead8;
-  Io->Read16 = TargetPcieRead16;
-  Io->Write8 = TargetPcieWrite8;
-  Io->Write16 = TargetPcieWrite16;
-  Io->DelayUs = TargetPcieDelayUs;
-  Io->SetClock = TargetPcieSetClock;
-  Io->SetReset = TargetPcieSetReset;
-  Io->SetPowerDomain = TargetPcieSetPowerDomain;
-  Io->SetSupply = TargetPcieSetSupply;
-  Io->SetInterconnect = TargetPcieSetInterconnect;
-  Io->SetIommu = TargetPcieSetIommu;
-  Io->SetGpio = TargetPcieSetGpio;
-  Io->Context = NULL;
-  return CR_SUCCESS;
+  return &mPcieTarget;
 }

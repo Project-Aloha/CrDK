@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = SerialResourceLib
+  FILE_GUID = 5d03fdb7-d03a-49c6-8be8-3b60a3f8739c
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SerialResourceLib
+[Sources]
+  SerialResources.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib

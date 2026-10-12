@@ -14,9 +14,29 @@ MapMemRegion(
 {
   CR_STATUS Status      = CR_SUCCESS;
   UINTN     AlignedSize = ALIGN_TO_4KB(Size);
+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR Descriptor;
+  EFI_PHYSICAL_ADDRESS EndAddress;
+  EFI_STATUS DescriptorStatus;
 
   if (BaseAddress == 0 || Size == 0) {
     return CR_INVALID_PARAMETER;
+  }
+
+  /* PlatformMemoryMapLib may have already installed a containing GCD
+     descriptor (for example MDSS and APSS aggregate windows).  Do not try
+     to add an overlapping child range: EFI_ALREADY_STARTED is harmless but
+     obscures the real owner and leaves noisy ClockLib warnings. */
+  EndAddress = (EFI_PHYSICAL_ADDRESS)BaseAddress + AlignedSize;
+  if (EndAddress < (EFI_PHYSICAL_ADDRESS)BaseAddress) {
+    return CR_INVALID_PARAMETER;
+  }
+  DescriptorStatus = gDS->GetMemorySpaceDescriptor (
+                       (EFI_PHYSICAL_ADDRESS)BaseAddress, &Descriptor);
+  if (!EFI_ERROR (DescriptorStatus) &&
+      Descriptor.GcdMemoryType == EfiGcdMemoryTypeMemoryMappedIo &&
+      Descriptor.BaseAddress <= (EFI_PHYSICAL_ADDRESS)BaseAddress &&
+      Descriptor.BaseAddress + Descriptor.Length >= EndAddress) {
+    return CR_SUCCESS;
   }
 
   // Add memory space to GCD

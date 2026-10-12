@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "purpose": "Explicit platform fork of the minimal complete INF module closure; functional source bytes unchanged at relocation",
+  "upstream_repository": "MU_BASECORE",
+  "upstream_commit": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "original_module": "MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf",
+  "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf",
+  "file_guid": "E7F1DFF9-DAB6-498A-9ADF-57F344EDDF57",
+  "base_name": "UfsPassThruDxe",
+  "patch_sha256": "1ec5e356f7c74eee1c5a1f6343f4d33aa8c3630b2d7d4a94981e0adad9a18567",
+  "files": [
+    {
+      "file": "ComponentName.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/ComponentName.c",
+      "source_sha256": "fb3690c7cc616cd5920f86e3007c7bd4f8c5847d0b1426b120d0a5f98d50f492",
+      "upstream_sha256": "fb3690c7cc616cd5920f86e3007c7bd4f8c5847d0b1426b120d0a5f98d50f492",
+      "fork_sha256": "fb3690c7cc616cd5920f86e3007c7bd4f8c5847d0b1426b120d0a5f98d50f492",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsDevConfigProtocol.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsDevConfigProtocol.c",
+      "source_sha256": "08099f51eb00bf75be12f0fcc5c0fbbe531175709b208d93c9b04332cf17afc9",
+      "upstream_sha256": "08099f51eb00bf75be12f0fcc5c0fbbe531175709b208d93c9b04332cf17afc9",
+      "fork_sha256": "08099f51eb00bf75be12f0fcc5c0fbbe531175709b208d93c9b04332cf17afc9",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThru.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.c",
+      "source_sha256": "7c78a2f535ecd06ee0cf36b9c02180a44b4f4bf023180c1feb02801e2c742374",
+      "upstream_sha256": "69d57e2f7afb6489da6ddcc432305f4c9644bef6b1b211939993970c20b2ba36",
+      "fork_sha256": "e18edbcd73ef5f95659c41c601669e5b17dad88f78b980ba349f7d1f5acd290c",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThru.h",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.h",
+      "source_sha256": "6e104b08dcf03dc05cfd3fbcb18f9bd9fac9f8e3d4d0e6a980dc4f27fa46375f",
+      "upstream_sha256": "68819a789a24a862d7aac4f827da9d9add1dfaedba6bdb39c846515450334edc",
+      "fork_sha256": "2ab7a1003af081a5884e6a7440eff88968a394f3ba6245a38577085cf16fca90",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThru.uni",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThru.uni",
+      "source_sha256": "1c7b5448ca79e93385e75feac3077cefdcb57e10825ed2e6352897c0fd892f06",
+      "upstream_sha256": "1c7b5448ca79e93385e75feac3077cefdcb57e10825ed2e6352897c0fd892f06",
+      "fork_sha256": "1c7b5448ca79e93385e75feac3077cefdcb57e10825ed2e6352897c0fd892f06",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThruDxe.inf",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf",
+      "source_sha256": "3c3cac1e6acfdbec3536f37d4e93346b271a16ea410ea166a04be061cccc24ba",
+      "upstream_sha256": "3c3cac1e6acfdbec3536f37d4e93346b271a16ea410ea166a04be061cccc24ba",
+      "fork_sha256": "3c3cac1e6acfdbec3536f37d4e93346b271a16ea410ea166a04be061cccc24ba",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThruExtra.uni",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruExtra.uni",
+      "source_sha256": "95c10fed54042ac2b33fd03a23f77fb24b51c59c97e1a42f349b8e118cba164b",
+      "upstream_sha256": "95c10fed54042ac2b33fd03a23f77fb24b51c59c97e1a42f349b8e118cba164b",
+      "fork_sha256": "95c10fed54042ac2b33fd03a23f77fb24b51c59c97e1a42f349b8e118cba164b",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "UfsPassThruHci.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c",
+      "source_sha256": "6ddc77a6754b1f1bd1d35ca78a84b5f027e7049c4dd978e8718dc19f3f776098",
+      "upstream_sha256": "b0d102e8d86c45da1a68b3d440c3389a79678cd43b394bdfeef7389fa7fb4b1e",
+      "fork_sha256": "ea170f5a772a5339b11f062978d568ed26e72234d8838c968435d2c3d64d5609",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    }
+  ],
+  "post_relocation_changes": [
+    {
+      "date": "2026-10-09",
+      "scope": "UFS100: slot-bound NOP/query/SCSI task tags; validate echoed request identity; capture failed SCSI transport state",
+      "reference": "Linux 40288c9206c17eb66a603262e06a58d300d0f279 and open-source Android waipio-msm-5.10 e93f69dc83e69e5139e6a7911041f357b5e2b304, ufshcd request tag/doorbell paths",
+      "validation": "Tests/run_ufs_tests.py; baseline/fixed evidence in .tmp/waipio-ufs100; hardware retest pending"
+    },
+    {
+      "date": "2026-10-09",
+      "scope": "UFS101: sticky HCI fatal-error admission, completion checks and global fence; preserve DMA backing on stop failure",
+      "reference": "Linux 40288c9206c17eb66a603262e06a58d300d0f279 and open-source Android waipio-msm-5.10 e93f69dc83e69e5139e6a7911041f357b5e2b304, INT_FATAL_ERRORS and ufshcd fatal reset paths",
+      "validation": "Tests/run_ufs_tests.py; actual before/fixed SET_FLAG fault regression in .tmp/waipio-ufs101; physical bus-fatal root cause and hardware recovery remain unproven"
+    },
+    {
+      "date": "2026-10-09",
+      "scope": "UFS102 candidate: public Android/Linux 512-byte command/response UCD regions; PRDT offset from TRD; full reused-TRD initialization; query maximum255; bounded CPU wire and doorbell timing diagnostics",
+      "reference": "Linux 40288c9206c17eb66a603262e06a58d300d0f279 and public Android waipio-msm-5.10 e93f69dc83e69e5139e6a7911041f357b5e2b304, ALIGNED_UPIU_SIZE/ufshcd_host_memory_configure and request header preparation",
+      "validation": "Tests/run_ufs_tests.py including disjoint CPU/IOVA wire oracle; baseline dirty-slot header failure and reference-layout difference captured in .tmp/waipio-ufs102. These do not reproduce the physical IOVA10003000 fault; board confirmation required."
+    },
+    {
+      "date": "2026-10-09",
+      "scope": "UFS103 candidate: permanent all-slot backed UCD array with128PRDs per slot; initialize every TRD before RunStop; retain fixed PRDT offset for NOP/Query; explicit borrowed request ownership and controller-stop cleanup; report32MiB transfer limit",
+      "reference": "Public Android waipio-msm-5.10 e93f69dc83e69e5139e6a7911041f357b5e2b304, ufshcd_memory_alloc/host_memory_configure, SG_ALL/SG_CHUNK_SIZE and16-byte sg entries; Linux40288c9206c17eb66a603262e06a58d300d0f279",
+      "validation": "Ten ASan/UBSan UFS suites and request-resource suite; archived UFS102 fails all-slot initialization contract at RunStop. This verifies a reference-contract difference, not the physical10003000 fault cause or board recovery; see .tmp/waipio-ufs103."
+    }
+  ]
+}

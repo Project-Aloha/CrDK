@@ -130,8 +130,7 @@ STATIC CONST SpmiPmicArbOps mSpmiArbOps[SPMI_ARB_VERSION_MAX] = {
 
 STATIC BOOLEAN SpmiRegionValid(IN SpmiDeviceContext *Ctx,
                                IN SPMI_MEMORY_REGION_TYPE RegionType) {
-  return Ctx->Regions[RegionType].BaseAddress != 0 &&
-         Ctx->Regions[RegionType].Size >= sizeof(UINT32);
+  return SpmiRegionFits(Ctx,RegionType,0,sizeof(UINT32));
 }
 
 STATIC SPMI_ARB_VERSION SpmiVersionFromRegister(IN UINT32 RegisterValue) {
@@ -188,6 +187,12 @@ SpmiPmicArbProbe(IN OUT SpmiDeviceContext *Ctx) {
   if (Ctx->Channel > 5 || Ctx->ActiveEE > 5) {
     return CR_INVALID_PARAMETER;
   }
+  for (UINTN I=0;I<SPMI_MEMORY_REGION_TYPE_MAX;++I) {
+    if ((Ctx->Regions[I].BaseAddress!=0 || Ctx->Regions[I].Size!=0) &&
+        !SpmiRegionValid(Ctx,(SPMI_MEMORY_REGION_TYPE)I)) return CR_INVALID_PARAMETER;
+  }
+  if (Ctx->Regions[SPMI_MEMORY_REGION_TYPE_CORE].Size>CR_MAX_UINT32)
+    return CR_INVALID_PARAMETER;
 
   RegisterValue = SpmiReadReg32(Ctx, SPMI_MEMORY_REGION_TYPE_CORE,
                                 SPMI_PMIC_ARB_REG_VERSION);
@@ -257,10 +262,18 @@ STATIC CR_STATUS SpmiFormatTransfer(IN SpmiDeviceContext *Ctx, IN BOOLEAN Write,
 
   ChannelType = Write ? SPMI_ARB_CHANNEL_RW : SPMI_ARB_CHANNEL_OBS;
   Opcode = Write ? SPMI_ARB_OP_EXT_WRITEL : SPMI_ARB_OP_EXT_READL;
+  if (Ctx->Version!=SPMI_ARB_VERSION_1) {
+    UINT16 Apid;
+    CR_STATUS Status=Ctx->PmicArb.Ops->PpidToApid(Ctx,
+                       (UINT16)((Sid<<8)|(Addr>>8)),&Apid);
+    if (CR_ERROR(Status)) return Status;
+    if (!SpmiApidValid(Ctx,Apid)) return CR_INVALID_PARAMETER;
+  }
   *Offset = Ctx->PmicArb.Ops->GetChannelOffset(Ctx, Sid, Addr, ChannelType);
   if (*Offset == (UINT32)-1) {
     return CR_NOT_FOUND;
   }
+  if (!SpmiChannelFits(Ctx,Write,*Offset,Length)) return CR_INVALID_PARAMETER;
   *Command =
       Ctx->PmicArb.Ops->FormatCmd(Opcode, Sid, Addr, (UINT8)(Length - 1));
   return CR_SUCCESS;
@@ -272,6 +285,11 @@ SpmiWaitForDone(IN SpmiDeviceContext *Ctx, IN UINTN BaseAddress,
   UINT32 Remaining;
   UINT32 ChannelStatus;
   CR_STATUS Status;
+
+  if (Ctx==NULL || Ctx->PmicArb.Ops==NULL ||
+      BaseAddress>(UINTN)-1-(UINT64)Offset-SPMI_PMIC_ARB_STATUS ||
+      !SpmiAddressFits(Ctx,BaseAddress+Offset+SPMI_PMIC_ARB_STATUS,sizeof(UINT32)))
+    return CR_INVALID_PARAMETER;
 
   for (Remaining = SPMI_PMIC_ARB_TIMEOUT_US; Remaining != 0; Remaining--) {
     ChannelStatus =
@@ -392,7 +410,10 @@ SpmiMaskedWrite(IN SpmiDeviceContext *Ctx, IN UINT8 Sid, IN UINT16 Addr,
   }
 
   CrLockAcquire(&Ctx->Bus.Lock);
-  Status = SpmiReadUnlocked(Ctx, Sid, Addr, Temporary, Len);
+  /* Preflight both directions before issuing the read command. */
+  UINT32 Command,Offset;
+  Status=SpmiFormatTransfer(Ctx,TRUE,Sid,Addr,Len,&Command,&Offset);
+  if (!CR_ERROR(Status)) Status = SpmiReadUnlocked(Ctx, Sid, Addr, Temporary, Len);
   if (!CR_ERROR(Status)) {
     for (Index = 0; Index < Len; Index++) {
       Temporary[Index] =
@@ -422,6 +443,9 @@ SpmiCommand(IN SpmiDeviceContext *Ctx, IN UINT8 Opc, IN UINT8 Sid) {
   if (Offset == (UINT32)-1) {
     return CR_NOT_FOUND;
   }
+  if (!SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CORE,
+                     (UINT64)Offset+SPMI_PMIC_ARB_STATUS,sizeof(UINT32)))
+    return CR_INVALID_PARAMETER;
   Command = (UINT32)((Opc | 0x40U) << 27) | ((Sid & 0x0FU) << 20);
 
   CrLockAcquire(&Ctx->Bus.Lock);
@@ -442,6 +466,7 @@ SpmiLibInit(IN OUT SpmiDeviceContext **Ctx) {
   if (*Ctx == NULL) {
     return CR_NOT_FOUND;
   }
+  if ((*Ctx)->ParentIrq) return CR_BUSY;
   if ((*Ctx)->Initialized) {
     return CR_SUCCESS;
   }
@@ -455,7 +480,9 @@ SpmiLibInit(IN OUT SpmiDeviceContext **Ctx) {
   if ((*Ctx)->HasInterrupt && !(*Ctx)->InterruptExternallyManaged) {
     Status = SpmiIrqInit(*Ctx);
     if (CR_ERROR(Status)) {
-      (*Ctx)->Initialized = FALSE;
+      /* Failed OSKAL rollback can retain a live handler. Keep the owner
+         initialized so deinit can synchronously remove it before unload. */
+      (*Ctx)->Initialized = (*Ctx)->InterruptRegistered;
       return Status;
     }
   }
@@ -478,6 +505,10 @@ SpmiLibDeinit(IN OUT SpmiDeviceContext *Ctx) {
 
   FirstError = CR_SUCCESS;
   PendingIrq = FALSE;
+  /* A dispatcher may have copied a handler outside IrqLock. Drain OSKAL
+   * before retiring any entries or storage. Failed detach retains all owners. */
+  Status=SpmiSetInterruptDelivery(Ctx,FALSE);
+  if (CR_ERROR(Status)) return Status;
   if (Ctx->Initialized) {
     for (Index = 0; Index < SPMI_PMIC_ARB_MAX_IRQ_ENTRIES; Index++) {
       SpmiIrqEntry *Entry = &Ctx->IrqEntries[Index];
@@ -502,18 +533,6 @@ SpmiLibDeinit(IN OUT SpmiDeviceContext *Ctx) {
         PendingIrq = TRUE;
         break;
       }
-    }
-  }
-
-  if (Ctx->InterruptRegistered) {
-    Status = CrUnregisterInterrupt(&Ctx->InterruptConfig);
-    if (CR_ERROR(Status)) {
-      PendingIrq = TRUE;
-      if (!CR_ERROR(FirstError)) {
-        FirstError = Status;
-      }
-    } else {
-      Ctx->InterruptRegistered = FALSE;
     }
   }
 

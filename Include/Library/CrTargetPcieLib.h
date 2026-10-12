@@ -102,7 +102,48 @@ typedef struct {
   CONST CHAR8 *Controller;
   UINT16       Pin;
   CONST CHAR8 *Polarity;
+  /** Native pin-controller mux selector and electrical settings. */
+  UINT8        Function;
+  UINT8        DriveStrengthMa;
+  UINT8        Pull;
 } PcieTargetGpio;
+
+/** Board endpoint resources, independent of root-complex/PHY supplies. */
+typedef struct {
+  CONST CHAR8    *Compatible;
+  UINT16          SupplyOffset;
+  UINT16          SupplyCount;
+  PcieTargetGpio  EnableGpio;
+  PcieTargetGpio  XoGpio;
+  /** Read-only WCN status pins. The sequencer never drives these lines. */
+  UINT16          BtEnablePin;
+  UINT16          SwControlPin;
+} PcieTargetEndpointPower;
+
+/* Ordered board interface power, separate from PHY supplies. ResourceIndex
+ * selects the context's Supplies or Gpios array. Delay follows acquisition.
+ * Successful and partially acquired steps are unwound in reverse order. */
+typedef enum {
+  PCIE_POWER_SUPPLY,
+  PCIE_POWER_GPIO,
+  PCIE_POWER_DELAY,
+  PCIE_POWER_PINCTRL
+} PCIE_POWER_KIND;
+typedef struct {
+  PCIE_POWER_KIND Kind;
+  UINT16 ResourceIndex;
+  UINT32 DelayUs;
+} PcieTargetPowerStep;
+typedef struct {
+  CONST PcieTargetPowerStep *Steps;
+  UINT16 Count;
+} PcieTargetPowerSequence;
+
+typedef enum {
+  PCIE_GPIO_PULL_NONE,
+  PCIE_GPIO_PULL_DOWN,
+  PCIE_GPIO_PULL_UP
+} PCIE_GPIO_PULL;
 
 typedef struct {
   UINT16       Bdf;
@@ -168,6 +209,12 @@ typedef struct {
   UINT16              ClockCount;
   UINT16              ResetOffset;
   UINT16              ResetCount;
+  /* Optional ordinary AUX mux: reference clock during cold initialization,
+     PHY output after readiness, reference again before PHY power-down. */
+  CONST CHAR8        *AuxMuxController;
+  CONST CHAR8        *AuxMuxId;
+  UINT32              AuxReferenceSource;
+  UINT32              AuxPhySource;
 } PcieTargetPhy;
 
 typedef struct {
@@ -206,6 +253,10 @@ typedef struct {
   UINT16       IommuMapCount;
   UINT16       PhyIndex;
   PcieTargetInterconnect Interconnect;
+  /** PARF clock/wake bits required before PHY startup; zero preserves them. */
+  UINT32       ParfSysControlSetMask;
+  CONST PcieTargetEndpointPower *EndpointPower;
+  CONST PcieTargetPowerSequence *PowerSequence;
 } PcieTargetController;
 
 typedef struct {
@@ -241,7 +292,9 @@ CrTargetGetPcieContext(VOID);
 
   The target implementation must route each resource to its owning driver;
   this is deliberately a callback table instead of a private PCIe DXE
-  protocol.  The opaque tag is completed by Include/Library/pcie.h.
+  protocol. The default backend can return CR_UNSUPPORTED without changing
+  Io; NT callers supply assigned-resource callbacks explicitly to PcieLibInit.
+  The opaque tag is completed by Include/Library/pcie.h.
 **/
 CR_STATUS
 CrTargetGetPcieIo(

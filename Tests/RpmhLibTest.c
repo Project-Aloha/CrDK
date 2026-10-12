@@ -58,6 +58,7 @@ STATIC BOOLEAN              mRaceArmed;
 STATIC BOOLEAN              mHandoffArmed;
 STATIC BOOLEAN              mInsideRaceCallback;
 STATIC UINT64               mDelayUs;
+STATIC UINT32               mWrites;
 
 STATIC VOID
 RaiseCompletion(UINT32 Tcs, BOOLEAN Completed);
@@ -164,6 +165,7 @@ UINT32
 CrMmioWrite32(IN UINTN Address, IN UINT32 Value)
 {
   UINT32 Tcs;
+  ++mWrites;
 
   if (Address == TcsAddress(0, TEST_IRQ_CLEAR)) {
     mIrqClearWrites++;
@@ -288,6 +290,7 @@ ResetMock(VOID)
   mHandoffArmed = FALSE;
   mInsideRaceCallback = FALSE;
   mDelayUs = 0;
+  mWrites = 0;
   RawWrite(TEST_DRV_BASE, 3U << 16);
   RawWrite(TEST_DRV_BASE + TEST_CHILD_CONFIG, 2U | (4U << 27));
 }
@@ -299,6 +302,7 @@ InitContext(RpmhDeviceContext *Context)
 
   memset(Context, 0, sizeof(*Context));
   Context->drv_base_address = TEST_DRV_BASE;
+  Context->drv_size = TEST_MMIO_SIZE;
   Context->tcs_offset = TEST_TCS_OFFSET;
   Context->drv_id = 0;
   Context->tcs_config.active_tcs.tcs_count = 2;
@@ -434,9 +438,95 @@ TestTimeoutBlocksRollbackUntilLateCompletion(VOID)
   assert(RpmhLibDeinit(&Context) == CR_SUCCESS);
 }
 
+STATIC VOID TestConfigBoundsBeforeWrites(VOID) {
+  RpmhDeviceContext C = {0}, Saved;
+  UINT8 Data[9] = {0,0,0x10,0,0,2,0,0,0};
+  C.drv_base_address = TEST_DRV_BASE; C.drv_size = TEST_MMIO_SIZE;
+  Saved = C;
+  for (UINTN N=0; N<9; ++N) {
+    assert(RpmhLibLoadConfig(&C,Data,N) == CR_INVALID_PARAMETER);
+    assert(memcmp(&C,&Saved,sizeof(C)) == 0);
+  }
+  assert(RpmhLibLoadConfig(&C,Data,sizeof(Data)) == CR_SUCCESS);
+  assert(C.drv_id == 0 && C.tcs_offset == TEST_TCS_OFFSET && C.tcs_config.active_tcs.tcs_count == 2);
+  Saved = C;
+  Data[5] = 33;
+  assert(RpmhLibLoadConfig(&C,Data,sizeof(Data)) == CR_INVALID_PARAMETER);
+  assert(memcmp(&C,&Saved,sizeof(C)) == 0); Data[5] = 2;
+  Data[1] = 1;
+  assert(RpmhLibLoadConfig(&C,Data,sizeof(Data)) == CR_INVALID_PARAMETER);
+  assert(memcmp(&C,&Saved,sizeof(C)) == 0); Data[1] = 0;
+  ResetMock(); C.drv_size = 15;
+  RpmhDeviceContext *Pointer = &C;
+  assert(RpmhLibInit(&Pointer) == CR_INVALID_PARAMETER && mWrites == 0 && mInterrupt == NULL);
+  // Last command status word must fit in full, rather than only its start.
+  C.drv_size = TEST_TCS_OFFSET + TEST_TCS_STRIDE + TEST_CMD_STATUS + 3*TEST_CMD_STRIDE + 3 + 4;
+  assert(RpmhLibInit(&Pointer) == CR_INVALID_PARAMETER && mWrites == 0 && mInterrupt == NULL);
+  ++C.drv_size;
+  assert(RpmhLibInit(&Pointer) == CR_SUCCESS && mInterrupt != NULL);
+  assert(RpmhLibDeinit(&C) == CR_SUCCESS);
+  C.tcs_offset = 0xfffffffcU; C.drv_size = TEST_MMIO_SIZE; mWrites = 0;
+  assert(RpmhLibInit(&Pointer) == CR_INVALID_PARAMETER && mWrites == 0 && mInterrupt == NULL);
+}
+
+STATIC VOID TestVrmSpanBeforeWrites(VOID) {
+  RpmhDeviceContext C;ResetMock();InitContext(&C);
+  UINT32 Before=mWrites;
+  /* A mode at fffffffc+8 otherwise wraps to address4 and reaches hardware. */
+  assert(RpmhSetVregMode(&C,0xfffffffcU,7)==CR_INVALID_PARAMETER);
+  assert(RpmhEnableVreg(&C,0xfffffff8U,TRUE)==CR_INVALID_PARAMETER);
+  assert(RpmhSetVregVoltage(&C,TEST_VRM_ADDRESS+1,900)==CR_INVALID_PARAMETER);
+  /* These APIs take a base, not a wire command offset within its VRM slot. */
+  for (UINT32 Offset=4;Offset<16;Offset+=4) {
+    assert(RpmhSetVregVoltage(&C,TEST_VRM_ADDRESS+Offset,900)==CR_INVALID_PARAMETER);
+    assert(RpmhEnableVreg(&C,TEST_VRM_ADDRESS+Offset,TRUE)==CR_INVALID_PARAMETER);
+    assert(RpmhSetVregMode(&C,TEST_VRM_ADDRESS+Offset,7)==CR_INVALID_PARAMETER);
+  }
+  assert(RpmhSetVregVoltage(&C,TEST_VRM_ADDRESS,0x2000)==CR_INVALID_PARAMETER);
+  assert(RpmhSetVregMode(&C,TEST_VRM_ADDRESS,8)==CR_INVALID_PARAMETER);
+  assert(mWrites==Before && mTriggerCount[0]==0 && mTriggerCount[1]==0);
+  assert(RpmhLibDeinit(&C)==CR_SUCCESS);
+}
+
+STATIC VOID TestControlTcsIsSeparate(VOID) {
+  /* Kona reports DRV2 v2.0, 8 command TCS, 16 commands/TCS. The DT assigns
+     active2/sleep3/wake3/control1: control must consume no ninth slot. */
+  for (UINT32 Version=2;Version<=3;++Version) {
+    RpmhDeviceContext C={0},*P=&C;
+    UINT8 Data[9]={2,0,0x0d,0,0,2,3,3,1};
+    /* Wire tcs_offset is little endian 0x00000d00. */
+    ResetMock();RawWrite(TEST_DRV_BASE,Version<<16);
+    RawWrite(TEST_DRV_BASE+TEST_CHILD_CONFIG,(8U<<12)|(16U<<27));
+    C.drv_base_address=TEST_DRV_BASE;C.drv_size=TEST_MMIO_SIZE;
+    assert(RpmhLibLoadConfig(&C,Data,sizeof Data)==CR_SUCCESS);
+    UINT32 End=0xd00+7*0x2a0+(Version==2?0x40:0x44)+15*(Version==2?0x14:0x18)+4;
+    C.drv_size=End;
+    assert(RpmhLibInit(&P)==CR_SUCCESS&&C.NumCmdsPerTcs==16);
+    assert(C.tcs_config.active_tcs.offset==0&&C.tcs_config.active_tcs.mask==0x03);
+    assert(C.tcs_config.sleep_tcs.offset==2&&C.tcs_config.sleep_tcs.mask==0x1c);
+    assert(C.tcs_config.wake_tcs.offset==5&&C.tcs_config.wake_tcs.mask==0xe0);
+    assert(C.tcs_config.control_tcs.tcs_count==1&&!C.tcs_config.control_tcs.mask&&!C.tcs_config.control_tcs.offset);
+    assert(RawRead(TEST_DRV_BASE+0xd00)==3);
+    assert(RpmhLibDeinit(&C)==CR_SUCCESS);
+    mWrites=0;C.drv_size=End-1;
+    assert(RpmhLibInit(&P)==CR_INVALID_PARAMETER&&mWrites==0&&mInterrupt==NULL);
+    C.drv_size=End;
+    mWrites=0;C.tcs_config.wake_tcs.tcs_count=4;
+    assert(RpmhLibInit(&P)==CR_DEVICE_ERROR&&mWrites==0&&mInterrupt==NULL);
+    C.tcs_config.wake_tcs.tcs_count=3;C.tcs_config.control_tcs.tcs_count=4;
+    assert(RpmhLibInit(&P)==CR_DEVICE_ERROR&&mWrites==0&&mInterrupt==NULL);
+  }
+  RpmhDeviceContext C={0};UINT8 Data[9]={0,0,0x10,0,0,2,15,15,1};
+  assert(RpmhLibLoadConfig(&C,Data,sizeof Data)==CR_SUCCESS);
+  Data[8]=4;assert(RpmhLibLoadConfig(&C,Data,sizeof Data)==CR_INVALID_PARAMETER);
+}
+
 int
 main(void)
 {
+  TestControlTcsIsSeparate();
+  TestVrmSpanBeforeWrites();
+  TestConfigBoundsBeforeWrites();
   TestPollingCompletionAndCommandFlags();
   TestIrqAndPollingRetireOnlyOnce();
   TestCommandStatusFailureKeepsTcsOwned();

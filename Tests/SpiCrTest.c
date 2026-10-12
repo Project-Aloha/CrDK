@@ -28,9 +28,14 @@ static MU_SPI_STATUS EFIAPI Transfer (VOID *Handle, MU_SPI_DEVICE_INFO *Info,
 
 static unsigned Opens;
 static unsigned Closes;
+static MU_SPI_STATUS OpenResult = MU_SPI_SUCCESS;
 static MU_SPI_STATUS EFIAPI Open(MU_SPI_INSTANCE Instance, VOID **Handle) {
   ++Opens;
   if (Instance != 0) return MU_SPI_ERROR_INVALID_PARAM;
+  if (OpenResult != MU_SPI_SUCCESS) {
+    *Handle = NULL;
+    return OpenResult;
+  }
   *Handle = (VOID *)0x3333;
   return MU_SPI_SUCCESS;
 }
@@ -92,14 +97,34 @@ static void TestEntry(void) {
   StandardLocateStatus = EFI_NOT_FOUND;
   InstallStatus = EFI_OUT_OF_RESOURCES;
   assert(SpiCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_OUT_OF_RESOURCES);
-  assert(Opens == 20 && Closes == 1 && mInstances == NULL && Allocations == 0);
+  assert(Opens == 0 && Closes == 0 && mInstances == NULL && Allocations == 0);
   InstallStatus = EFI_SUCCESS;
   assert(SpiCrEntryPoint((EFI_HANDLE)0xaaaa, NULL) == EFI_SUCCESS);
   Protocol = LastInstalled;
   assert(Protocol->Instance == 0 && Protocol->Qcom == &Mu);
   assert(Protocol->MaximumTransferBytes == 0x00ffffff);
-  assert(Opens == 40 && Closes == 1 && Allocations == 1);
-  Close(Protocol->QcomHandle);
+  assert(Opens == 0 && Closes == 0 && Allocations == 1);
+  {
+    MU_SPI_DEVICE_INFO Info = {0};
+    UINT8 Tx[1] = {0};
+    UINT8 Rx[1] = {0};
+
+    Info.DeviceParameters.MaxSlaveFrequencyHz = 5000000;
+    Info.BoardInfo.SlaveNumber = 3;
+    Info.TransferParameters.NumBits = 8;
+    Result = MU_SPI_SUCCESS;
+    ExpectedLength = 1;
+    ExpectedWrite = 0;
+    OpenResult = MU_SPI_ERROR_HW_INFO_ALLOCATION;
+    assert(Protocol->MuTransfer (Protocol, &Info, Tx, sizeof (Tx), Rx,
+                                 sizeof (Rx)) == EFI_OUT_OF_RESOURCES);
+    assert(Opens == 1 && Protocol->QcomHandle == NULL);
+    OpenResult = MU_SPI_SUCCESS;
+    assert(Protocol->MuTransfer (Protocol, &Info, Tx, sizeof (Tx), Rx,
+                                 sizeof (Rx)) == EFI_SUCCESS);
+    assert(Opens == 2 && Protocol->QcomHandle == (VOID *)0x3333);
+    assert(Protocol->Qcom->Close (Protocol->QcomHandle) == MU_SPI_SUCCESS);
+  }
   FreePool(mInstances); mInstances = NULL;
 }
 int main(void) {

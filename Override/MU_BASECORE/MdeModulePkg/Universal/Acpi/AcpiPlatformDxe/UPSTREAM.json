@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/microsoft/mu_basecore",
+  "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "source_directory": "MdeModulePkg/Universal/Acpi/AcpiPlatformDxe",
+  "scope": "Explicit platform copy keeps official MU unchanged; local FV termination diagnostics, FACS preservation, and early SM8450 GPU IORT admission transaction. The helper is pass-through on other platforms; execution routes are not selected by this metadata.",
+  "files": {
+    "AcpiPlatform.c": {
+      "upstream_sha256": "660f017b7540d97bdea4c2f92dd07619990eb01f37ca063d472676f2d7ce39a9",
+      "pre_migration_sha256": "215d062464437e3eb2fab74464bb04db060a3c1e42b243aa2e9e5d9447f0db13",
+      "platform_sha256": "2f7374a40c2d2b452fb2c7b0eba429f66fd9d1f035403686dff3a064d984e103"
+    },
+    "AcpiPlatform.uni": {
+      "upstream_sha256": "8d422b3419cabaacf19d4b879190de3ae3850109c2c5f3b51283ef74757d0758",
+      "pre_migration_sha256": "8d422b3419cabaacf19d4b879190de3ae3850109c2c5f3b51283ef74757d0758",
+      "platform_sha256": "8d422b3419cabaacf19d4b879190de3ae3850109c2c5f3b51283ef74757d0758"
+    },
+    "AcpiPlatformDxe.inf": {
+      "upstream_sha256": "e4b1521daf56c13f2f235fec173f455f47108b25a6e5995920215b836f700686",
+      "pre_migration_sha256": "e4b1521daf56c13f2f235fec173f455f47108b25a6e5995920215b836f700686",
+      "platform_sha256": "52784f93808a39c55b3a03569c06b18d5c6bcea59db14c019cefd6f1a6922331"
+    },
+    "AcpiPlatformExtra.uni": {
+      "upstream_sha256": "c89e707945cadeede5113f8e64b62c9713669e8230aaa5f0921f2e09f672d198",
+      "pre_migration_sha256": "c89e707945cadeede5113f8e64b62c9713669e8230aaa5f0921f2e09f672d198",
+      "platform_sha256": "c89e707945cadeede5113f8e64b62c9713669e8230aaa5f0921f2e09f672d198"
+    }
+  }
+}

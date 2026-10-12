@@ -20,23 +20,30 @@
 
 [Sources]
   ClockCrDxe.c
+  GpuBootAccess.c
 
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
 
 [LibraryClasses]
   DebugLib
   CrDalLib
+  CrTargetLib
+  ClockLib
+  ClockExternalLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
+  IoLib
+  TimerLib
 
 [Protocols]
   gEfiCrDalProtocolGuid     ## CONSUMES
-  gEfiClockProtocolGuid     ## CONSUMES
+  gEfiRpmhCrProtocolGuid     ## CONSUMES
   gEfiClockCrProtocolGuid   ## PRODUCES
+  gEfiClockExternalCrProtocolGuid ## PRODUCES
 
 [Depex]
-  gEfiCrDalProtocolGuid AND gEfiClockProtocolGuid
+  gEfiCrDalProtocolGuid

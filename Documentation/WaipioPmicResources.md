@@ -1,5 +1,24 @@
 # Waipio PMIC resource evidence
 
+This document is a historical audit of the packaged Qualcomm Waipio
+`DALSYSDxe.efi`/`PmicDxeLa.efi` binaries and the Qualcomm SM8150 source
+contracts they reflect. The `/pm/...` names and NPA behavior below describe
+that legacy stack; they are evidence for matching the Linux-derived rail
+metadata, not a Crane runtime dependency.
+
+The Crane-owned resource path does not load or call the Qualcomm NPA, ICB,
+RPMh, SMEM, or CmdDb provider drivers. Its current rail path is `CmdDBCrDxe`
+plus `RpmhCrDxe`, which resolves the mapped CmdDB entries and submits
+synchronous active-set commands through Crane's `RpmhLib`. Interconnect votes
+are handled separately by `ICBCrDxe` and `ICBLib`, and SMEM is provided by
+`SmemCrDxe`/`SmemLib`.
+
+Some unrelated, opaque Qualcomm utility binaries remain in the Waipio image and
+may probe their historical protocols opportunistically. They are not resource
+providers for the Crane path. Removing every such probe requires replacing or
+gating those binaries individually; this document does not treat their string
+references as a Crane dependency.
+
 The packaged PMIC resource definitions live in `DALSYSDxe.efi`; searching
 only `PmicDxeLa.efi` or `NpaDxe.efi` does not find their names. Both Waipio
 boards define scalar NPA resources `/pm/<rail>/mode`, `/pm/<rail>/mV`, and
@@ -48,21 +67,26 @@ The corresponding source contract is in Qualcomm's SM8150 boot source,
   for RPMh-controlled resources, so distinct clients' requests aggregate.
 - `inc/pm_prm_device.h` defines PMIC5 normal/high-power mode as 7.
 
-Direct scalar requests have `pam_req == FALSE`; `pm_prm_scalar_driver_fcn`
-posts RPMh commands and calls `pm_prm_barrier_request`. The active commands
-request completion. Operational release therefore issues synchronous scalar
-zero votes, starting with enable, and retains the clients for reuse.
-`CompleteRequest` cannot substitute for this sequence: NPA's
-`npa_terminate_request` sets `NPA_REQUEST_FIRE_AND_FORGET`, which causes the
-PMIC barrier path to skip waiting. A zero vote removes only Crane's demand;
-the max plugin retains other clients' requests.
+In the audited legacy implementation, direct scalar requests have
+`pam_req == FALSE`; `pm_prm_scalar_driver_fcn` posts RPMh commands and calls
+`pm_prm_barrier_request`. The active commands request completion. Its release
+path therefore issues synchronous scalar zero votes, starting with enable,
+and retains the clients for reuse. `CompleteRequest` cannot substitute for
+that legacy sequence: NPA's `npa_terminate_request` sets
+`NPA_REQUEST_FIRE_AND_FORGET`, which causes the PMIC barrier path to skip
+waiting. These details explain the binary's resource semantics; Crane's
+`RpmhCrDxe` performs the equivalent ordered zero-vote release directly via
+`RpmhLib`, without NPA.
 
-## Dispatch readiness
+## Legacy Qualcomm dispatch readiness
 
 `gQcomPmicVregProtocolGuid`
-(`22d38d3d-e8b6-4f8f-9c26-bceb07d6cb68`) marks native PMIC initialization
-for the adapter's dependency expression. Merely finding NPA is insufficient:
-the PMIC resource nodes are registered later by the PMIC driver.
+(`22d38d3d-e8b6-4f8f-9c26-bceb07d6cb68`) marks native PMIC initialization in
+the legacy adapter's dependency expression. Merely finding NPA was
+insufficient there because the PMIC resource nodes were registered later by
+the PMIC driver. Crane does not use this legacy protocol or dependency
+expression; `RpmhCrDxe` consumes `gEfiCmdDBCrProtocolGuid` and its own RPMh
+context instead.
 
 In both packaged `PmicDxeLa.efi` images, the entry implementation at RVA
 `0x15d0` calls `pm_init` at `0x131cc` before the common protocol installer
@@ -82,5 +106,8 @@ stub/standalone initialization which does not create the physical resources.
 
 Resource discovery and request completion still need validation on hardware.
 Binary/source agreement does not establish rail voltage or settling time at
-the board. A missing NPA resource must fail initialization rather than fall
-back to uncoordinated RPMh writes.
+the board. For the legacy Qualcomm stack, a missing NPA resource was an
+initialization error because the NPA node was the resource owner. In current
+Crane, the corresponding failure conditions are a missing CmdDB rail address
+or an unsuccessful `RpmhLib` transaction; Crane does not fall back to
+uncoordinated raw RPMh writes and does not require an NPA resource to exist.

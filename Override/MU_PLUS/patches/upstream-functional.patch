@@ -1,0 +1,2463 @@
+diff --git a/HidPkg/HidKeyboardDxe/HidKbDxe.c b/HidPkg/HidKeyboardDxe/HidKbDxe.c
+index cf4133a8..a963b01b 100644
+--- a/HidPkg/HidKeyboardDxe/HidKbDxe.c
++++ b/HidPkg/HidKeyboardDxe/HidKbDxe.c
+@@ -12,6 +12,133 @@
+ #include "HidKbDxe.h"
+ #include "HidKeyboard.h"
+ 
++// Failed/partial startup and teardown keep their exact context discoverable.
++// All registry and active-operation transitions are serialized at TPL_NOTIFY.
++STATIC LIST_ENTRY mKeyboardDevices = INITIALIZE_LIST_HEAD_VARIABLE (mKeyboardDevices);
++
++STATIC HID_KB_DEV *
++FindKeyboardDevice (EFI_HANDLE Controller, EFI_HANDLE Binding)
++{
++  LIST_ENTRY *Link;
++  HID_KB_DEV *Device;
++  for (Link = GetFirstNode (&mKeyboardDevices); !IsNull (&mKeyboardDevices, Link);
++       Link = GetNextNode (&mKeyboardDevices, Link)) {
++    Device = CR (Link, HID_KB_DEV, DriverLink, HID_KB_DEV_SIGNATURE);
++    if (Device->ControllerHandle == Controller && Device->DriverBindingHandle == Binding) {
++      return Device;
++    }
++  }
++  return NULL;
++}
++
++BOOLEAN
++HidKeyboardBeginCallback (IN HID_KB_DEV *Device)
++{
++  EFI_TPL OldTpl;
++  BOOLEAN Entered;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Entered = Device != NULL && Device->Signature == HID_KB_DEV_SIGNATURE && !Device->Stopping;
++  if (Entered) {
++    ++Device->ActiveCallbacks;
++  }
++  gBS->RestoreTPL (OldTpl);
++  return Entered;
++}
++
++VOID
++HidKeyboardEndCallback (IN HID_KB_DEV *Device)
++{
++  EFI_TPL OldTpl;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  ASSERT (Device->ActiveCallbacks != 0);
++  --Device->ActiveCallbacks;
++  gBS->RestoreTPL (OldTpl);
++}
++
++STATIC EFI_STATUS
++CloseKeyboardEvent (EFI_EVENT *Event)
++{
++  EFI_STATUS Status;
++  if (*Event == NULL) {
++    return EFI_SUCCESS;
++  }
++  Status = gBS->CloseEvent (*Event);
++  if (!EFI_ERROR (Status)) {
++    *Event = NULL;
++  }
++  return Status;
++}
++
++// Called at TPL_NOTIFY. A queued event is removed by CloseEvent; an already
++// executing event/report is pinned by ActiveCallbacks and must return first.
++STATIC EFI_STATUS
++ReleaseKeyboardDevice (IN HID_KB_DEV *Device)
++{
++  EFI_STATUS Status;
++  Device->Stopping = TRUE;
++  if (Device->ActiveCallbacks != 0 || Device->Starting || Device->CleanupActive) {
++    return EFI_NOT_READY;
++  }
++  // Uninstall can synchronously call a consuming driver's Stop. Retain an
++  // exclusive cleanup claim through that callback and every partial teardown.
++  Device->CleanupActive = TRUE;
++  if (Device->ReportRegistered) {
++    Status = Device->KeyboardProtocol->UnRegisterKeyboardHidReportCallback (Device->KeyboardProtocol);
++    if (Status != EFI_SUCCESS) {
++      if (!EFI_ERROR (Status)) { Status = EFI_NOT_READY; }
++      goto Retained;
++    }
++    Device->ReportRegistered = FALSE;
++  }
++  if (Device->SimpleInputInstalled) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    Device->ControllerHandle,
++                    &gEfiSimpleTextInProtocolGuid, &Device->SimpleInput,
++                    &gEfiSimpleTextInputExProtocolGuid, &Device->SimpleInputEx, NULL);
++    if (EFI_ERROR (Status)) {
++      goto Retained;
++    }
++    Device->SimpleInputInstalled = FALSE;
++  }
++  // Close the notification event before destroying its queue, including a
++  // signal queued behind the higher TPL used by this Stop invocation.
++  Status = CloseKeyboardEvent (&Device->KeyNotifyProcessEvent);
++  if (EFI_ERROR (Status)) { goto Retained; }
++  Status = CloseKeyboardEvent (&Device->RepeatTimer);
++  if (EFI_ERROR (Status)) { goto Retained; }
++  Status = CloseKeyboardEvent (&Device->SimpleInput.WaitForKey);
++  if (EFI_ERROR (Status)) { goto Retained; }
++  Status = CloseKeyboardEvent (&Device->SimpleInputEx.WaitForKeyEx);
++  if (EFI_ERROR (Status)) { goto Retained; }
++  Status = CloseKeyboardEvent (&Device->KeyboardLayoutEvent);
++  if (EFI_ERROR (Status)) { goto Retained; }
++  if (Device->KeyboardProtocolOpened) {
++    Status = gBS->CloseProtocol (Device->ControllerHandle, &gHidKeyboardProtocolGuid,
++                               Device->DriverBindingHandle, Device->ControllerHandle);
++    if (EFI_ERROR (Status)) { goto Retained; }
++    Device->KeyboardProtocolOpened = FALSE;
++  }
++  Device->KeyboardProtocol = NULL;
++  KbdFreeNotifyList (&Device->NotifyList);
++  ReleaseKeyboardLayoutResources (Device);
++  if (Device->ControllerNameTable != NULL) {
++    FreeUnicodeStringTable (Device->ControllerNameTable);
++  }
++  DestroyQueue (&Device->HidKeyQueue);
++  DestroyQueue (&Device->EfiKeyQueue);
++  DestroyQueue (&Device->EfiKeyQueueForNotify);
++  if (Device->LastReport != NULL) {
++    FreePool (Device->LastReport);
++  }
++  RemoveEntryList (&Device->DriverLink);
++  Device->Signature = 0;
++  FreePool (Device);
++  return EFI_SUCCESS;
++Retained:
++  Device->CleanupActive = FALSE;
++  return Status;
++}
++
+ //
+ // HID Keyboard Driver Global Variables
+ //
+@@ -138,11 +265,16 @@ HIDKeyboardDriverBindingStart (
+ 
+   DEBUG ((DEBUG_VERBOSE, "[%a]\n", __FUNCTION__));
+ 
+-  OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  HidKeyboardDevice = FindKeyboardDevice (Controller, This->DriverBindingHandle);
++  if (HidKeyboardDevice != NULL) {
++    Status = HidKeyboardDevice->Stopping ? EFI_NOT_READY : EFI_ALREADY_STARTED;
++    gBS->RestoreTPL (OldTpl);
++    return Status;
++  }
+ 
+   // Allocate HidKeyboardDevice context.
+   HidKeyboardDevice = AllocateZeroPool (sizeof (HID_KB_DEV));
+-  ASSERT (NULL != HidKeyboardDevice);
+ 
+   if (NULL == HidKeyboardDevice) {
+     DEBUG ((DEBUG_ERROR, "[%a] - Failed to allocate HID Keyboard context.\n", __FUNCTION__));
+@@ -152,6 +284,11 @@ HIDKeyboardDriverBindingStart (
+ 
+   HidKeyboardDevice->Signature        = HID_KB_DEV_SIGNATURE;
+   HidKeyboardDevice->ControllerHandle = Controller;
++  HidKeyboardDevice->DriverBindingHandle = This->DriverBindingHandle;
++  HidKeyboardDevice->Starting = TRUE;
++  InitializeListHead (&HidKeyboardDevice->NotifyList);
++  InitializeListHead (&HidKeyboardDevice->NsKeyList);
++  InsertTailList (&mKeyboardDevices, &HidKeyboardDevice->DriverLink);
+ 
+   // Get the Device Path Protocol on Controller's handle
+   Status = gBS->OpenProtocol (
+@@ -180,10 +317,11 @@ HIDKeyboardDriverBindingStart (
+     // There is no HID keyboard - this is unexpected, since DriverBindingSupport should guarantee
+     // that this doesn't get called unless the keyboard exists, so ASSERT for debug.
+     DEBUG ((DEBUG_ERROR, "[%a] - Failed to retrieve HID keyboard protocol: %r\n", __FUNCTION__, Status));
+-    ASSERT_EFI_ERROR (Status);
+     goto ErrorExit;
+   }
+ 
++  HidKeyboardDevice->KeyboardProtocolOpened = TRUE;
++
+   // Set up SimpleTextIn
+   HidKeyboardDevice->SimpleInput.Reset         = HIDKeyboardReset;
+   HidKeyboardDevice->SimpleInput.ReadKeyStroke = HIDKeyboardReadKeyStroke;
+@@ -232,66 +370,41 @@ HIDKeyboardDriverBindingStart (
+     goto ErrorExit;
+   }
+ 
+-  // Install Simple Text Input Protocol and Simple Text Input Ex Protocol
+-  // for the HID keyboard device.
+-  Status = gBS->InstallMultipleProtocolInterfaces (
+-                  &Controller,
+-                  &gEfiSimpleTextInProtocolGuid,
+-                  &HidKeyboardDevice->SimpleInput,
+-                  &gEfiSimpleTextInputExProtocolGuid,
+-                  &HidKeyboardDevice->SimpleInputEx,
+-                  NULL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "[%a] - Failed to install Simple Input Protocol\n", __FUNCTION__));
+-    goto ErrorExit;
+-  }
+-
+-  InitializeListHead (&HidKeyboardDevice->NsKeyList);
+-
+-  // Initialize Keyboard Layout
++  // Initialize every queue and callback context before publishing interfaces.
+   Status = InitKeyboardLayout (HidKeyboardDevice);
+   if (EFI_ERROR (Status)) {
+-    gBS->UninstallMultipleProtocolInterfaces (
+-           Controller,
+-           &gEfiSimpleTextInProtocolGuid,
+-           &HidKeyboardDevice->SimpleInput,
+-           &gEfiSimpleTextInputExProtocolGuid,
+-           &HidKeyboardDevice->SimpleInputEx,
+-           NULL
+-           );
+     goto ErrorExit;
+   }
+-
+-  //
+-  // Reset the Keyboard Device exhaustively as the reset handler initializes some more
+-  // keyboard data structs.
+-  //
+-  Status = HidKeyboardDevice->SimpleInputEx.Reset (
+-                                              &HidKeyboardDevice->SimpleInputEx,
+-                                              TRUE
+-                                              );
+-  if (EFI_ERROR (Status)) {
+-    gBS->UninstallMultipleProtocolInterfaces (
+-           Controller,
+-           &gEfiSimpleTextInProtocolGuid,
+-           &HidKeyboardDevice->SimpleInput,
+-           &gEfiSimpleTextInputExProtocolGuid,
+-           &HidKeyboardDevice->SimpleInputEx,
+-           NULL
+-           );
++  Status = HidKeyboardDevice->SimpleInputEx.Reset (&HidKeyboardDevice->SimpleInputEx, TRUE);
++  if (EFI_ERROR (Status) || HidKeyboardDevice->Stopping) {
++    if (!EFI_ERROR (Status)) { Status = EFI_NOT_READY; }
+     goto ErrorExit;
+   }
+ 
+   //
+   // Register the Keyboard Callback function in KeyboardProtocol. The lower layer HID keyboard driver will call this
+   // callback whenever Keystroke events happen.
+-  HidKeyboardDevice->KeyboardProtocol->RegisterKeyboardHidReportCallback (
++  Status = HidKeyboardDevice->KeyboardProtocol->RegisterKeyboardHidReportCallback (
+                                          HidKeyboardDevice->KeyboardProtocol,
+                                          HIDProcessKeyStrokesCallback,
+                                          (VOID *)HidKeyboardDevice
+                                          );
+ 
++  if (EFI_ERROR (Status)) {
++    goto ErrorExit;
++  }
++  HidKeyboardDevice->ReportRegistered = TRUE;
++  if (HidKeyboardDevice->Stopping) { Status = EFI_NOT_READY; goto ErrorExit; }
++  Status = gBS->InstallMultipleProtocolInterfaces (
++                  &Controller,
++                  &gEfiSimpleTextInProtocolGuid, &HidKeyboardDevice->SimpleInput,
++                  &gEfiSimpleTextInputExProtocolGuid, &HidKeyboardDevice->SimpleInputEx,
++                  NULL);
++  if (EFI_ERROR (Status)) {
++    goto ErrorExit;
++  }
++  HidKeyboardDevice->SimpleInputInstalled = TRUE;
++
+   HidKeyboardDevice->ControllerNameTable = NULL;
+   AddUnicodeString2 (
+     "eng",
+@@ -308,6 +421,7 @@ HIDKeyboardDriverBindingStart (
+     FALSE
+     );
+ 
++  HidKeyboardDevice->Starting = FALSE;
+   gBS->RestoreTPL (OldTpl);
+   DEBUG ((DEBUG_VERBOSE, "[%a] - Completed successfully\n", __FUNCTION__));
+   return EFI_SUCCESS;
+@@ -317,35 +431,14 @@ HIDKeyboardDriverBindingStart (
+   //
+ ErrorExit:
+   if (HidKeyboardDevice != NULL) {
+-    if (HidKeyboardDevice->LastReport != NULL) {
+-      FreePool (HidKeyboardDevice->LastReport);
+-    }
+-
+-    if (HidKeyboardDevice->SimpleInput.WaitForKey != NULL) {
+-      gBS->CloseEvent (HidKeyboardDevice->SimpleInput.WaitForKey);
+-    }
+-
+-    if (HidKeyboardDevice->SimpleInputEx.WaitForKeyEx != NULL) {
+-      gBS->CloseEvent (HidKeyboardDevice->SimpleInputEx.WaitForKeyEx);
+-    }
+-
+-    if (HidKeyboardDevice->KeyboardLayoutEvent != NULL) {
+-      gBS->CloseEvent (HidKeyboardDevice->KeyboardLayoutEvent);
++    EFI_STATUS CleanupStatus;
++    HidKeyboardDevice->Starting = FALSE;
++    CleanupStatus = ReleaseKeyboardDevice (HidKeyboardDevice);
++    if (EFI_ERROR (CleanupStatus)) {
++      DEBUG ((DEBUG_ERROR, "[%a] - startup cleanup retained: %r\n", __FUNCTION__, CleanupStatus));
+     }
+-
+-    if (HidKeyboardDevice->KeyboardProtocol != NULL) {
+-      gBS->CloseProtocol (
+-             Controller,
+-             &gHidKeyboardProtocolGuid,
+-             This->DriverBindingHandle,
+-             Controller
+-             );
+-    }
+-
+-    FreePool (HidKeyboardDevice);
+-    HidKeyboardDevice = NULL;
+   }
+-
++  gBS->RestoreTPL (OldTpl);
+   DEBUG ((DEBUG_ERROR, "[%a] - Failed: %r\n", __FUNCTION__, Status));
+   return Status;
+ }
+@@ -374,92 +467,17 @@ HIDKeyboardDriverBindingStop (
+   IN  EFI_HANDLE                   *ChildHandleBuffer
+   )
+ {
+-  EFI_STATUS                      Status;
+-  EFI_SIMPLE_TEXT_INPUT_PROTOCOL  *SimpleInput;
+-  HID_KB_DEV                      *HidKeyboardDevice;
+-
+-  DEBUG ((DEBUG_VERBOSE, "[%a]\n", __FUNCTION__));
+-
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiSimpleTextInProtocolGuid,
+-                  (VOID **)&SimpleInput,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    return EFI_UNSUPPORTED;
+-  }
+-
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiSimpleTextInputExProtocolGuid,
+-                  NULL,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_TEST_PROTOCOL
+-                  );
+-  if (EFI_ERROR (Status)) {
++  HID_KB_DEV *HidKeyboardDevice;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  HidKeyboardDevice = FindKeyboardDevice (Controller, This->DriverBindingHandle);
++  if (HidKeyboardDevice == NULL) {
++    gBS->RestoreTPL (OldTpl);
+     return EFI_UNSUPPORTED;
+   }
+-
+-  HidKeyboardDevice = HID_KB_DEV_FROM_THIS (SimpleInput);
+-  ASSERT (NULL != HidKeyboardDevice);
+-
+-  // Unregister the HID report callback from lower layer.
+-  HidKeyboardDevice->KeyboardProtocol->UnRegisterKeyboardHidReportCallback (
+-                                         HidKeyboardDevice->KeyboardProtocol
+-                                         );
+-
+-  // Release the HID keyboard binding.
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gHidKeyboardProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  // Uninstall the SimpleText interfaces.
+-  Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  Controller,
+-                  &gEfiSimpleTextInProtocolGuid,
+-                  &HidKeyboardDevice->SimpleInput,
+-                  &gEfiSimpleTextInputExProtocolGuid,
+-                  &HidKeyboardDevice->SimpleInputEx,
+-                  NULL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "[%a] - failed to uninstall SimpleTextIn: %r\n", __FUNCTION__, Status));
+-  }
+-
+-  //
+-  // Free all resources.
+-  //
+-  gBS->CloseEvent (HidKeyboardDevice->RepeatTimer);
+-  gBS->CloseEvent (HidKeyboardDevice->SimpleInput.WaitForKey);
+-  gBS->CloseEvent (HidKeyboardDevice->SimpleInputEx.WaitForKeyEx);
+-  KbdFreeNotifyList (&HidKeyboardDevice->NotifyList);
+-
+-  HidKeyboardDevice->KeyboardProtocol = NULL;
+-  ReleaseKeyboardLayoutResources (HidKeyboardDevice);
+-  gBS->CloseEvent (HidKeyboardDevice->KeyboardLayoutEvent);
+-
+-  if (HidKeyboardDevice->ControllerNameTable != NULL) {
+-    FreeUnicodeStringTable (HidKeyboardDevice->ControllerNameTable);
+-  }
+-
+-  DestroyQueue (&HidKeyboardDevice->HidKeyQueue);
+-  DestroyQueue (&HidKeyboardDevice->EfiKeyQueue);
+-  DestroyQueue (&HidKeyboardDevice->EfiKeyQueueForNotify);
+-
+-  if (HidKeyboardDevice->LastReport != NULL) {
+-    FreePool (HidKeyboardDevice->LastReport);
+-  }
+-
+-  FreePool (HidKeyboardDevice);
+-
+-  DEBUG ((DEBUG_VERBOSE, "[%a] - Status: %r\n", __FUNCTION__, Status));
++  Status = ReleaseKeyboardDevice (HidKeyboardDevice);
++  gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+ 
+@@ -488,13 +506,13 @@ HIDKeyboardReadKeyStrokeWorker (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  if (IsQueueEmpty (&HidKeyboardDevice->EfiKeyQueue)) {
+-    return EFI_NOT_READY;
+-  }
+-
+-  Dequeue (&HidKeyboardDevice->EfiKeyQueue, KeyData, sizeof (*KeyData));
+-
+-  return EFI_SUCCESS;
++  EFI_TPL OldTpl;
++  EFI_STATUS Status;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Status = HidKeyboardDevice->Stopping || IsQueueEmpty (&HidKeyboardDevice->EfiKeyQueue) ? EFI_NOT_READY :
++    Dequeue (&HidKeyboardDevice->EfiKeyQueue, KeyData, sizeof (*KeyData));
++  gBS->RestoreTPL (OldTpl);
++  return Status;
+ }
+ 
+ /**
+@@ -519,31 +537,31 @@ HIDKeyboardReset (
+   IN  BOOLEAN                         ExtendedVerification
+   )
+ {
+-  EFI_STATUS  Status = EFI_SUCCESS;
+-  HID_KB_DEV  *HidKeyboardDevice;
+-
+-  DEBUG ((DEBUG_VERBOSE, "[%a]\n", __FUNCTION__));
+-
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  HID_KB_DEV *HidKeyboardDevice;
+   HidKeyboardDevice = HID_KB_DEV_FROM_THIS (This);
+-  ASSERT (NULL != HidKeyboardDevice);
+-
+-  // Non-exhaustive reset:
+-  // only reset private data structures.
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (HidKeyboardDevice->Stopping || HidKeyboardDevice->ActiveCallbacks != 0) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  ++HidKeyboardDevice->ActiveCallbacks;
+   if (!ExtendedVerification) {
+-    // Clear the key buffer of this keyboard
+-    InitQueue (&HidKeyboardDevice->HidKeyQueue, sizeof (HID_KEY));
+-    InitQueue (&HidKeyboardDevice->EfiKeyQueue, sizeof (EFI_KEY_DATA));
+-    return EFI_SUCCESS;
++    Status = InitQueue (&HidKeyboardDevice->HidKeyQueue, sizeof (HID_KEY));
++    if (!EFI_ERROR (Status)) { Status = InitQueue (&HidKeyboardDevice->EfiKeyQueue, sizeof (EFI_KEY_DATA)); }
++    if (!EFI_ERROR (Status)) { Status = InitQueue (&HidKeyboardDevice->EfiKeyQueueForNotify, sizeof (EFI_KEY_DATA)); }
++  } else {
++    Status = InitHidKeyboard (HidKeyboardDevice);
+   }
+-
+-  // Exhaustive reset
+-  Status = InitHidKeyboard (HidKeyboardDevice);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "[%a] - HID keyboard reset failure: %r\n", __FUNCTION__, Status));
+-    return EFI_DEVICE_ERROR;
++  if (!EFI_ERROR (Status)) {
++    HidKeyboardDevice->KeyState.KeyShiftState = EFI_SHIFT_STATE_VALID;
++    HidKeyboardDevice->KeyState.KeyToggleState = EFI_TOGGLE_STATE_VALID;
+   }
+-
+-  return EFI_SUCCESS;
++  --HidKeyboardDevice->ActiveCallbacks;
++  if (HidKeyboardDevice->Stopping && !EFI_ERROR (Status)) { Status = EFI_NOT_READY; }
++  gBS->RestoreTPL (OldTpl);
++  return Status;
+ }
+ 
+ /**
+@@ -570,9 +588,12 @@ HIDKeyboardReadKeyStroke (
+   EFI_KEY_DATA  KeyData;
+   EFI_STATUS    Status = EFI_SUCCESS;
+ 
++  if (Key == NULL) { return EFI_INVALID_PARAMETER; }
+   HidKeyboardDevice = HID_KB_DEV_FROM_THIS (This);
+   ASSERT (NULL != HidKeyboardDevice);
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) { return EFI_NOT_READY; }
++
+   //
+   // Considering if the partial keystroke is enabled, there maybe a partial
+   // keystroke in the queue, so here skip the partial keystroke and get the
+@@ -581,6 +602,7 @@ HIDKeyboardReadKeyStroke (
+   while (1) {
+     Status = HIDKeyboardReadKeyStrokeWorker (HidKeyboardDevice, &KeyData);
+     if (EFI_ERROR (Status)) {
++      HidKeyboardEndCallback (HidKeyboardDevice);
+       return Status;
+     }
+ 
+@@ -605,6 +627,7 @@ HIDKeyboardReadKeyStroke (
+ 
+     CopyMem (Key, &KeyData.Key, sizeof (EFI_INPUT_KEY));
+     DEBUG ((DEBUG_VERBOSE, "[%a] - ReadKeyStroke, ScanCode = %d\n", __FUNCTION__, Key->ScanCode));
++    HidKeyboardEndCallback (HidKeyboardDevice);
+     return EFI_SUCCESS;
+   }
+ }
+@@ -631,6 +654,10 @@ HIDKeyboardWaitForKey (
+   HidKeyboardDevice = (HID_KB_DEV *)Context;
+   ASSERT (NULL != HidKeyboardDevice);
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) {
++    return;
++  }
++
+   //
+   // Enter critical section
+   //
+@@ -670,6 +697,7 @@ HIDKeyboardWaitForKey (
+   // Leave critical section and return
+   //
+   gBS->RestoreTPL (OldTpl);
++  HidKeyboardEndCallback (HidKeyboardDevice);
+ }
+ 
+ /**
+@@ -789,9 +817,6 @@ HIDKeyboardResetEx (
+     return EFI_DEVICE_ERROR;
+   }
+ 
+-  HidKeyboardDevice->KeyState.KeyShiftState  = EFI_SHIFT_STATE_VALID;
+-  HidKeyboardDevice->KeyState.KeyToggleState = EFI_TOGGLE_STATE_VALID;
+-
+   return EFI_SUCCESS;
+ }
+ 
+@@ -817,6 +842,7 @@ HIDKeyboardReadKeyStrokeEx (
+   )
+ {
+   HID_KB_DEV  *HidKeyboardDevice;
++  EFI_STATUS Status;
+ 
+   if (KeyData == NULL) {
+     return EFI_INVALID_PARAMETER;
+@@ -825,7 +851,10 @@ HIDKeyboardReadKeyStrokeEx (
+   HidKeyboardDevice = TEXT_INPUT_EX_HID_KB_DEV_FROM_THIS (This);
+   ASSERT (NULL != HidKeyboardDevice);
+ 
+-  return HIDKeyboardReadKeyStrokeWorker (HidKeyboardDevice, KeyData);
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) { return EFI_NOT_READY; }
++  Status = HIDKeyboardReadKeyStrokeWorker (HidKeyboardDevice, KeyData);
++  HidKeyboardEndCallback (HidKeyboardDevice);
++  return Status;
+ }
+ 
+ /**
+@@ -864,6 +893,10 @@ HIDKeyboardSetState (
+     return EFI_UNSUPPORTED;
+   }
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) {
++    return EFI_NOT_READY;
++  }
++
+   //
+   // Update the status light
+   //
+@@ -892,6 +925,8 @@ HIDKeyboardSetState (
+ 
+   HidKeyboardDevice->KeyState.KeyToggleState = *KeyToggleState;
+ 
++  HidKeyboardEndCallback (HidKeyboardDevice);
++
+   return EFI_SUCCESS;
+ }
+ 
+@@ -929,6 +964,8 @@ HIDKeyboardRegisterKeyNotify (
+   LIST_ENTRY                     *NotifyList;
+   KEYBOARD_CONSOLE_IN_EX_NOTIFY  *CurrentNotify;
+ 
++  EFI_TPL OldTpl;
++
+   if ((KeyData == NULL) || (NotifyHandle == NULL) || (KeyNotificationFunction == NULL)) {
+     return EFI_INVALID_PARAMETER;
+   }
+@@ -936,6 +973,12 @@ HIDKeyboardRegisterKeyNotify (
+   HidKeyboardDevice = TEXT_INPUT_EX_HID_KB_DEV_FROM_THIS (This);
+   ASSERT (NULL != HidKeyboardDevice);
+ 
++  if (HidKeyboardDevice->Stopping) {
++    return EFI_NOT_READY;
++  }
++
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++
+   //
+   // Return EFI_SUCCESS if the (KeyData, NotificationFunction) is already registered.
+   //
+@@ -952,9 +995,10 @@ HIDKeyboardRegisterKeyNotify (
+                       HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE
+                       );
+     DEBUG ((DEBUG_VERBOSE, "[%a] - RegisterKeyNotify, NotifyScanCode = %d, KeyDataScanCode= %d\n", __FUNCTION__, CurrentNotify->KeyData.Key.ScanCode, KeyData->Key.ScanCode));
+-    if (IsKeyRegistered (&CurrentNotify->KeyData, KeyData)) {
++    if (!CurrentNotify->Removed && IsKeyRegistered (&CurrentNotify->KeyData, KeyData)) {
+       if (CurrentNotify->KeyNotificationFn == KeyNotificationFunction) {
+         *NotifyHandle = CurrentNotify;
++        gBS->RestoreTPL (OldTpl);
+         return EFI_SUCCESS;
+       }
+     }
+@@ -966,6 +1010,7 @@ HIDKeyboardRegisterKeyNotify (
+   NewNotify = (KEYBOARD_CONSOLE_IN_EX_NOTIFY *)AllocateZeroPool (sizeof (KEYBOARD_CONSOLE_IN_EX_NOTIFY));
+   if (NewNotify == NULL) {
+     DEBUG ((DEBUG_ERROR, "[%a] - allocation failed!\n", __FUNCTION__));
++    gBS->RestoreTPL (OldTpl);
+     return EFI_OUT_OF_RESOURCES;
+   }
+ 
+@@ -977,6 +1022,8 @@ HIDKeyboardRegisterKeyNotify (
+ 
+   *NotifyHandle = NewNotify;
+ 
++  gBS->RestoreTPL (OldTpl);
++
+   return EFI_SUCCESS;
+ }
+ 
+@@ -1002,6 +1049,8 @@ HIDKeyboardUnregisterKeyNotify (
+   LIST_ENTRY                     *Link;
+   LIST_ENTRY                     *NotifyList;
+ 
++  EFI_TPL OldTpl;
++
+   if (NotificationHandle == NULL) {
+     return EFI_INVALID_PARAMETER;
+   }
+@@ -1009,6 +1058,8 @@ HIDKeyboardUnregisterKeyNotify (
+   HidKeyboardDevice = TEXT_INPUT_EX_HID_KB_DEV_FROM_THIS (This);
+   ASSERT (NULL != HidKeyboardDevice);
+ 
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++
+   //
+   // Traverse notify list of HID keyboard and remove the entry of NotificationHandle.
+   //
+@@ -1023,13 +1074,17 @@ HIDKeyboardUnregisterKeyNotify (
+                       NotifyEntry,
+                       HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE
+                       );
+-    if (CurrentNotify == NotificationHandle) {
++    if (CurrentNotify == NotificationHandle && !CurrentNotify->Removed) {
+       //
+       // Remove the notification function from NotifyList and free resources
+       //
+-      RemoveEntryList (&CurrentNotify->NotifyEntry);
+-
+-      FreePool (CurrentNotify);
++      if (HidKeyboardDevice->NotifyDispatchDepth != 0) {
++        CurrentNotify->Removed = TRUE;
++      } else {
++        RemoveEntryList (&CurrentNotify->NotifyEntry);
++        FreePool (CurrentNotify);
++      }
++      gBS->RestoreTPL (OldTpl);
+       return EFI_SUCCESS;
+     }
+   }
+@@ -1037,6 +1092,7 @@ HIDKeyboardUnregisterKeyNotify (
+   //
+   // Cannot find the matching entry in database.
+   //
++  gBS->RestoreTPL (OldTpl);
+   return EFI_INVALID_PARAMETER;
+ }
+ 
+@@ -1053,39 +1109,42 @@ KeyNotifyProcessHandler (
+   IN  VOID       *Context
+   )
+ {
+-  EFI_STATUS                     Status;
+-  HID_KB_DEV                     *HidKeyboardDevice;
+-  EFI_KEY_DATA                   KeyData;
+-  LIST_ENTRY                     *Link;
+-  LIST_ENTRY                     *NotifyList;
+-  KEYBOARD_CONSOLE_IN_EX_NOTIFY  *CurrentNotify;
+-  EFI_TPL                        OldTpl;
+-
+-  HidKeyboardDevice = (HID_KB_DEV *)Context;
+-
+-  //
+-  // Invoke notification functions.
+-  //
+-  NotifyList = &HidKeyboardDevice->NotifyList;
++  EFI_STATUS Status;
++  HID_KB_DEV *Device = Context;
++  EFI_KEY_DATA KeyData;
++  LIST_ENTRY *Link, *Next;
++  KEYBOARD_CONSOLE_IN_EX_NOTIFY *Notify;
++  EFI_KEY_NOTIFY_FUNCTION Function;
++  EFI_TPL OldTpl;
++  if (!HidKeyboardBeginCallback (Device)) { return; }
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  ++Device->NotifyDispatchDepth;
++  gBS->RestoreTPL (OldTpl);
+   while (TRUE) {
+-    //
+-    // Enter critical section
+-    //
+     OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+-    Status = Dequeue (&HidKeyboardDevice->EfiKeyQueueForNotify, &KeyData, sizeof (KeyData));
+-    //
+-    // Leave critical section
+-    //
++    Status = Device->Stopping ? EFI_NOT_READY : Dequeue (&Device->EfiKeyQueueForNotify, &KeyData, sizeof (KeyData));
++    Link = GetFirstNode (&Device->NotifyList);
+     gBS->RestoreTPL (OldTpl);
+-    if (EFI_ERROR (Status)) {
+-      break;
++    if (EFI_ERROR (Status)) { break; }
++    while (!IsNull (&Device->NotifyList, Link)) {
++      OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++      Notify = CR (Link, KEYBOARD_CONSOLE_IN_EX_NOTIFY, NotifyEntry, HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE);
++      Next = GetNextNode (&Device->NotifyList, Link);
++      Function = !Device->Stopping && !Notify->Removed && IsKeyRegistered (&Notify->KeyData, &KeyData) ? Notify->KeyNotificationFn : NULL;
++      gBS->RestoreTPL (OldTpl);
++      if (Function != NULL) { Function (&KeyData); }
++      Link = Next;
+     }
+-
+-    for (Link = GetFirstNode (NotifyList); !IsNull (NotifyList, Link); Link = GetNextNode (NotifyList, Link)) {
+-      CurrentNotify = CR (Link, KEYBOARD_CONSOLE_IN_EX_NOTIFY, NotifyEntry, HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE);
+-      if (IsKeyRegistered (&CurrentNotify->KeyData, &KeyData)) {
+-        CurrentNotify->KeyNotificationFn (&KeyData);
+-      }
++  }
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  --Device->NotifyDispatchDepth;
++  if (Device->NotifyDispatchDepth == 0) {
++    for (Link = GetFirstNode (&Device->NotifyList); !IsNull (&Device->NotifyList, Link); Link = Next) {
++      Next = GetNextNode (&Device->NotifyList, Link);
++      Notify = CR (Link, KEYBOARD_CONSOLE_IN_EX_NOTIFY, NotifyEntry, HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE);
++      if (Notify->Removed) { RemoveEntryList (Link); FreePool (Notify); }
+     }
+   }
++  gBS->RestoreTPL (OldTpl);
++  HidKeyboardEndCallback (Device);
+ }
+diff --git a/HidPkg/HidKeyboardDxe/HidKbDxe.h b/HidPkg/HidKeyboardDxe/HidKbDxe.h
+index a2afc0ef..83563869 100644
+--- a/HidPkg/HidKeyboardDxe/HidKbDxe.h
++++ b/HidPkg/HidKeyboardDxe/HidKbDxe.h
+@@ -77,6 +77,7 @@ typedef struct _KEYBOARD_CONSOLE_IN_EX_NOTIFY {
+   EFI_KEY_DATA               KeyData;
+   EFI_KEY_NOTIFY_FUNCTION    KeyNotificationFn;
+   LIST_ENTRY                 NotifyEntry;
++  BOOLEAN                    Removed;
+ } KEYBOARD_CONSOLE_IN_EX_NOTIFY;
+ 
+ #define HID_NS_KEY_SIGNATURE  SIGNATURE_32 ('h', 'n', 's', 'k')
+@@ -111,6 +112,20 @@ typedef struct {
+   EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL    SimpleInputEx;
+   HID_KEYBOARD_PROTOCOL                *KeyboardProtocol;
+ 
++  // A USB control failure may synchronously disconnect from inside a report
++  // or LED operation. Keep the exact callback/context until every operation
++  // has returned; failed teardown remains discoverable for a later Stop.
++  LIST_ENTRY                           DriverLink;
++  EFI_HANDLE                           DriverBindingHandle;
++  BOOLEAN                              KeyboardProtocolOpened;
++  BOOLEAN                              ReportRegistered;
++  BOOLEAN                              SimpleInputInstalled;
++  BOOLEAN                              Stopping;
++  BOOLEAN                              Starting;
++  BOOLEAN                              CleanupActive;
++  UINTN                                ActiveCallbacks;
++  UINTN                                NotifyDispatchDepth;
++
+   HID_SIMPLE_QUEUE                     HidKeyQueue;
+   HID_SIMPLE_QUEUE                     EfiKeyQueue;
+   HID_SIMPLE_QUEUE                     EfiKeyQueueForNotify;
+@@ -159,6 +174,17 @@ typedef struct {
+   EFI_EVENT                            KeyboardLayoutEvent;
+ } HID_KB_DEV;
+ 
++// TPL_NOTIFY serializes entry/exit with Stop. A successful entry pins the
++// device across callbacks that can lower TPL and re-enter DisconnectController.
++BOOLEAN
++HidKeyboardBeginCallback (
++  IN HID_KB_DEV *HidKeyboardDevice
++  );
++VOID
++HidKeyboardEndCallback (
++  IN HID_KB_DEV *HidKeyboardDevice
++  );
++
+ //
+ // Global Variables
+ //
+diff --git a/HidPkg/HidKeyboardDxe/HidKeyboard.c b/HidPkg/HidKeyboardDxe/HidKeyboard.c
+index eee3bc6e..0d3ac472 100644
+--- a/HidPkg/HidKeyboardDxe/HidKeyboard.c
++++ b/HidPkg/HidKeyboardDxe/HidKeyboard.c
+@@ -567,11 +567,16 @@ SetKeyboardLayoutEvent (
+     return;
+   }
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) {
++    return;
++  }
++
+   //
+   // Try to get current keyboard layout from HII database
+   //
+   KeyboardLayout = GetCurrentKeyboardLayout ();
+   if (KeyboardLayout == NULL) {
++    HidKeyboardEndCallback (HidKeyboardDevice);
+     return;
+   }
+ 
+@@ -584,6 +589,7 @@ SetKeyboardLayoutEvent (
+   if (HidKeyboardDevice->KeyConvertionTable == NULL) {
+     ASSERT (HidKeyboardDevice->KeyConvertionTable != NULL);
+     FreePool (KeyboardLayout);
++    HidKeyboardEndCallback (HidKeyboardDevice);
+     return;
+   }
+ 
+@@ -607,6 +613,7 @@ SetKeyboardLayoutEvent (
+     if (TableEntry == NULL) {
+       ReleaseKeyboardLayoutResources (HidKeyboardDevice);
+       FreePool (KeyboardLayout);
++      HidKeyboardEndCallback (HidKeyboardDevice);
+       return;
+     }
+ 
+@@ -622,7 +629,8 @@ SetKeyboardLayoutEvent (
+         ASSERT (HidNsKey != NULL);
+         ReleaseKeyboardLayoutResources (HidKeyboardDevice);
+         FreePool (KeyboardLayout);
+-        return;
++        HidKeyboardEndCallback (HidKeyboardDevice);
++      return;
+       }
+ 
+       // MU_CHANGE [END] - CodeQL change
+@@ -678,6 +686,7 @@ SetKeyboardLayoutEvent (
+   // MU_CHANGE [END] - CodeQL change
+ 
+   FreePool (KeyboardLayout);
++  HidKeyboardEndCallback (HidKeyboardDevice);
+ }
+ 
+ /**
+@@ -735,7 +744,9 @@ InitKeyboardLayout (
+   EFI_STATUS               Status;
+ 
+   HidKeyboardDevice->KeyConvertionTable = AllocateZeroPool ((NUMBER_OF_VALID_HID_KEYCODE)*sizeof (EFI_KEY_DESCRIPTOR));
+-  ASSERT (HidKeyboardDevice->KeyConvertionTable != NULL);
++  if (HidKeyboardDevice->KeyConvertionTable == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
+ 
+   InitializeListHead (&HidKeyboardDevice->NsKeyList);
+   HidKeyboardDevice->CurrentNsKey        = NULL;
+@@ -777,7 +788,8 @@ InitKeyboardLayout (
+     // If no keyboard layout can be retrieved from HII database, and default layout
+     // is enabled, then load the default keyboard layout.
+     //
+-    InstallDefaultKeyboardLayout (HidKeyboardDevice);
++    Status = InstallDefaultKeyboardLayout (HidKeyboardDevice);
++    if (EFI_ERROR (Status)) { return Status; }
+   }
+ 
+   return EFI_SUCCESS;
+@@ -797,9 +809,13 @@ InitHidKeyboard (
+   IN OUT HID_KB_DEV  *HidKeyboardDevice
+   )
+ {
+-  InitQueue (&HidKeyboardDevice->HidKeyQueue, sizeof (HID_KEY));
+-  InitQueue (&HidKeyboardDevice->EfiKeyQueue, sizeof (EFI_KEY_DATA));
+-  InitQueue (&HidKeyboardDevice->EfiKeyQueueForNotify, sizeof (EFI_KEY_DATA));
++  EFI_STATUS Status;
++  Status = InitQueue (&HidKeyboardDevice->HidKeyQueue, sizeof (HID_KEY));
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = InitQueue (&HidKeyboardDevice->EfiKeyQueue, sizeof (EFI_KEY_DATA));
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = InitQueue (&HidKeyboardDevice->EfiKeyQueueForNotify, sizeof (EFI_KEY_DATA));
++  if (EFI_ERROR (Status)) { return Status; }
+ 
+   HidKeyboardDevice->CtrlOn    = FALSE;
+   HidKeyboardDevice->AltOn     = FALSE;
+@@ -839,11 +855,12 @@ InitHidKeyboard (
+   // Create event for repeat keys' generation.
+   //
+   if (HidKeyboardDevice->RepeatTimer != NULL) {
+-    gBS->CloseEvent (HidKeyboardDevice->RepeatTimer);
++    Status = gBS->CloseEvent (HidKeyboardDevice->RepeatTimer);
++    if (EFI_ERROR (Status)) { return Status; }
+     HidKeyboardDevice->RepeatTimer = NULL;
+   }
+ 
+-  gBS->CreateEvent (
++  Status = gBS->CreateEvent (
+          EVT_TIMER | EVT_NOTIFY_SIGNAL,
+          TPL_CALLBACK,
+          HidKeyboardRepeatHandler,
+@@ -851,7 +868,7 @@ InitHidKeyboard (
+          &HidKeyboardDevice->RepeatTimer
+          );
+ 
+-  return EFI_SUCCESS;
++  return Status;
+ }
+ 
+ /**
+@@ -895,6 +912,10 @@ HIDProcessKeyStrokesCallback (
+     return;
+   }
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) {
++    return;
++  }
++
+   // Process the HID keystrokes and enqueue them for further processing.
+   ProcessKeyStroke (HidInputReportBuffer, HidInputReportBufferSize, HidKeyboardDevice);
+ 
+@@ -916,6 +937,7 @@ HIDProcessKeyStrokesCallback (
+       }
+     }
+   }
++  HidKeyboardEndCallback (HidKeyboardDevice);
+ }
+ 
+ /**
+@@ -1581,7 +1603,7 @@ HIDKeyCodeToEfiInputKey (
+   NotifyList = &HidKeyboardDevice->NotifyList;
+   for (Link = GetFirstNode (NotifyList); !IsNull (NotifyList, Link); Link = GetNextNode (NotifyList, Link)) {
+     CurrentNotify = CR (Link, KEYBOARD_CONSOLE_IN_EX_NOTIFY, NotifyEntry, HID_KB_CONSOLE_IN_EX_NOTIFY_SIGNATURE);
+-    if (IsKeyRegistered (&CurrentNotify->KeyData, KeyData)) {
++    if (!CurrentNotify->Removed && IsKeyRegistered (&CurrentNotify->KeyData, KeyData)) {
+       //
+       // The key notification function needs to run at TPL_CALLBACK.
+       // It will be invoked in KeyNotifyProcessHandler() which runs at TPL_CALLBACK.
+@@ -1602,28 +1624,28 @@ HIDKeyCodeToEfiInputKey (
+   @param  ItemSize  Size of the single item.
+ 
+ **/
+-VOID
++EFI_STATUS
+ InitQueue (
+   IN OUT  HID_SIMPLE_QUEUE  *Queue,
+   IN      UINTN             ItemSize
+   )
+ {
+-  UINTN  Index;
+-
+-  Queue->ItemSize = ItemSize;
+-  Queue->Head     = 0;
+-  Queue->Tail     = 0;
+-
+-  if (Queue->Buffer[0] != NULL) {
+-    FreePool (Queue->Buffer[0]);
++  UINTN Index;
++  VOID *Buffer;
++  if (Queue == NULL || ItemSize == 0 || ItemSize > MAX_UINTN / (MAX_KEY_ALLOWED + 1)) {
++    return EFI_INVALID_PARAMETER;
+   }
+-
+-  Queue->Buffer[0] = AllocatePool (sizeof (Queue->Buffer) / sizeof (Queue->Buffer[0]) * ItemSize);
+-  ASSERT (Queue->Buffer[0] != NULL);
+-
+-  for (Index = 1; Index < sizeof (Queue->Buffer) / sizeof (Queue->Buffer[0]); Index++) {
+-    Queue->Buffer[Index] = ((UINT8 *)Queue->Buffer[Index - 1]) + ItemSize;
++  Buffer = AllocatePool ((MAX_KEY_ALLOWED + 1) * ItemSize);
++  if (Buffer == NULL) {
++    return EFI_OUT_OF_RESOURCES;
+   }
++  if (Queue->Buffer[0] != NULL) { FreePool (Queue->Buffer[0]); }
++  Queue->ItemSize = ItemSize;
++  Queue->Head = Queue->Tail = 0;
++  for (Index = 0; Index < MAX_KEY_ALLOWED + 1; ++Index) {
++    Queue->Buffer[Index] = (UINT8 *)Buffer + Index * ItemSize;
++  }
++  return EFI_SUCCESS;
+ }
+ 
+ /**
+@@ -1636,7 +1658,8 @@ DestroyQueue (
+   IN OUT HID_SIMPLE_QUEUE  *Queue
+   )
+ {
+-  FreePool (Queue->Buffer[0]);
++  if (Queue->Buffer[0] != NULL) { FreePool (Queue->Buffer[0]); }
++  ZeroMem (Queue, sizeof (*Queue));
+ }
+ 
+ /**
+@@ -1805,6 +1828,10 @@ HidKeyboardRepeatHandler (
+ 
+   HidKeyboardDevice = (HID_KB_DEV *)Context;
+ 
++  if (!HidKeyboardBeginCallback (HidKeyboardDevice)) {
++    return;
++  }
++
+   //
+   // Do nothing when there is no repeat key.
+   //
+@@ -1821,10 +1848,13 @@ HidKeyboardRepeatHandler (
+     //
+     // Set repeat rate for next repeat key generation.
+     //
+-    gBS->SetTimer (
++    if (!HidKeyboardDevice->Stopping) {
++      gBS->SetTimer (
+            HidKeyboardDevice->RepeatTimer,
+            TimerRelative,
+            HIDKBD_REPEAT_RATE
+            );
++    }
+   }
++  HidKeyboardEndCallback (HidKeyboardDevice);
+ }
+diff --git a/HidPkg/HidKeyboardDxe/HidKeyboard.h b/HidPkg/HidKeyboardDxe/HidKeyboard.h
+index 21074b1c..eb29ec3f 100644
+--- a/HidPkg/HidKeyboardDxe/HidKeyboard.h
++++ b/HidPkg/HidKeyboardDxe/HidKeyboard.h
+@@ -182,7 +182,7 @@ HIDProcessKeyStrokesCallback (
+   @param  ItemSize  Size of the single item.
+ 
+ **/
+-VOID
++EFI_STATUS
+ InitQueue (
+   IN OUT  HID_SIMPLE_QUEUE  *Queue,
+   IN      UINTN             ItemSize
+diff --git a/HidPkg/UsbKbHidDxe/UsbKbHidDxe.c b/HidPkg/UsbKbHidDxe/UsbKbHidDxe.c
+index fbb94108..7a33f00c 100644
+--- a/HidPkg/UsbKbHidDxe/UsbKbHidDxe.c
++++ b/HidPkg/UsbKbHidDxe/UsbKbHidDxe.c
+@@ -29,6 +29,107 @@ EFI_DRIVER_BINDING_PROTOCOL  gUsbKbHidDriverBinding = {
+   NULL
+ };
+ 
++// Also retains partially started/stopped providers until cleanup can be retried.
++STATIC LIST_ENTRY mUsbKbHidDevices = INITIALIZE_LIST_HEAD_VARIABLE (mUsbKbHidDevices);
++
++STATIC
++USB_KB_HID_DEV *
++UsbKbHidFind (
++  IN EFI_HANDLE Controller
++  )
++{
++  LIST_ENTRY *Link;
++  USB_KB_HID_DEV *Device;
++  for (Link = GetFirstNode (&mUsbKbHidDevices);
++       !IsNull (&mUsbKbHidDevices, Link);
++       Link = GetNextNode (&mUsbKbHidDevices, Link)) {
++    Device = CR (Link, USB_KB_HID_DEV, Link, USB_HID_KB_DEV_SIGNATURE);
++    if (Device->ControllerHandle == Controller) return Device;
++  }
++  return NULL;
++}
++
++// USB control failures may synchronously disconnect this very provider.
++// Pin it and the registered consumer until every enclosing call returns.
++STATIC
++EFI_STATUS
++UsbKbHidEnter (
++  IN USB_KB_HID_DEV *Device
++  )
++{
++  EFI_TPL OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  EFI_STATUS Status = EFI_NOT_READY;
++  if (!Device->Stopping) {
++    Device->ActiveCalls++;
++    Status = EFI_SUCCESS;
++  }
++  gBS->RestoreTPL (OldTpl);
++  return Status;
++}
++
++STATIC
++VOID
++UsbKbHidLeave (
++  IN USB_KB_HID_DEV *Device
++  )
++{
++  EFI_TPL OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  ASSERT (Device->ActiveCalls != 0);
++  Device->ActiveCalls--;
++  gBS->RestoreTPL (OldTpl);
++}
++
++STATIC
++EFI_STATUS
++UsbKbHidCleanup (
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN USB_KB_HID_DEV *Device
++  )
++{
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  ASSERT (Device->Stopping && Device->ActiveCalls == 0 && Device->CleanupActive);
++  if (Device->DelayedRecoveryEvent != NULL) {
++    Status = gBS->SetTimer (Device->DelayedRecoveryEvent, TimerCancel, 0);
++    if (EFI_ERROR (Status)) goto Retained;
++  }
++  if (Device->AsyncActive) {
++    Status = Device->UsbIo->UsbAsyncInterruptTransfer (
++               Device->UsbIo, Device->IntEndpointDescriptor.EndpointAddress,
++               FALSE, Device->IntEndpointDescriptor.Interval, 0, NULL, NULL);
++    if (EFI_ERROR (Status) && Status != EFI_NOT_FOUND) goto Retained;
++    Device->AsyncActive = FALSE;
++  }
++  if (Device->ProtocolInstalled) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++               Device->ControllerHandle, &gHidKeyboardProtocolGuid,
++               &Device->HidKeyboard, NULL);
++    if (EFI_ERROR (Status)) goto Retained;
++    Device->ProtocolInstalled = FALSE;
++  }
++  if (Device->DelayedRecoveryEvent != NULL) {
++    Status = gBS->CloseEvent (Device->DelayedRecoveryEvent);
++    if (EFI_ERROR (Status)) goto Retained;
++    Device->DelayedRecoveryEvent = NULL;
++  }
++  if (Device->UsbIoOpened) {
++    Status = gBS->CloseProtocol (Device->ControllerHandle, &gEfiUsbIoProtocolGuid,
++                                This->DriverBindingHandle, Device->ControllerHandle);
++    if (EFI_ERROR (Status)) goto Retained;
++    Device->UsbIoOpened = FALSE;
++  }
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  RemoveEntryList (&Device->Link);
++  gBS->RestoreTPL (OldTpl);
++  if (Device->ControllerNameTable != NULL) FreeUnicodeStringTable (Device->ControllerNameTable);
++  FreePool (Device);
++  return EFI_SUCCESS;
++
++Retained:
++  Device->CleanupActive = FALSE;
++  return Status;
++}
++
+ /**
+   Entrypoint of USB HID Keyboard Driver.
+ 
+@@ -153,11 +254,19 @@ UsbKbHidDriverBindingStart (
+   UINT8                        Index;
+   UINT8                        EndpointAddr;
+   UINT8                        PollingInterval;
+-  UINT8                        PacketSize;
++  UINTN                        PacketSize;
+   BOOLEAN                      Found;
+   EFI_TPL                      OldTpl;
++  EFI_TPL                      RegistryTpl;
++  EFI_STATUS                   CleanupStatus;
+ 
+   OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
++  // Allocate the retry context before acquiring any protocol ownership.
++  UsbKeyboardDevice = AllocateZeroPool (sizeof (USB_KB_HID_DEV));
++  if (UsbKeyboardDevice == NULL) {
++    Status = EFI_OUT_OF_RESOURCES;
++    goto ErrorExitNoUsbIo;
++  }
+   //
+   // Open USB I/O Protocol
+   //
+@@ -170,15 +279,18 @@ UsbKbHidDriverBindingStart (
+                   EFI_OPEN_PROTOCOL_BY_DRIVER
+                   );
+   if (EFI_ERROR (Status)) {
++    FreePool (UsbKeyboardDevice);
+     goto ErrorExitNoUsbIo;
+   }
+ 
+-  UsbKeyboardDevice = AllocateZeroPool (sizeof (USB_KB_HID_DEV));
+-  ASSERT (UsbKeyboardDevice != NULL);
+-  if (UsbKeyboardDevice == NULL) {
+-    Status = EFI_OUT_OF_RESOURCES;
+-    goto ErrorExit;
+-  }
++  UsbKeyboardDevice->Signature = USB_HID_KB_DEV_SIGNATURE;
++  UsbKeyboardDevice->ControllerHandle = Controller;
++  UsbKeyboardDevice->UsbIo = UsbIo;
++  UsbKeyboardDevice->UsbIoOpened = TRUE;
++  UsbKeyboardDevice->ActiveCalls = 1;
++  RegistryTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  InsertTailList (&mUsbKbHidDevices, &UsbKeyboardDevice->Link);
++  gBS->RestoreTPL (RegistryTpl);
+ 
+   //
+   // Get the Device Path Protocol on Controller's handle
+@@ -219,11 +331,13 @@ UsbKbHidDriverBindingStart (
+   //
+   // Get interface & endpoint descriptor
+   //
+-  UsbIo->UsbGetInterfaceDescriptor (
++  Status = UsbIo->UsbGetInterfaceDescriptor (
+            UsbIo,
+            &UsbKeyboardDevice->InterfaceDescriptor
+            );
+ 
++  if (EFI_ERROR (Status)) goto ErrorExit;
++
+   EndpointNumber = UsbKeyboardDevice->InterfaceDescriptor.NumEndpoints;
+ 
+   //
+@@ -231,12 +345,14 @@ UsbKbHidDriverBindingStart (
+   //
+   Found = FALSE;
+   for (Index = 0; Index < EndpointNumber; Index++) {
+-    UsbIo->UsbGetEndpointDescriptor (
++    Status = UsbIo->UsbGetEndpointDescriptor (
+              UsbIo,
+              Index,
+              &EndpointDescriptor
+              );
+ 
++    if (EFI_ERROR (Status)) goto ErrorExit;
++
+     if (((EndpointDescriptor.Attributes & (BIT0 | BIT1)) == USB_ENDPOINT_INTERRUPT) &&
+         ((EndpointDescriptor.EndpointAddress & USB_ENDPOINT_DIR_IN) != 0))
+     {
+@@ -297,8 +413,9 @@ UsbKbHidDriverBindingStart (
+   //
+   EndpointAddr    = UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress;
+   PollingInterval = UsbKeyboardDevice->IntEndpointDescriptor.Interval;
+-  PacketSize      = (UINT8)(UsbKeyboardDevice->IntEndpointDescriptor.MaxPacketSize);
++  PacketSize      = UsbKeyboardDevice->IntEndpointDescriptor.MaxPacketSize;
+ 
++  UsbKeyboardDevice->AsyncActive = TRUE;
+   Status = UsbIo->UsbAsyncInterruptTransfer (
+                     UsbIo,
+                     EndpointAddr,
+@@ -333,6 +450,7 @@ UsbKbHidDriverBindingStart (
+     goto ErrorExit;
+   }
+ 
++  UsbKeyboardDevice->ProtocolInstalled = TRUE;
+   UsbKeyboardDevice->ControllerNameTable = NULL;
+   AddUnicodeString2 (
+     "eng",
+@@ -349,6 +467,7 @@ UsbKbHidDriverBindingStart (
+     FALSE
+     );
+ 
++  UsbKbHidLeave (UsbKeyboardDevice);
+   gBS->RestoreTPL (OldTpl);
+   return EFI_SUCCESS;
+ 
+@@ -357,17 +476,15 @@ UsbKbHidDriverBindingStart (
+   //
+ ErrorExit:
+   if (UsbKeyboardDevice != NULL) {
+-    FreePool (UsbKeyboardDevice);
+-    UsbKeyboardDevice = NULL;
++    UsbKeyboardDevice->Stopping = TRUE;
++    UsbKeyboardDevice->CleanupActive = TRUE;
++    UsbKbHidLeave (UsbKeyboardDevice);
++    CleanupStatus = UsbKbHidCleanup (This, UsbKeyboardDevice);
++    if (EFI_ERROR (CleanupStatus)) {
++      DEBUG ((DEBUG_ERROR, "USB keyboard: start cleanup retained: %r\n", CleanupStatus));
++    }
+   }
+ 
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiUsbIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+ ErrorExitNoUsbIo:
+   gBS->RestoreTPL (OldTpl);
+ 
+@@ -398,77 +515,24 @@ UsbKbHidDriverBindingStop (
+   IN  EFI_HANDLE                   *ChildHandleBuffer
+   )
+ {
+-  EFI_STATUS             Status;
+-  HID_KEYBOARD_PROTOCOL  *HidKeyboard;
+-  USB_KB_HID_DEV         *UsbKeyboardDevice;
+-
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gHidKeyboardProtocolGuid,
+-                  (VOID **)&HidKeyboard,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-  if (EFI_ERROR (Status)) {
++  EFI_TPL OldTpl;
++  USB_KB_HID_DEV *Device;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Device = UsbKbHidFind (Controller);
++  if (Device == NULL) {
++    gBS->RestoreTPL (OldTpl);
+     return EFI_UNSUPPORTED;
+   }
+-
+-  UsbKeyboardDevice = USB_KB_HID_DEV_FROM_THIS (HidKeyboard);
+-
+-  //
+-  // The key data input from this device will be disabled.
+-  //
+-  REPORT_STATUS_CODE_WITH_DEVICE_PATH (
+-    EFI_PROGRESS_CODE,
+-    (EFI_PERIPHERAL_KEYBOARD | EFI_P_PC_DISABLE),
+-    UsbKeyboardDevice->DevicePath
+-    );
+-
+-  //
+-  // Delete the Asynchronous Interrupt Transfer from this device
+-  //
+-  UsbKeyboardDevice->UsbIo->UsbAsyncInterruptTransfer (
+-                              UsbKeyboardDevice->UsbIo,
+-                              UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress,
+-                              FALSE,
+-                              UsbKeyboardDevice->IntEndpointDescriptor.Interval,
+-                              0,
+-                              NULL,
+-                              NULL
+-                              );
+-  Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  Controller,
+-                  &gHidKeyboardProtocolGuid,
+-                  &UsbKeyboardDevice->HidKeyboard,
+-                  NULL
+-                  );
+-  ASSERT_EFI_ERROR (Status); // Proceed on error in non-debug case.
+-
+-  // Close the recovery event, if one exists.
+-  if (UsbKeyboardDevice->DelayedRecoveryEvent != NULL) {
+-    gBS->CloseEvent (UsbKeyboardDevice->DelayedRecoveryEvent);
+-    UsbKeyboardDevice->DelayedRecoveryEvent = NULL;
+-  }
+-
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiUsbIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-  ASSERT_EFI_ERROR (Status); // Proceed on error in non-debug case.
+-
+-  //
+-  // Free all resources.
+-  //
+-  if (UsbKeyboardDevice->ControllerNameTable != NULL) {
+-    FreeUnicodeStringTable (UsbKeyboardDevice->ControllerNameTable);
++  if (Device->ActiveCalls != 0 || Device->CleanupActive) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
+   }
+-
+-  FreePool (UsbKeyboardDevice);
+-
+-  return Status;
++  Device->Stopping = TRUE;
++  Device->CleanupActive = TRUE;
++  gBS->RestoreTPL (OldTpl);
++  REPORT_STATUS_CODE_WITH_DEVICE_PATH (
++    EFI_PROGRESS_CODE, EFI_PERIPHERAL_KEYBOARD | EFI_P_PC_DISABLE, Device->DevicePath);
++  return UsbKbHidCleanup (This, Device);
+ }
+ 
+ //
+@@ -496,6 +560,7 @@ RegisterKeyboardHidReportCallback (
+   )
+ {
+   USB_KB_HID_DEV  *HidKeyboard;
++  EFI_TPL OldTpl;
+ 
+   if ((This == NULL) || (KeyboardReportCallback == NULL)) {
+     return EFI_INVALID_PARAMETER;
+@@ -503,13 +568,20 @@ RegisterKeyboardHidReportCallback (
+ 
+   HidKeyboard = USB_KB_HID_DEV_FROM_THIS (This);
+ 
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (HidKeyboard->Stopping) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
+   if (HidKeyboard->KeyReportCallback != NULL) {
++    gBS->RestoreTPL (OldTpl);
+     return EFI_ALREADY_STARTED;
+   }
+ 
+   HidKeyboard->KeyReportCallback        = KeyboardReportCallback;
+   HidKeyboard->KeyReportCallbackContext = Context;
+ 
++  gBS->RestoreTPL (OldTpl);
+   return EFI_SUCCESS;
+ }
+ 
+@@ -530,6 +602,7 @@ UnRegisterKeyboardHidReportCallback (
+   )
+ {
+   USB_KB_HID_DEV  *HidKeyboard;
++  EFI_TPL OldTpl;
+ 
+   if (This == NULL) {
+     return EFI_INVALID_PARAMETER;
+@@ -537,13 +610,20 @@ UnRegisterKeyboardHidReportCallback (
+ 
+   HidKeyboard = USB_KB_HID_DEV_FROM_THIS (This);
+ 
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (HidKeyboard->ActiveCalls != 0) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
+   if (HidKeyboard->KeyReportCallback == NULL) {
++    gBS->RestoreTPL (OldTpl);
+     return EFI_NOT_FOUND;
+   }
+ 
+   HidKeyboard->KeyReportCallback        = NULL;
+   HidKeyboard->KeyReportCallbackContext = NULL;
+ 
++  gBS->RestoreTPL (OldTpl);
+   return EFI_SUCCESS;
+ }
+ 
+@@ -576,13 +656,18 @@ SetOutputReport (
+     return EFI_UNSUPPORTED;
+   }
+ 
++  if ((This == NULL) || (HidOutputReportBuffer == NULL)) return EFI_INVALID_PARAMETER;
++
+   if (HidOutputReportBufferSize != 1) {
+     return EFI_UNSUPPORTED;
+   }
+ 
+   HidKeyboard = USB_KB_HID_DEV_FROM_THIS (This);
+ 
+-  ReportId = 1;
++  Status = UsbKbHidEnter (HidKeyboard);
++  if (EFI_ERROR (Status)) return Status;
++  // HID 1.11 Appendix B boot keyboard reports do not have report IDs.
++  ReportId = 0;
+ 
+   //
+   // Call Set_Report Request to lighten the LED.
+@@ -596,6 +681,7 @@ SetOutputReport (
+              HidOutputReportBuffer
+              );
+ 
++  UsbKbHidLeave (HidKeyboard);
+   return Status;
+ }
+ 
+@@ -658,7 +744,6 @@ InitUsbKeyboard (
+   )
+ {
+   UINT16      ConfigValue;
+-  UINT8       Protocol;
+   EFI_STATUS  Status;
+   UINT32      TransferResult;
+ 
+@@ -703,32 +788,42 @@ InitUsbKeyboard (
+     }
+   }
+ 
+-  UsbGetProtocolRequest (
+-    UsbKeyboardDevice->UsbIo,
+-    UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
+-    &Protocol
+-    );
+-  //
+-  // Set boot protocol for the USB Keyboard.
+-  // This driver only supports boot protocol.
+-  //
+-  if (Protocol != BOOT_PROTOCOL) {
+-    UsbSetProtocolRequest (
+-      UsbKeyboardDevice->UsbIo,
+-      UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
+-      BOOT_PROTOCOL
+-      );
+-  }
++  // HID 1.11 7.2.6: explicitly establish the protocol at initialization.
++  // This provider only decodes boot reports.
++  Status = UsbSetProtocolRequest (
++             UsbKeyboardDevice->UsbIo,
++             UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
++             BOOT_PROTOCOL
++             );
++  if (EFI_ERROR (Status)) return Status;
++
++  // HID 1.11 7.2.4 and F.3: duration zero requests reports on change for
++  // all input reports. Linux usbhid establishes this before polling too.
++  // Keep the request best effort, as Linux does, for nonconforming devices.
++  Status = UsbSetIdleRequest (
++             UsbKeyboardDevice->UsbIo,
++             UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
++             0,
++             0
++             );
++  DEBUG ((DEBUG_WARN,
++          "UsbKbHid: boot interface=%u SET_IDLE(0,0)=%r ep=%02x packet=%u interval=%u\n",
++          UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
++          Status,
++          UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress,
++          UsbKeyboardDevice->IntEndpointDescriptor.MaxPacketSize,
++          UsbKeyboardDevice->IntEndpointDescriptor.Interval));
+ 
+   //
+   // Create event for delayed recovery, which deals with device error.
+   //
+   if (UsbKeyboardDevice->DelayedRecoveryEvent != NULL) {
+-    gBS->CloseEvent (UsbKeyboardDevice->DelayedRecoveryEvent);
++    Status = gBS->CloseEvent (UsbKeyboardDevice->DelayedRecoveryEvent);
++    if (EFI_ERROR (Status)) return Status;
+     UsbKeyboardDevice->DelayedRecoveryEvent = NULL;
+   }
+ 
+-  gBS->CreateEvent (
++  Status = gBS->CreateEvent (
+          EVT_TIMER | EVT_NOTIFY_SIGNAL,
+          TPL_NOTIFY,
+          UsbKbHidRecoveryHandler,
+@@ -736,7 +831,7 @@ InitUsbKeyboard (
+          &UsbKeyboardDevice->DelayedRecoveryEvent
+          );
+ 
+-  return EFI_SUCCESS;
++  return Status;
+ }
+ 
+ /**
+@@ -769,36 +864,40 @@ KeyboardHandler (
+   USB_KB_HID_DEV       *UsbKeyboardDevice;
+   EFI_USB_IO_PROTOCOL  *UsbIo;
+   UINT32               UsbStatus;
++  EFI_STATUS           Status;
+   UINT8                EmptyKeyPacket[8];
+ 
+   ASSERT (Context != NULL);
+ 
+   UsbKeyboardDevice = (USB_KB_HID_DEV *)Context;
++  if (EFI_ERROR (UsbKbHidEnter (UsbKeyboardDevice))) return EFI_NOT_READY;
+   UsbIo             = UsbKeyboardDevice->UsbIo;
+ 
+   //
+   // Analyzes Result and performs corresponding action.
+   //
+   if (Result != EFI_USB_NOERROR) {
+-    //
+-    // Some errors happen during the process
+-    //
+-    REPORT_STATUS_CODE_WITH_DEVICE_PATH (
+-      EFI_ERROR_CODE | EFI_ERROR_MINOR,
+-      (EFI_PERIPHERAL_KEYBOARD | EFI_P_EC_INPUT_ERROR),
+-      UsbKeyboardDevice->DevicePath
+-      );
+-
+-    // send a HID packet with no keys pressed so that
+-    // the HID layer will cancel repeat.
+-    ZeroMem (EmptyKeyPacket, sizeof (EmptyKeyPacket));
+-    if (UsbKeyboardDevice->KeyReportCallback != NULL) {
+-      UsbKeyboardDevice->KeyReportCallback (
+-                           BootKeyboard,
+-                           EmptyKeyPacket,
+-                           sizeof (EmptyKeyPacket),
+-                           UsbKeyboardDevice->KeyReportCallbackContext
+-                           );
++    // Report and release held keys once per error episode. A failed endpoint
++    // must not start a new unbounded series of host-controller retries each
++    // time the class recovery timer submits a fresh interrupt transfer.
++    if (UsbKeyboardDevice->ConsecutiveErrors == 0) {
++      REPORT_STATUS_CODE_WITH_DEVICE_PATH (
++        EFI_ERROR_CODE | EFI_ERROR_MINOR,
++        (EFI_PERIPHERAL_KEYBOARD | EFI_P_EC_INPUT_ERROR),
++        UsbKeyboardDevice->DevicePath
++        );
++      ZeroMem (EmptyKeyPacket, sizeof (EmptyKeyPacket));
++      if (UsbKeyboardDevice->KeyReportCallback != NULL) {
++        UsbKeyboardDevice->KeyReportCallback (
++                             BootKeyboard,
++                             EmptyKeyPacket,
++                             sizeof (EmptyKeyPacket),
++                             UsbKeyboardDevice->KeyReportCallbackContext
++                             );
++      }
++    }
++    if (UsbKeyboardDevice->ConsecutiveErrors < USB_HID_KB_RECOVERY_LIMIT) {
++      UsbKeyboardDevice->ConsecutiveErrors++;
+     }
+ 
+     if ((Result & EFI_USB_ERR_STALL) == EFI_USB_ERR_STALL) {
+@@ -813,7 +912,7 @@ KeyboardHandler (
+     // Delete & Submit this interrupt again
+     // Handler of DelayedRecoveryEvent triggered by timer will re-submit the interrupt.
+     //
+-    UsbIo->UsbAsyncInterruptTransfer (
++    Status = UsbIo->UsbAsyncInterruptTransfer (
+              UsbIo,
+              UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress,
+              FALSE,
+@@ -822,22 +921,44 @@ KeyboardHandler (
+              NULL,
+              NULL
+              );
++    if (EFI_ERROR (Status) && Status != EFI_NOT_FOUND) {
++      UsbKbHidLeave (UsbKeyboardDevice);
++      return Status;
++    }
++    UsbKeyboardDevice->AsyncActive = FALSE;
++    if (UsbKeyboardDevice->ConsecutiveErrors >= USB_HID_KB_RECOVERY_LIMIT) {
++      // UsbPortReset removes this interface's configuration and may reenter
++      // Stop, so it cannot run from this pinned callback. Leave the endpoint
++      // cancelled; bus disconnect/re-enumeration creates a fresh provider.
++      DEBUG ((DEBUG_ERROR, "USB keyboard: interrupt recovery exhausted after %u errors; endpoint 0x%02x stopped pending re-enumeration\n",
++              UsbKeyboardDevice->ConsecutiveErrors,
++              UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress));
++      UsbKbHidLeave (UsbKeyboardDevice);
++      return EFI_DEVICE_ERROR;
++    }
+     //
+     // EFI_USB_INTERRUPT_DELAY is defined in USB standard for error handling.
+     //
+-    gBS->SetTimer (
+-           UsbKeyboardDevice->DelayedRecoveryEvent,
+-           TimerRelative,
+-           EFI_USB_INTERRUPT_DELAY
+-           );
++    Status = gBS->SetTimer (
++                   UsbKeyboardDevice->DelayedRecoveryEvent,
++                   TimerRelative,
++                   EFI_USB_INTERRUPT_DELAY
++                   );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "USB keyboard: cannot schedule interrupt recovery: %r\n", Status));
++    }
+ 
++    UsbKbHidLeave (UsbKeyboardDevice);
+     return EFI_DEVICE_ERROR;
+   }
+ 
++  UsbKeyboardDevice->ConsecutiveErrors = 0;
++
+   //
+   // If no error and no data, just return EFI_SUCCESS.
+   //
+   if ((DataLength == 0) || (Data == NULL)) {
++    UsbKbHidLeave (UsbKeyboardDevice);
+     return EFI_SUCCESS;
+   }
+ 
+@@ -853,6 +974,7 @@ KeyboardHandler (
+                          );
+   }
+ 
++  UsbKbHidLeave (UsbKeyboardDevice);
+   return EFI_SUCCESS;
+ }
+ 
+@@ -878,20 +1000,28 @@ UsbKbHidRecoveryHandler (
+ {
+   USB_KB_HID_DEV       *UsbKeyboardDevice;
+   EFI_USB_IO_PROTOCOL  *UsbIo;
+-  UINT8                PacketSize;
++  UINTN                PacketSize;
++  EFI_STATUS           Status;
+ 
+   UsbKeyboardDevice = (USB_KB_HID_DEV *)Context;
+ 
+   ASSERT (Context != NULL);
+ 
++  if (EFI_ERROR (UsbKbHidEnter (UsbKeyboardDevice))) return;
++  if (UsbKeyboardDevice->AsyncActive ||
++      UsbKeyboardDevice->ConsecutiveErrors >= USB_HID_KB_RECOVERY_LIMIT) {
++    UsbKbHidLeave (UsbKeyboardDevice);
++    return;
++  }
+   UsbIo = UsbKeyboardDevice->UsbIo;
+ 
+-  PacketSize = (UINT8)(UsbKeyboardDevice->IntEndpointDescriptor.MaxPacketSize);
++  PacketSize = UsbKeyboardDevice->IntEndpointDescriptor.MaxPacketSize;
+ 
+   //
+   // Re-submit Asynchronous Interrupt Transfer for recovery.
+   //
+-  UsbIo->UsbAsyncInterruptTransfer (
++  UsbKeyboardDevice->AsyncActive = TRUE;
++  Status = UsbIo->UsbAsyncInterruptTransfer (
+            UsbIo,
+            UsbKeyboardDevice->IntEndpointDescriptor.EndpointAddress,
+            TRUE,
+@@ -900,4 +1030,8 @@ UsbKbHidRecoveryHandler (
+            KeyboardHandler,
+            UsbKeyboardDevice
+            );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "USB keyboard: recovery submission failed: %r\n", Status));
++  }
++  UsbKbHidLeave (UsbKeyboardDevice);
+ }
+diff --git a/HidPkg/UsbKbHidDxe/UsbKbHidDxe.h b/HidPkg/UsbKbHidDxe/UsbKbHidDxe.h
+index 1c8caf6a..3511c3a9 100644
+--- a/HidPkg/UsbKbHidDxe/UsbKbHidDxe.h
++++ b/HidPkg/UsbKbHidDxe/UsbKbHidDxe.h
+@@ -32,6 +32,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #define USB_HID_KEYBOARD_DRIVER_VERSION  0x10
+ 
++// About one second of class recovery, in addition to host-controller retries.
++#define USB_HID_KB_RECOVERY_LIMIT  5
++
+ #define CLASS_HID          3
+ #define SUBCLASS_BOOT      1
+ #define PROTOCOL_KEYBOARD  1
+@@ -56,6 +59,14 @@ typedef struct {
+   HID_KEYBOARD_PROTOCOL           HidKeyboard;
+   KEYBOARD_HID_REPORT_CALLBACK    KeyReportCallback;
+   VOID                            *KeyReportCallbackContext;
++  LIST_ENTRY                      Link;
++  UINTN                           ConsecutiveErrors;
++  BOOLEAN                         AsyncActive;
++  BOOLEAN                         ProtocolInstalled;
++  BOOLEAN                         UsbIoOpened;
++  UINTN                           ActiveCalls;
++  BOOLEAN                         Stopping;
++  BOOLEAN                         CleanupActive;
+ } USB_KB_HID_DEV;
+ 
+ //
+diff --git a/MsCorePkg/AcpiRGRT/AcpiRgrt.c b/MsCorePkg/AcpiRGRT/AcpiRgrt.c
+index 153346f9..08053cb5 100644
+--- a/MsCorePkg/AcpiRGRT/AcpiRgrt.c
++++ b/MsCorePkg/AcpiRGRT/AcpiRgrt.c
+@@ -167,16 +167,24 @@ DriverEntry (
+   ImageLocationGuid = PcdGetPtr (PcdRegulatoryGraphicFileGuid); // Get the guid of the regulatory graphic
+ 
+   if (ImageLocationGuid == NULL) {
+-    DEBUG ((DEBUG_ERROR, "ACPI RGRT failed to find Graphic Image GUID\n"));
+-    return EFI_ABORTED;
++    // RGRT is an optional table.  Platforms that do not package a
++    // regulatory image must still be able to boot without turning an
++    // absent optional resource into a failed DXE image.
++    DEBUG ((DEBUG_INFO, "ACPI RGRT: no regulatory graphic configured\n"));
++    return EFI_SUCCESS;
+   }
+ 
+   // Get the image out of the FV
+   Status = GetSectionFromAnyFv (ImageLocationGuid, EFI_SECTION_RAW, 0, (VOID **)&mRgImageData, &mRgImageSize);
+   // if we didn't find it
+   if (EFI_ERROR (Status) || (mRgImageSize == 0)) {
+-    DEBUG ((DEBUG_ERROR, "ACPI RGRT table failed to find Graphic Image location\n"));
+-    return EFI_ABORTED;
++    // Keep the driver successfully dispatched when the platform has no
++    // image freeform section.  InstallAcpiTable() is only registered after
++    // this lookup succeeds, so no empty RGRT table can be emitted.
++    DEBUG ((DEBUG_INFO, "ACPI RGRT: regulatory graphic not packaged (%r)\n", Status));
++    mRgImageData = NULL;
++    mRgImageSize = 0;
++    return EFI_SUCCESS;
+   }
+ 
+   // register for a call back (we will be called immediately as well)
+diff --git a/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c b/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c
+index 359952e3..1d6095e7 100644
+--- a/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c
++++ b/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.c
+@@ -18,6 +18,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
++#include <Protocol/DevicePath.h>
++#include <Protocol/GraphicsOutput.h>
+ 
+ //
+ // ****** Global variables ******
+@@ -45,12 +47,15 @@ GopRegisteredCallback (
+   )
+ {
+   EFI_STATUS                    Status = EFI_SUCCESS;
+-  EFI_HANDLE                    *Handles;
++  EFI_HANDLE                    *Handles = NULL;
++  EFI_HANDLE                    Controller = NULL;
+   UINTN                         HandleCount = 0;
++  UINTN                         Index;
+   EFI_GRAPHICS_OUTPUT_PROTOCOL  *pGop;
++  EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
+ 
+   //
+-  // Find all the handles on which Graphics Output Protocol is installed (should be exactly one handle).
++  // ConSplitter also publishes GOP. Only a display controller has a device path.
+   //
+   Status = gBS->LocateHandleBuffer (
+                   ByProtocol,
+@@ -59,16 +64,44 @@ GopRegisteredCallback (
+                   &HandleCount,
+                   &Handles
+                   );
+-  if (EFI_ERROR (Status) || (HandleCount != 1)) {
+-    DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Unable to locate one %g handle - code=%r - HandleCount=%d\n", &gEfiGraphicsOutputProtocolGuid, Status, HandleCount));
++  if (EFI_ERROR (Status)) {
++    goto Exit;
++  }
++
++  for (Index = 0; Index < HandleCount; Index++) {
++    Status = gBS->HandleProtocol (Handles[Index], &gEfiDevicePathProtocolGuid,
++                                 (VOID **)&DevicePath);
++    if (EFI_ERROR (Status) || (DevicePath == NULL)) {
++      continue;
++    }
++    // A platform with multiple framebuffers can select its rendering-engine
++    // parent explicitly. Other GOPs remain available to GraphicsConsole.
++    CONST EFI_GUID *Selected = PcdGetPtr (PcdMsGopOverrideControllerGuid);
++    CONST EFI_GUID Empty = {0};
++    if (!CompareGuid (Selected, &Empty)) {
++      CONST EFI_DEVICE_PATH_PROTOCOL *End = (CONST VOID *)((CONST UINT8 *)DevicePath + sizeof (VENDOR_DEVICE_PATH));
++      if (DevicePath->Type != HARDWARE_DEVICE_PATH || DevicePath->SubType != HW_VENDOR_DP ||
++          (DevicePath->Length[0] | (DevicePath->Length[1] << 8)) != sizeof (VENDOR_DEVICE_PATH) ||
++          !CompareGuid (&((CONST VENDOR_DEVICE_PATH *)DevicePath)->Guid, Selected) ||
++          End->Type != END_DEVICE_PATH_TYPE || End->SubType != END_ENTIRE_DEVICE_PATH_SUBTYPE ||
++          (End->Length[0] | (End->Length[1] << 8)) != sizeof (*End)) {
++        continue;
++      }
++    }
++    if (Controller != NULL) {
++      DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Multiple display controllers found\n"));
++      Status = EFI_UNSUPPORTED;
++      goto Exit;
++    }
++
++    Controller = Handles[Index];
++  }
++  if (Controller == NULL) {
+     goto Exit;
+   }
+ 
+-  //
+-  // Get Graphics Output Protocol interface on this handle.
+-  //
+   Status = gBS->HandleProtocol (
+-                  Handles[0],
++                  Controller,
+                   &gEfiGraphicsOutputProtocolGuid,
+                   (VOID **)&pGop
+                   );
+@@ -82,7 +115,7 @@ GopRegisteredCallback (
+   // Now, install Graphics Output Override Protocol on this handle.
+   //
+   Status = gBS->InstallProtocolInterface (
+-                  &Handles[0],
++                  &Controller,
+                   mMsGopOverrideProtocolGuid,
+                   EFI_NATIVE_INTERFACE,
+                   (VOID *)pGop
+@@ -96,15 +129,19 @@ GopRegisteredCallback (
+   // Uninstall Graphics Output Protocol on this handle.
+   //
+   Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  Handles[0],
++                  Controller,
+                   &gEfiGraphicsOutputProtocolGuid,
+                   (VOID *)pGop,
+                   NULL
+                   );
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Unable to uninstall %g protocol - code=%r\n", &gEfiGraphicsOutputProtocolGuid, Status));
++    gBS->UninstallMultipleProtocolInterfaces (Controller,
++                                             mMsGopOverrideProtocolGuid,
++                                             (VOID *)pGop, NULL);
+     goto Exit;
+   }
++  DEBUG ((DEBUG_INIT, "GOP Override: native display selected from %u GOP handles\n", (UINT32)HandleCount));
+ 
+   //
+   // On success, close the Graphics Output Protocol registration notification event.
+@@ -115,6 +152,7 @@ GopRegisteredCallback (
+       DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Unable to close GOP Override event - code=%r\n", Status));
+       goto Exit;
+     }
++    mGopRegisterEvent = NULL;
+   }
+ 
+ Exit:
+@@ -145,54 +183,41 @@ DriverInit (
+   )
+ {
+   EFI_STATUS  Status = EFI_SUCCESS;
+-  EFI_HANDLE  *Handles;
+-  UINTN       HandleCount = 0;
+ 
+   mMsGopOverrideProtocolGuid = PcdGetPtr (PcdMsGopOverrideProtocolGuid);
+ 
+-  //
+-  // Find all the handles on which Graphics Output Protocol is installed (should be exactly one handle).
+-  //
+-  Status = gBS->LocateHandleBuffer (
+-                  ByProtocol,
+-                  &gEfiGraphicsOutputProtocolGuid,
++  Status = gBS->CreateEvent (
++                  EVT_NOTIFY_SIGNAL,
++                  TPL_NOTIFY,
++                  GopRegisteredCallback,
+                   NULL,
+-                  &HandleCount,
+-                  &Handles
++                  &mGopRegisterEvent
+                   );
+-  if (!EFI_ERROR (Status) && (HandleCount == 1)) {
+-    DEBUG ((DEBUG_INFO, "[GOP Override]: 1 GOP handle located, not registering an event\n"));
+-    GopRegisteredCallback (NULL, NULL);
+-  } else {
+-    //
+-    // Graphics Output Protocol isn't availble now. Register for Graphics Output Protocol registration notifications.
+-    //
+-    Status = gBS->CreateEvent (
+-                    EVT_NOTIFY_SIGNAL,
+-                    TPL_NOTIFY,
+-                    GopRegisteredCallback,
+-                    NULL,
+-                    &mGopRegisterEvent
+-                    );
+ 
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Failed to create GOP registration event (%r).\r\n", Status));
+-      goto Exit;
+-    }
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Failed to create GOP registration event (%r).\r\n", Status));
++    goto Exit;
++  }
+ 
+-    Status = gBS->RegisterProtocolNotify (
+-                    &gEfiGraphicsOutputProtocolGuid,
+-                    mGopRegisterEvent,
+-                    &mGopRegistration
+-                    );
++  Status = gBS->RegisterProtocolNotify (
++                  &gEfiGraphicsOutputProtocolGuid,
++                  mGopRegisterEvent,
++                  &mGopRegistration
++                  );
+ 
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Failed to register for GOP registration notifications (%r).\r\n", Status));
+-      goto Exit;
+-    }
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "ERROR [GOP]: Failed to register for GOP registration notifications (%r).\r\n", Status));
++    goto Exit;
+   }
+ 
++  // Registration covers future GOPs; signal once to inspect existing ones.
++  Status = gBS->SignalEvent (mGopRegisterEvent);
++
+ Exit:
++  if (EFI_ERROR (Status) && (mGopRegisterEvent != NULL)) {
++    gBS->CloseEvent (mGopRegisterEvent);
++    mGopRegisterEvent = NULL;
++  }
+   DEBUG ((DEBUG_INFO, "INFO [GOP]: DriverInit exit - code=%r\n", Status));
+ 
+   return Status;
+@@ -217,6 +242,9 @@ DriverCleanUp (
+   //
+   if (mGopRegisterEvent != NULL) {
+     Status = gBS->CloseEvent (mGopRegisterEvent);
++    if (!EFI_ERROR (Status)) {
++      mGopRegisterEvent = NULL;
++    }
+   }
+ 
+   return Status;
+diff --git a/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf b/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf
+index b50a7b39..b0809019 100644
+--- a/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf
++++ b/MsGraphicsPkg/GopOverrideDxe/GopOverrideDxe.inf
+@@ -32,6 +32,7 @@
+   UefiDriverEntryPoint
+   DebugLib
+   BaseLib
++  BaseMemoryLib
+   MemoryAllocationLib
+   DxeServicesTableLib
+   UefiBootServicesTableLib
+@@ -41,8 +42,10 @@
+ 
+ [Protocols]
+   gEfiGraphicsOutputProtocolGuid    # CONSUMES
++  gEfiDevicePathProtocolGuid        # CONSUMES
+ 
+ [Pcd]
++  gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideControllerGuid
+   gMsGraphicsPkgTokenSpaceGuid.PcdMsGopOverrideProtocolGuid
+ 
+ [Depex]
+diff --git a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
+index 7ceb26d1..8a824ad1 100644
+--- a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
++++ b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
+@@ -34,6 +34,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Protocol/SimpleTextIn.h>
+ #include <Protocol/SimpleTextInEx.h>
+ #include <Protocol/SimpleWindowManager.h>
++#include <Protocol/RenderingEngine.h>
+ 
+ #include <Guid/ConsoleInDevice.h>
+ #include <Guid/OSKDevicePath.h>
+@@ -83,6 +84,9 @@ STATIC OSK_DEVICE_PATH  mPlatformOSKDevice = {
+ // Global variables
+ //
+ EFI_HANDLE  mImageHandle;
++extern EFI_DRIVER_BINDING_PROTOCOL gOSKDriverBinding;
++STATIC EFI_EVENT mSwmNotifyEvent;
++STATIC VOID      *mSwmRegistration;
+ 
+ // Common structures and protocols
+ EFI_GRAPHICS_OUTPUT_PROTOCOL       *mGop;
+@@ -117,6 +121,101 @@ EFIAPI
+ OSKDriverInit (
+   );
+ 
++STATIC EFI_STATUS
++OSKLocateRenderingGop (
++  OUT EFI_GRAPHICS_OUTPUT_PROTOCOL **Gop
++  )
++{
++  EFI_HANDLE                   *Handles = NULL;
++  UINTN                        Count;
++  UINTN                        Index;
++  EFI_STATUS                   Status;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL  *Candidate;
++
++  *Gop = NULL;
++  Status = gBS->LocateHandleBuffer (ByProtocol, &gMsSREProtocolGuid,
++                                   NULL, &Count, &Handles);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  Status = EFI_NOT_FOUND;
++  for (Index = 0; Index < Count; Index++) {
++    if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiGraphicsOutputProtocolGuid,
++                                       (VOID **)&Candidate)) ||
++        (Candidate == NULL) || (Candidate->Mode == NULL) ||
++        (Candidate->Mode->Info == NULL)) {
++      continue;
++    }
++
++    if (*Gop != NULL) {
++      *Gop = NULL;
++      Status = EFI_UNSUPPORTED;
++      break;
++    }
++
++    *Gop = Candidate;
++    Status = EFI_SUCCESS;
++  }
++
++  FreePool (Handles);
++  return Status;
++}
++
++STATIC VOID
++EFIAPI
++OSKWindowManagerReady (
++  IN EFI_EVENT Event,
++  IN VOID      *Context
++  )
++{
++  EFI_STATUS Status;
++  VOID       *WindowManager;
++  EFI_HANDLE Drivers[2];
++
++  Status = gBS->LocateProtocol (&gMsSWMProtocolGuid, NULL, &WindowManager);
++  if (EFI_ERROR (Status)) {
++    return;
++  }
++
++  Drivers[0] = gOSKDriverBinding.DriverBindingHandle;
++  Drivers[1] = NULL;
++  Status = gBS->ConnectController (mControllerHandle, Drivers, NULL, FALSE);
++  if (!EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INIT, "OSK: connected after window manager became available\n"));
++    gBS->CloseEvent (mSwmNotifyEvent);
++    mSwmNotifyEvent = NULL;
++  } else {
++    DEBUG ((DEBUG_ERROR, "OSK: deferred connection failed: %r\n", Status));
++  }
++}
++
++STATIC EFI_STATUS
++OSKRegisterWindowManagerNotify (
++  VOID
++  )
++{
++  EFI_STATUS Status;
++
++  Status = gBS->CreateEvent (EVT_NOTIFY_SIGNAL, TPL_CALLBACK,
++                            OSKWindowManagerReady, NULL, &mSwmNotifyEvent);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  Status = gBS->RegisterProtocolNotify (&gMsSWMProtocolGuid, mSwmNotifyEvent,
++                                       &mSwmRegistration);
++  if (!EFI_ERROR (Status)) {
++    Status = gBS->SignalEvent (mSwmNotifyEvent);
++  }
++  if (EFI_ERROR (Status)) {
++    gBS->CloseEvent (mSwmNotifyEvent);
++    mSwmNotifyEvent = NULL;
++  }
++
++  return Status;
++}
++
+ /**
+ Checks to see if the incoming handle has a OSK device path installed on it.
+ The handle information was saved at the driver entry point
+@@ -142,7 +241,7 @@ OSKDriverBindingSupported (
+ {
+   EFI_STATUS  Status;
+ 
+-  OSK_DEVICE_PATH  OskDevicePath;
++  EFI_DEVICE_PATH_PROTOCOL *OskDevicePath;
+ 
+   // Check if the incoming handle is the same handle as what you installed your device path on
+   if (Controller != mControllerHandle) {
+@@ -197,7 +296,7 @@ OSKDriverBindingStart (
+   )
+ {
+   EFI_STATUS       Status = EFI_SUCCESS;
+-  OSK_DEVICE_PATH  OskDevicePath;
++  EFI_DEVICE_PATH_PROTOCOL *OskDevicePath;
+ 
+   // Check if the incoming handle is the same handle as what you installed your device path on
+   if (Controller != mControllerHandle) {
+@@ -231,13 +330,8 @@ OSKDriverBindingStart (
+     goto ErrorExit;
+   }
+ 
+-  // Determine if the Graphics Output Protocol is available
+-  //
+-  Status = gBS->LocateProtocol (
+-                  &gEfiGraphicsOutputProtocolGuid,
+-                  NULL,
+-                  (VOID **)&mGop
+-                  );
++  // Draw on the same rendering display used by SWM, not virtual ConSplitter GOP.
++  Status = OSKLocateRenderingGop (&mGop);
+ 
+   if (EFI_ERROR (Status)) {
+     mGop = NULL;
+@@ -3264,6 +3358,10 @@ OnPreExitBootServicesNotification (
+   IN VOID       *Context
+   )
+ {
++  if (mSwmNotifyEvent != NULL) {
++    gBS->CloseEvent (mSwmNotifyEvent);
++    mSwmNotifyEvent = NULL;
++  }
+   ShowKeyboardIcon (FALSE);
+   ShowKeyboard (FALSE);
+   gBS->CloseEvent (Event);
+@@ -3277,6 +3375,13 @@ DriverUnload (
+ {
+   EFI_STATUS  Status = EFI_SUCCESS;
+ 
++  if (mSwmNotifyEvent != NULL) {
++    Status = gBS->CloseEvent (mSwmNotifyEvent);
++    if (!EFI_ERROR (Status)) {
++      mSwmNotifyEvent = NULL;
++    }
++  }
++
+   // TODO - Needs to be implemented
+ 
+   return Status;
+@@ -3405,8 +3510,12 @@ OSKDriverEntryPoint (
+ 
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "%a - Create Event Ex for ExitBootServices. Code = %r\n", __FUNCTION__, Status));
++    goto Exit;
+   }
+ 
++  // BDS may attempt ConIn binding before RenderingEngine/SWM is ready.
++  Status = OSKRegisterWindowManagerNotify ();
++
+ Exit:
+   return Status;
+ }
+diff --git a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
+index d96c3b01..63562098 100644
+--- a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
++++ b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
+@@ -54,6 +54,7 @@
+   gEfiGraphicsOutputProtocolGuid    # CONSUMES
+   gEfiHiiFontProtocolGuid           # CONSUMES
+   gMsSWMProtocolGuid                # CONSUMES
++  gMsSREProtocolGuid                # CONSUMES
+ 
+   gMsOSKProtocolGuid                # PRODUCES
+   gEfiSimpleTextInProtocolGuid      # PRODUCES
+diff --git a/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c b/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c
+index 56033065..9002ba66 100644
+--- a/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c
++++ b/MsGraphicsPkg/SimpleWindowManagerDxe/WindowManager.c
+@@ -44,6 +44,7 @@ EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *mSimpleTextInEx;
+ 
+ EFI_EVENT                      mGopRegisterEvent;
+ VOID                           *mGopRegistration;
++VOID                           *mSreRegistration;
+ WINMGR_CONTEXT                 mSWM;
+ EFI_EVENT                      mSWMWatchListTimerEvent;
+ EFI_ABSOLUTE_POINTER_MODE      mAbsPointerMode;
+@@ -1289,17 +1290,8 @@ DriverInitStage2 (
+   // Determine if the Simple Rendering Engine Protocol is available on the same Console Out handle.  The
+   // Rendering Engine driver provides both Graphics Output and Rendering Engine protocols.
+   //
+-  if (NULL == mRenderingEngine) {
+-    Status = gBS->LocateProtocol (
+-                    &gMsSREProtocolGuid,
+-                    NULL,
+-                    (VOID **)&mRenderingEngine
+-                    );
+-
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "ERROR [SWM]: Failed to find Rendering Engine after finding GOP (%r).\r\n", Status));
+-      goto Exit;
+-    }
++  if ((mGop == NULL) || (mRenderingEngine == NULL)) {
++    return EFI_NOT_READY;
+   }
+ 
+   // Determine if the Font Protocol is available
+@@ -1490,6 +1482,54 @@ Exit:
+   @retval None.
+ 
+ **/
++STATIC EFI_STATUS
++LocateRenderingDisplay (
++  OUT EFI_GRAPHICS_OUTPUT_PROTOCOL  **Gop,
++  OUT MS_RENDERING_ENGINE_PROTOCOL  **RenderingEngine
++  )
++{
++  EFI_HANDLE                    *Handles = NULL;
++  UINTN                         Count;
++  UINTN                         Index;
++  EFI_STATUS                    Status;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL   *Candidate;
++  MS_RENDERING_ENGINE_PROTOCOL   *Engine;
++
++  *Gop = NULL;
++  *RenderingEngine = NULL;
++  Status = gBS->LocateHandleBuffer (ByProtocol, &gMsSREProtocolGuid,
++                                   NULL, &Count, &Handles);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  Status = EFI_NOT_FOUND;
++  for (Index = 0; Index < Count; Index++) {
++    if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiGraphicsOutputProtocolGuid,
++                                       (VOID **)&Candidate)) ||
++        EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gMsSREProtocolGuid,
++                                       (VOID **)&Engine)) ||
++        (Candidate == NULL) || (Candidate->Mode == NULL) ||
++        (Candidate->Mode->Info == NULL) || (Engine == NULL)) {
++      continue;
++    }
++
++    if (*Gop != NULL) {
++      *Gop = NULL;
++      *RenderingEngine = NULL;
++      Status = EFI_UNSUPPORTED;
++      break;
++    }
++
++    *Gop = Candidate;
++    *RenderingEngine = Engine;
++    Status = EFI_SUCCESS;
++  }
++
++  FreePool (Handles);
++  return Status;
++}
++
+ VOID
+ EFIAPI
+ GopRegisteredCallback (
+@@ -1505,30 +1545,10 @@ GopRegisteredCallback (
+     goto Exit;
+   }
+ 
+-  // Determine if the Graphics Output Protocol is available on the Console Out handle.
+-  //
+-  Status = gBS->LocateProtocol (
+-                  &gEfiGraphicsOutputProtocolGuid,
+-                  NULL,
+-                  (VOID **)&mGop
+-                  );
++  // ConSplitter's GOP is virtual. Use the GOP on the rendering engine handle.
++  Status = LocateRenderingDisplay (&mGop, &mRenderingEngine);
+ 
+   if (EFI_ERROR (Status)) {
+-    mGop = NULL;
+-    goto Exit;
+-  }
+-
+-  // Determine if the Simple Rendering Engine Protocol is available on the same Console Out handle.  The
+-  // Rendering Engine driver provides both Graphics Output and Rendering Engine protocols.
+-  //
+-  Status = gBS->LocateProtocol (
+-                  &gMsSREProtocolGuid,
+-                  NULL,
+-                  (VOID **)&mRenderingEngine
+-                  );
+-
+-  if (EFI_ERROR (Status)) {
+-    mGop = NULL;
+     goto Exit;
+   }
+ 
+@@ -1550,6 +1570,12 @@ GopRegisteredCallback (
+     goto Exit;
+   }
+ 
++  DEBUG ((DEBUG_INIT, "SWM: rendering display initialized\n"));
++  if (mGopRegisterEvent != NULL) {
++    gBS->CloseEvent (mGopRegisterEvent);
++    mGopRegisterEvent = NULL;
++  }
++
+ Exit:
+ 
+   return;
+@@ -1581,29 +1607,9 @@ DriverInit (
+   // Acquire access to the current theme.
+   mTheme = MsUiGetPlatformTheme ();
+ 
+-  // Determine if the Graphics Output Protocol is available on the Console Out handle.
+-  //
+-  // NOTE: Since we use the Driver Binding Protocol to catch Absolute Pointer Protocol provider registrations
+-  // and removals, our load order can't be based on Depex.  As such, we may load before GOP has been registered
+-  // in which case we need to register for GOP registration notifications to perform the latter half of our driver
+-  // initialization.  If we're lucky and GOP is available now, we can do it all here in one pass.
+-  //
+-  Status = gBS->HandleProtocol (
+-                  gST->ConsoleOutHandle,
+-                  &gEfiGraphicsOutputProtocolGuid,
+-                  (VOID **)&mGop
+-                  );
+-
+-  if (!EFI_ERROR (Status)) {
+-    // Graphics Output Protocol is available now, complete driver initialization.
+-    //
+-    Status = DriverInitStage2 (ImageHandle);
+-    goto Exit;
+-  }
+-
+-  // Graphics Output Protocol isn't availble now. Register for Graphics Output Protocol registration notifications.
+-  //
++  // Watch both protocols and inspect already published rendering displays.
+   mGop = NULL;
++  mRenderingEngine = NULL;
+ 
+   Status = gBS->CreateEvent (
+                   EVT_NOTIFY_SIGNAL,
+@@ -1629,8 +1635,19 @@ DriverInit (
+     goto Exit;
+   }
+ 
+-Exit:
++  Status = gBS->RegisterProtocolNotify (&gMsSREProtocolGuid, mGopRegisterEvent,
++                                       &mSreRegistration);
++  if (EFI_ERROR (Status)) {
++    goto Exit;
++  }
++
++  Status = gBS->SignalEvent (mGopRegisterEvent);
+ 
++Exit:
++  if (EFI_ERROR (Status) && (mGopRegisterEvent != NULL)) {
++    gBS->CloseEvent (mGopRegisterEvent);
++    mGopRegisterEvent = NULL;
++  }
+   return Status;
+ }
+ 
+@@ -1652,6 +1669,9 @@ DriverCleanUp (
+   //
+   if (NULL != mGopRegisterEvent) {
+     Status = gBS->CloseEvent (mGopRegisterEvent);
++    if (!EFI_ERROR (Status)) {
++      mGopRegisterEvent = NULL;
++    }
+   }
+ 
+   // Cancel and clean-up watchlist timer.
+diff --git a/MsWheaPkg/HwErrBert/HwErrorBert.c b/MsWheaPkg/HwErrBert/HwErrorBert.c
+index c4c42bdc..a8fb8294 100644
+--- a/MsWheaPkg/HwErrBert/HwErrorBert.c
++++ b/MsWheaPkg/HwErrBert/HwErrorBert.c
+@@ -240,10 +240,11 @@ GenerateVariableList (
+ 
+         CurrentSize = (UINTN)&BertVars[Offset + 1] - (UINTN)CurrentName;
+ 
+-        if (CurrentSize <= sizeof (CHAR16)) {
+-          // This should just be a null terminator, EOF reached...
+-          DEBUG ((DEBUG_WARN, "%a PCD ended with a ';' sign.\n", __FUNCTION__));
+-          break;
++        if (CurrentSize <= sizeof (CHAR16)) {
++          // An empty PCD is the normal way to disable optional BERT
++          // variable collection.  A separator after a real name is also an
++          // end marker, so stop without emitting a spurious warning.
++          break;
+         }
+ 
+         DummyVarSize = 0;
+@@ -268,11 +269,11 @@ GenerateVariableList (
+             goto cleanup;
+           }
+ 
+-          mVarGuidList = ReallocatePool (
+-                           VarNameUnicodeCount * sizeof (CHAR16),
+-                           VarNameUnicodeCount * sizeof (CHAR16) + CurrentSize,
+-                           mVarGuidList
+-                           );
++          mVarGuidList = ReallocatePool (
++                           mVarNameListCount * sizeof (EFI_GUID),
++                           (mVarNameListCount + 1) * sizeof (EFI_GUID),
++                           mVarGuidList
++                           );
+           if (mVarGuidList == NULL) {
+             DEBUG ((DEBUG_ERROR, "%a - %d\n", __FUNCTION__, __LINE__));
+             Status = EFI_OUT_OF_RESOURCES;
+@@ -280,7 +281,7 @@ GenerateVariableList (
+           }
+ 
+           StrCpyS (&mVarNameList[VarNameUnicodeCount], CurrentSize / sizeof (CHAR16), CurrentName);
+-          CopyMem (&mVarGuidList[mVarNameListCount], FixedPcdGetPtr (PcdBertEntriesVariableGuid), sizeof (EFI_GUID));
++          CopyMem (&mVarGuidList[mVarNameListCount], FixedPcdGetPtr (PcdBertEntriesVariableGuid), sizeof (EFI_GUID));
+           VarNameUnicodeCount += CurrentSize / sizeof (CHAR16);
+           mVarNameListCount++;
+         } else if (Status != EFI_NOT_FOUND) {

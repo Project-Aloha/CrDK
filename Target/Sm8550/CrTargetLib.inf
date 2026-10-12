@@ -1,0 +1,26 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CrTargetSm8550Lib
+  FILE_GUID                      = ee358a38-f405-44e2-929e-675c22d640a3
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = CrTargetLib
+
+[Sources]
+  CrTarget.c
+  CrGpioTarget.c
+  CrPdcTarget.c
+  CrRpmhTarget.c
+  CrDebugUartTarget.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+
+[LibraryClasses]
+  PcdLib
+
+[FixedPcd]
+  # A board must explicitly admit the inherited UART7 before enabling it.
+  gMUCommonCrPkgTokenSpaceGuid.PcdUartSerialBase|0

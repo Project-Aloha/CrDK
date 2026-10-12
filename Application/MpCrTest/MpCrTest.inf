@@ -1,0 +1,25 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = MpCrTest
+  FILE_GUID = f9314e04-b6d4-40d2-a7c3-106074dd70d5
+  MODULE_TYPE = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT = UefiMain
+
+[Sources]
+  MpCrTest.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  ArmPkg/ArmPkg.dec
+
+[LibraryClasses]
+  ArmLib
+  BaseLib
+  MemoryAllocationLib
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+
+[Protocols]
+  gEfiMpServiceProtocolGuid ## CONSUMES

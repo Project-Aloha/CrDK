@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "purpose": "Explicit platform fork of the minimal complete INF module closure; functional source bytes unchanged at relocation",
+  "upstream_repository": "MU_BASECORE",
+  "upstream_commit": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "original_module": "MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf",
+  "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf",
+  "file_guid": "0A66E322-3740-4cce-AD62-BD172CECCA35",
+  "base_name": "ScsiDisk",
+  "patch_sha256": "e785edddd6ca868c3a8e847100350c62b540e54ae16dafeb079a6ff578568b6b",
+  "files": [
+    {
+      "file": "ComponentName.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ComponentName.c",
+      "source_sha256": "d13dc86a62f491027f34c425c55a49409aaff65b13fb6da6c90d772cc77b826c",
+      "upstream_sha256": "d13dc86a62f491027f34c425c55a49409aaff65b13fb6da6c90d772cc77b826c",
+      "fork_sha256": "d13dc86a62f491027f34c425c55a49409aaff65b13fb6da6c90d772cc77b826c",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "ScsiDisk.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c",
+      "source_sha256": "faf4d0f2239e65ecf7b1562c2bdaf501b840763881647597cadf836dcd4416a5",
+      "upstream_sha256": "e51af28d4aea536855ee85fbf2d8411df3b275104413770e9e6ba75591085f81",
+      "fork_sha256": "c4f7c986e7dc2873e260a67bdb19844dfd0a316dd4144979736fc21c166e25b4",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Local SBC Block Limits wire layout and module source closure"
+    },
+    {
+      "file": "ScsiDisk.h",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.h",
+      "source_sha256": "3f53ae45c494bb15e61103c52e28ee2dbf616701cfe650f5929a4b41d7926b24",
+      "upstream_sha256": "3f53ae45c494bb15e61103c52e28ee2dbf616701cfe650f5929a4b41d7926b24",
+      "fork_sha256": "9f1c6e8107924806fd77515ab287c2d0074125fb2542cb800236d77d9f3e4abd",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Local SBC Block Limits wire layout and module source closure"
+    },
+    {
+      "file": "ScsiDisk.uni",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.uni",
+      "source_sha256": "e0a17997f066b09775d3c8774e348c8c0f92817f5dcf7b12e93630c9e50fd992",
+      "upstream_sha256": "e0a17997f066b09775d3c8774e348c8c0f92817f5dcf7b12e93630c9e50fd992",
+      "fork_sha256": "e0a17997f066b09775d3c8774e348c8c0f92817f5dcf7b12e93630c9e50fd992",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "ScsiDiskDxe.inf",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf",
+      "source_sha256": "2308ac24632ff081a3eb09eb252248e5b009e7ef5319aec2ce480476eb618afc",
+      "upstream_sha256": "2308ac24632ff081a3eb09eb252248e5b009e7ef5319aec2ce480476eb618afc",
+      "fork_sha256": "4ab22df2a0cd19d8edc920311fcc569044ce207eedef5adaa12a407592ab98de",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Local SBC Block Limits wire layout and module source closure"
+    },
+    {
+      "file": "ScsiDiskExtra.uni",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskExtra.uni",
+      "source_sha256": "b156abf82e1dbcf66e10cbf3151ea5009d28cc04009ac8dced3c65f13ca6043b",
+      "upstream_sha256": "b156abf82e1dbcf66e10cbf3151ea5009d28cc04009ac8dced3c65f13ca6043b",
+      "fork_sha256": "b156abf82e1dbcf66e10cbf3151ea5009d28cc04009ac8dced3c65f13ca6043b",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "ScsiBlockLimits.h",
+      "source_path": "MU_BASECORE/MdePkg/Include/IndustryStandard/Scsi.h",
+      "upstream_sha256": "41f5c4badb10a0571297d5c8807d2933a6109e9eab4e7a50ba0c97dd498791ae",
+      "fork_sha256": "095de849acce3737bc8d75b5035f475ca28b32299eab92132e7c35f820a7f64c",
+      "local_behavior_delta": true,
+      "post_relocation_edit": "Private corrected Block Limits declaration derived from the existing MU header"
+    }
+  ],
+  "post_relocation_changes": [
+    "Use local 64-byte SBC Block Limits layout instead of the pinned MU 60-byte declaration; MU headers remain unchanged."
+  ]
+}

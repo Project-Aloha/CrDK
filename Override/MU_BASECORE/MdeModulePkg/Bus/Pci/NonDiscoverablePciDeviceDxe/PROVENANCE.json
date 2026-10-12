@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "purpose": "Explicit platform fork of the minimal complete INF module closure; functional source bytes unchanged at relocation",
+  "upstream_repository": "MU_BASECORE",
+  "upstream_commit": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+  "original_module": "MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf",
+  "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf",
+  "file_guid": "71fd84cd-353b-464d-b7a4-6ea7b96995cb",
+  "base_name": "NonDiscoverablePciDeviceDxe",
+  "patch_sha256": "45332251607b4a31164eac7900ae98765b2c0c1cd988f2ff34fe1d1eb44ceda0",
+  "files": [
+    {
+      "file": "ComponentName.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/ComponentName.c",
+      "source_sha256": "8e790e98860ade9d6e8a7ffee6edd4796b59b99cf6804ecfa6ba688befe8149c",
+      "upstream_sha256": "8e790e98860ade9d6e8a7ffee6edd4796b59b99cf6804ecfa6ba688befe8149c",
+      "fork_sha256": "8e790e98860ade9d6e8a7ffee6edd4796b59b99cf6804ecfa6ba688befe8149c",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "NonDiscoverablePciDeviceDxe.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.c",
+      "source_sha256": "23e5cf1da4fd4a5f5e7385cc17cd00a1c897b1c73b67b68ce62101cd1838a9b8",
+      "upstream_sha256": "23e5cf1da4fd4a5f5e7385cc17cd00a1c897b1c73b67b68ce62101cd1838a9b8",
+      "fork_sha256": "23e5cf1da4fd4a5f5e7385cc17cd00a1c897b1c73b67b68ce62101cd1838a9b8",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "NonDiscoverablePciDeviceDxe.inf",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf",
+      "source_sha256": "642b6760f9dc097e4137f9429a24b7ecb0a849cc04881436f1a1cdc2abba9371",
+      "upstream_sha256": "642b6760f9dc097e4137f9429a24b7ecb0a849cc04881436f1a1cdc2abba9371",
+      "fork_sha256": "642b6760f9dc097e4137f9429a24b7ecb0a849cc04881436f1a1cdc2abba9371",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "NonDiscoverablePciDeviceIo.c",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c",
+      "source_sha256": "9a0cb8c3db4e32553de1748aa5ca39690c53ddf02f8d5ab33788657e622fd5b0",
+      "upstream_sha256": "13953cb6e5c5e56a84166eb863a9a98acf29e280e9d17f7c29f58b5ac5376e26",
+      "fork_sha256": "9a0cb8c3db4e32553de1748aa5ca39690c53ddf02f8d5ab33788657e622fd5b0",
+      "local_behavior_delta": true,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    },
+    {
+      "file": "NonDiscoverablePciDeviceIo.h",
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.h",
+      "source_sha256": "3d619c308fabd82504aa5e9f63ca115d415208ca598c78f8c12ef6c7b038550f",
+      "upstream_sha256": "3d619c308fabd82504aa5e9f63ca115d415208ca598c78f8c12ef6c7b038550f",
+      "fork_sha256": "3d619c308fabd82504aa5e9f63ca115d415208ca598c78f8c12ef6c7b038550f",
+      "local_behavior_delta": false,
+      "relocation_only_edit": null,
+      "source_mode": "0o664",
+      "fork_mode": "0o664",
+      "upstream_mode": "0o644"
+    }
+  ]
+}

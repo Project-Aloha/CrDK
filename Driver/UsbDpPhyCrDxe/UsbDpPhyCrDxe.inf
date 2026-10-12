@@ -1,0 +1,34 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = UsbDpPhyCrDxe
+  FILE_GUID = 949d96be-bbe7-44f5-80bb-8088b04f7e14
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = UsbDpPhyCrEntryPoint
+[Sources]
+  UsbDpPhyCrDxe.c
+  Fsa4480.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UsbDpPhyCrLib
+[Protocols]
+  gEfiUsbDpPhyCrProtocolGuid ## PRODUCES
+  gEfiMdssHandoffProtocolGuid ## CONSUMES
+  gEfiI2cCrProtocolGuid ## CONSUMES
+  gEfiClockCrProtocolGuid ## CONSUMES
+  gEfiRpmhCrProtocolGuid ## CONSUMES
+[Depex]
+  gEfiMdssHandoffProtocolGuid AND gEfiI2cCrProtocolGuid AND gEfiClockCrProtocolGuid AND gEfiRpmhCrProtocolGuid

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[Defines]
+ INF_VERSION = 0x00010005
+ BASE_NAME = AdrenoRouteCrLib
+ FILE_GUID = a047caf9-0325-52f5-9983-ef261ff5613d
+ MODULE_TYPE = BASE
+ VERSION_STRING = 1.0
+ LIBRARY_CLASS = AdrenoRouteCrLib
+[Sources]
+ Route.c
+ Handoff.c
+ Boot.c
+[Packages]
+ MdePkg/MdePkg.dec
+ CranePkg/CranePkg.dec
+[LibraryClasses]
+ AdrenoStopCrLib

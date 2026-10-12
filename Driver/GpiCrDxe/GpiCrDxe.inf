@@ -10,19 +10,33 @@
   GpiCrDxe.c
 
 [Packages]
+  MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
 
 [LibraryClasses]
+  BaseMemoryLib
+  CacheMaintenanceLib
   CrDalLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  SynchronizationLib
+  TimerLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
+  UefiLib
 
 [Protocols]
   gEfiCrDalProtocolGuid ## CONSUMES
-  gQcomGpiInitProtocolGuid ## CONSUMES (MU GpiDxe)
   gEfiQupCrProtocolGuid ## CONSUMES
+  gEfiClockCrProtocolGuid ## CONSUMES
+  gEfiGpioCrProtocolGuid ## CONSUMES
+  gEdkiiIoMmuProtocolGuid ## CONSUMES
+  gEfiSmmuCrProtocolGuid ## CONSUMES
   gEfiGpiCrProtocolGuid ## PRODUCES
 
 [Depex]
-  gEfiCrDalProtocolGuid AND gQcomGpiInitProtocolGuid AND gEfiQupCrProtocolGuid
+  gEfiCrDalProtocolGuid AND gEfiQupCrProtocolGuid AND
+  gEfiClockCrProtocolGuid AND gEfiGpioCrProtocolGuid AND
+  gEdkiiIoMmuProtocolGuid AND gEfiSmmuCrProtocolGuid

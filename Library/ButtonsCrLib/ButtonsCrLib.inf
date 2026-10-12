@@ -1,0 +1,18 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = ButtonsCrLib
+  FILE_GUID = eec6a814-bad4-46b9-9c81-2e1f70171c64
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ButtonsCrLib
+[Sources]
+  Buttons.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  SpmiLib
+  PmicGpioLib

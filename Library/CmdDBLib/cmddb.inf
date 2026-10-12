@@ -22,7 +22,6 @@
   IoLib
   MemoryMapHelperLib
   PlatformMemoryMapLib
-  PlatformPrePiLib
 
 [Sources.common]
   cmddb.c

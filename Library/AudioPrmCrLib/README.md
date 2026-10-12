@@ -1,0 +1,11 @@
+# Retained ADSP PRM resource owner
+
+This GPL-2.0-only Crane core implements actual asynchronous request/release ownership for HDK8450's LPASS hardware core, digital-codec core and default TX/RX_TX/WSA_TX 19.2 MHz clocks. It contains no GLINK, PIL or token allocator. The permanent AP port3 provider supplies fresh source-qualified reservations and bounded admitted copies; the adapter serializes whole worker callbacks and forwards copied replies later.
+
+The exact source is [OnePlus SM8450 audio-kernel](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8450/tree/877203a7cf9b79973d44a9db716490f95d820110/vendor/qcom/opensource/audio-kernel), `dsp/audio_prm.c`, `include/dsp/audio_prm.h`, `asoc/codecs/audio-ext-clk-up.c`, and the waipio default-clock DT. Original licensing is retained in LICENSE. GPR has a24-byte header; core packets are60 bytes, clock requests76 and releases64. The host payload oracle directly compiles the original Qualcomm header.
+
+Each vote is journaled before Send. Only a matching dedicated PRM response confirms a grant or release. BASIC success, timeout, a transport End or a different ADSP generation does not. Unknown acceptance and nonzero PRM statuses retain uncertain effects because PRM permits partial failures. No blind request/release retry follows them; late exact successful replies can resolve pending/uncertain transactions while the same source remains admitted.
+
+Source loss seals further sends. Local transport callbacks and copied bytes can drain independently while this small owner remains in permanent/native storage. `Retired`, when supplied, must prove actual retirement of the exact old source. The Windows port3 integration currently supplies no synthetic retirement callback; unresolved effects remain quarantined. An empty owner can bind a fresh source after local closure. Tokens and permanent counter history belong to the external permanent namespace and never reset here.
+
+The core does not enable MMIO, load ADSP, provide PCM/DMA, or establish a playback endpoint. See `Tests/run_audio_prm_tests.py` for source-level native/NT sanitizer validation; actual provider composition and device validation are separate.

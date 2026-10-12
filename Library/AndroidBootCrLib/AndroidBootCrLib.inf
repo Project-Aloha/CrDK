@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AndroidBootCrLib
+  FILE_GUID = EFCF50BD-10B8-4A17-A83F-227B65C0A642
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AndroidBootCrLib
+[Sources]
+  AndroidBoot.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib
+  FdtLib

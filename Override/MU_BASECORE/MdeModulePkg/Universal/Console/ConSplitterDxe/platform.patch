@@ -1,0 +1,417 @@
+diff --git a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.c b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.c
+index 889ee93e8f..91d7f423d3 100644
+--- a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.c
++++ b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.c
+@@ -159,7 +159,9 @@ GLOBAL_REMOVE_IF_UNREFERENCED TEXT_OUT_SPLITTER_PRIVATE_DATA  mConOut = {
+   (TEXT_OUT_SPLITTER_QUERY_DATA *)NULL,
+   0,
+   (INT32 *)NULL,
+-  FALSE
++  FALSE,
++  NULL,
++  NULL
+ };
+ 
+ //
+@@ -204,7 +206,9 @@ GLOBAL_REMOVE_IF_UNREFERENCED TEXT_OUT_SPLITTER_PRIVATE_DATA  mStdErr = {
+   (TEXT_OUT_SPLITTER_QUERY_DATA *)NULL,
+   0,
+   (INT32 *)NULL,
+-  FALSE
++  FALSE,
++  NULL,
++  NULL
+ };
+ 
+ //
+@@ -1334,7 +1338,7 @@ ConSplitterConOutDriverBindingStart (
+   // If both ConOut and StdErr incorporate the same Text Out device,
+   // their MaxMode and QueryData should be the intersection of both.
+   //
+-  Status = ConSplitterTextOutAddDevice (&mConOut, TextOut, GraphicsOutput);
++  Status = ConSplitterTextOutAddDevice (&mConOut, TextOut, GraphicsOutput, ControllerHandle);
+   ConSplitterTextOutSetAttribute (&mConOut.TextOut, EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK));
+ 
+   if (GraphicsOutput != NULL) {
+@@ -1400,7 +1404,7 @@ ConSplitterStdErrDriverBindingStart (
+   // If both ConOut and StdErr incorporate the same Text Out device,
+   // their MaxMode and QueryData should be the intersection of both.
+   //
+-  Status = ConSplitterTextOutAddDevice (&mStdErr, TextOut, NULL);
++  Status = ConSplitterTextOutAddDevice (&mStdErr, TextOut, NULL, ControllerHandle);
+   ConSplitterTextOutSetAttribute (&mStdErr.TextOut, EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK));
+ 
+   return Status;
+@@ -1662,6 +1666,7 @@ ConSplitterConOutDriverBindingStop (
+ {
+   EFI_STATUS                       Status;
+   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *TextOut;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL     *RetiredPrimary = NULL;
+ 
+   if (NumberOfChildren == 0) {
+     return EFI_SUCCESS;
+@@ -1670,6 +1675,12 @@ ConSplitterConOutDriverBindingStop (
+   //
+   // Close Absolute Pointer protocol on controller handle and virtual handle.
+   //
++  if (ConSplitterPrimaryGopEnabled () && mConOut.PrimaryGopController == ControllerHandle) {
++    RetiredPrimary = mConOut.PrimaryGraphicsOutput;
++    mConOut.PrimaryGraphicsOutput = NULL;
++    ConSplitterSyncPrimaryGop (&mConOut);
++  }
++
+   Status = ConSplitterStop (
+              This,
+              ControllerHandle,
+@@ -1679,9 +1690,17 @@ ConSplitterConOutDriverBindingStop (
+              (VOID **)&TextOut
+              );
+   if (EFI_ERROR (Status)) {
++    mConOut.PrimaryGraphicsOutput = RetiredPrimary != NULL ? RetiredPrimary : mConOut.PrimaryGraphicsOutput;
++    if (RetiredPrimary != NULL) {
++      ConSplitterSyncPrimaryGop (&mConOut);
++    }
+     return Status;
+   }
+ 
++  if (RetiredPrimary != NULL) {
++    mConOut.PrimaryGopController = NULL;
++  }
++
+   //
+   // Remove this device from Text Out device list.
+   //
+@@ -2659,11 +2678,38 @@ ConSplitterGetIntersectionBetweenConOutAndStrErr (
+   return EFI_SUCCESS;
+ }
+ 
++/** Select only the configured single vendor-node physical display path. */
++BOOLEAN
++ConSplitterIsPrimaryGop (
++  IN EFI_HANDLE  ControllerHandle
++  )
++{
++  EFI_DEVICE_PATH_PROTOCOL  *Path;
++  CONST EFI_DEVICE_PATH_PROTOCOL  *End;
++  EFI_STATUS  Status;
++
++  if (ControllerHandle == NULL || !ConSplitterPrimaryGopEnabled ()) {
++    return FALSE;
++  }
++  Status = gBS->HandleProtocol (ControllerHandle, &gEfiDevicePathProtocolGuid, (VOID **)&Path);
++  if (Status != EFI_SUCCESS || Path == NULL ||
++      Path->Type != HARDWARE_DEVICE_PATH || Path->SubType != HW_VENDOR_DP ||
++      (Path->Length[0] | (Path->Length[1] << 8)) != sizeof (VENDOR_DEVICE_PATH)) {
++    return FALSE;
++  }
++  End = (CONST VOID *)((CONST UINT8 *)Path + sizeof (VENDOR_DEVICE_PATH));
++  return CompareGuid (&((CONST VENDOR_DEVICE_PATH *)Path)->Guid,
++                      FixedPcdGetPtr (PcdConSplitterPrimaryGopGuid)) &&
++         End->Type == END_DEVICE_PATH_TYPE && End->SubType == END_ENTIRE_DEVICE_PATH_SUBTYPE &&
++         (End->Length[0] | (End->Length[1] << 8)) == sizeof (*End);
++}
++
+ /**
+   Add Graphics Output modes into Consplitter Text Out list.
+ 
+   @param  Private               Text Out Splitter pointer.
+   @param  GraphicsOutput        Graphics Output protocol pointer.
++  @param  ControllerHandle      Actual bound display controller.
+ 
+   @retval EFI_SUCCESS           Output mode added successfully.
+   @retval other                 Failed to add output mode.
+@@ -2672,7 +2718,8 @@ ConSplitterGetIntersectionBetweenConOutAndStrErr (
+ EFI_STATUS
+ ConSplitterAddGraphicsOutputMode (
+   IN  TEXT_OUT_SPLITTER_PRIVATE_DATA  *Private,
+-  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL    *GraphicsOutput
++  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL    *GraphicsOutput,
++  IN  EFI_HANDLE                      ControllerHandle
+   )
+ {
+   EFI_STATUS                            Status;
+@@ -2690,6 +2737,37 @@ ConSplitterAddGraphicsOutputMode (
+ 
+   ASSERT (GraphicsOutput != NULL);
+ 
++  // An explicitly selected framebuffer is one physical output, not an
++  // aggregate framebuffer. Text output continues through every console.
++  if (ConSplitterPrimaryGopEnabled ()) {
++    if (ConSplitterIsPrimaryGop (ControllerHandle)) {
++      if (Private->PrimaryGopController != NULL &&
++          (Private->PrimaryGraphicsOutput == NULL || Private->PrimaryGraphicsOutput != GraphicsOutput ||
++           Private->PrimaryGopController != ControllerHandle)) {
++        // Keep the exact elected controller. This additional device remains a
++        // text console and is counted, but cannot replace its framebuffer.
++        DEBUG ((DEBUG_ERROR, "ConSplitter: reserved primary controller kept; additional GOP is independent\n"));
++      } else {
++        Private->PrimaryGraphicsOutput = GraphicsOutput;
++        Private->PrimaryGopController = ControllerHandle;
++      }
++    }
++    Private->CurrentNumberOfGraphicsOutput++;
++    Status = ConSplitterSyncPrimaryGop (Private);
++    if (Status == EFI_SUCCESS) {
++      DEBUG ((DEBUG_WARN, "ConSplitter: selected physical GOP %ux%u format=%u FB=%lx bytes=%lu outputs=%u\n",
++              Private->GraphicsOutput.Mode->Info->HorizontalResolution,
++              Private->GraphicsOutput.Mode->Info->VerticalResolution,
++              Private->GraphicsOutput.Mode->Info->PixelFormat,
++              Private->GraphicsOutput.Mode->FrameBufferBase,
++              (UINT64)Private->GraphicsOutput.Mode->FrameBufferSize,
++              (UINT32)Private->CurrentNumberOfGraphicsOutput));
++    }
++    // A non-primary output is still a valid text console. Its arrival cannot
++    // substitute a different framebuffer for the configured primary path.
++    return EFI_SUCCESS;
++  }
++
+   CurrentGraphicsOutputMode = Private->GraphicsOutput.Mode;
+ 
+   Index        = 0;
+@@ -3003,6 +3081,7 @@ ConsplitterSetConsoleOutMode (
+   @param  Private                  Text Out Splitter pointer.
+   @param  TextOut                  Simple Text Output protocol pointer.
+   @param  GraphicsOutput           Graphics Output protocol pointer.
++  @param  ControllerHandle         Actual bound display controller.
+ 
+   @retval EFI_SUCCESS              Text Output Device added successfully.
+   @retval EFI_OUT_OF_RESOURCES     Could not grow the buffer size.
+@@ -3012,7 +3091,8 @@ EFI_STATUS
+ ConSplitterTextOutAddDevice (
+   IN  TEXT_OUT_SPLITTER_PRIVATE_DATA   *Private,
+   IN  EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *TextOut,
+-  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL     *GraphicsOutput
++  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL     *GraphicsOutput,
++  IN  EFI_HANDLE                       ControllerHandle
+   )
+ {
+   EFI_STATUS                            Status;
+@@ -3053,6 +3133,7 @@ ConSplitterTextOutAddDevice (
+ 
+   TextAndGop->TextOut        = TextOut;
+   TextAndGop->GraphicsOutput = GraphicsOutput;
++  TextAndGop->ControllerHandle = ControllerHandle;
+ 
+   if (CurrentNumOfConsoles == 0) {
+     //
+@@ -3082,7 +3163,7 @@ ConSplitterTextOutAddDevice (
+   // This device display mode will be added into Graphics Ouput modes.
+   //
+   if (GraphicsOutput != NULL) {
+-    DeviceStatus = ConSplitterAddGraphicsOutputMode (Private, GraphicsOutput);
++    DeviceStatus = ConSplitterAddGraphicsOutputMode (Private, GraphicsOutput, ControllerHandle);
+   }
+ 
+   if (GraphicsOutput != NULL) {
+@@ -3153,6 +3234,15 @@ ConSplitterTextOutDeleteDevice (
+     if (TextOutList->TextOut == TextOut) {
+       if (TextOutList->GraphicsOutput != NULL) {
+         Private->CurrentNumberOfGraphicsOutput--;
++        if (ConSplitterPrimaryGopEnabled () &&
++            Private->PrimaryGraphicsOutput == TextOutList->GraphicsOutput &&
++            Private->PrimaryGopController == TextOutList->ControllerHandle) {
++          Private->PrimaryGraphicsOutput = NULL;
++          Private->PrimaryGopController = NULL;
++          // Close the forwarding path before the physical driver can retire.
++          // A different output never inherits this primary identity.
++          ConSplitterSyncPrimaryGop (Private);
++        }
+       }
+ 
+       CopyMem (TextOutList, TextOutList + 1, sizeof (TEXT_OUT_AND_GOP_DATA) * Index);
+diff --git a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.h b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.h
+index f6d90d5322..bd9a36ed74 100644
+--- a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.h
++++ b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitter.h
+@@ -182,6 +182,7 @@ typedef struct {
+ typedef struct {
+   EFI_GRAPHICS_OUTPUT_PROTOCOL       *GraphicsOutput;
+   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL    *TextOut;
++  EFI_HANDLE                        ControllerHandle;
+ } TEXT_OUT_AND_GOP_DATA;
+ 
+ //
+@@ -205,6 +206,8 @@ typedef struct {
+   INT32                                   *TextOutModeMap;
+ 
+   BOOLEAN                                 AddingConOutDevice;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL            *PrimaryGraphicsOutput;
++  EFI_HANDLE                              PrimaryGopController;
+ } TEXT_OUT_SPLITTER_PRIVATE_DATA;
+ 
+ #define TEXT_OUT_SPLITTER_PRIVATE_DATA_FROM_THIS(a) \
+@@ -1186,6 +1189,7 @@ ConSplitterSimplePointerDeleteDevice (
+   @param  Private                  Text Out Splitter pointer.
+   @param  TextOut                  Simple Text Output protocol pointer.
+   @param  GraphicsOutput           Graphics Output protocol pointer.
++  @param  ControllerHandle         Actual bound display controller.
+ 
+   @retval EFI_SUCCESS              Text Output Device added successfully.
+   @retval EFI_OUT_OF_RESOURCES     Could not grow the buffer size.
+@@ -1195,7 +1199,8 @@ EFI_STATUS
+ ConSplitterTextOutAddDevice (
+   IN  TEXT_OUT_SPLITTER_PRIVATE_DATA   *Private,
+   IN  EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *TextOut,
+-  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL     *GraphicsOutput
++  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL     *GraphicsOutput,
++  IN  EFI_HANDLE                       ControllerHandle
+   );
+ 
+ /**
+@@ -1852,4 +1857,19 @@ TextOutSetMode (
+   IN  UINTN                           ModeNumber
+   );
+ 
++BOOLEAN
++ConSplitterIsPrimaryGop (
++  IN EFI_HANDLE ControllerHandle
++  );
++
++BOOLEAN
++ConSplitterPrimaryGopEnabled (
++  VOID
++  );
++
++EFI_STATUS
++ConSplitterSyncPrimaryGop (
++  IN TEXT_OUT_SPLITTER_PRIVATE_DATA  *Private
++  );
++
+ #endif
+diff --git a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+index 156757aee6..998992c0b4 100644
+--- a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
++++ b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+@@ -71,6 +71,7 @@
+   gConnectConInEventGuid
+ 
+ [Protocols]
++  gEfiDevicePathProtocolGuid                    ## SOMETIMES_CONSUMES
+   ## PRODUCES
+   ## TO_START
+   gEfiSimplePointerProtocolGuid
+@@ -90,6 +91,9 @@
+   ## SOMETIMES_CONSUMES
+   gEfiGraphicsOutputProtocolGuid
+ 
++[FixedPcd]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdConSplitterPrimaryGopGuid
++
+ [FeaturePcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGopSupport   ## CONSUMES
+ 
+diff --git a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterGraphics.c b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterGraphics.c
+index 387b7aaf9d..10ae8c44d8 100644
+--- a/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterGraphics.c
++++ b/MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterGraphics.c
+@@ -9,6 +9,53 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include "ConSplitter.h"
+ 
++/** Return TRUE only for an explicit primary-framebuffer console policy. */
++BOOLEAN
++ConSplitterPrimaryGopEnabled (
++  VOID
++  )
++{
++  CONST EFI_GUID  Empty = { 0 };
++
++  return !CompareGuid (FixedPcdGetPtr (PcdConSplitterPrimaryGopGuid), &Empty);
++}
++
++/** Copy the selected physical mode without sharing writable mode storage. */
++EFI_STATUS
++ConSplitterSyncPrimaryGop (
++  IN TEXT_OUT_SPLITTER_PRIVATE_DATA  *Private
++  )
++{
++  EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE  *Mode;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE  *PhysicalMode;
++  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info;
++
++  Mode = Private->GraphicsOutput.Mode;
++  if (Mode == NULL || Mode->Info == NULL) {
++    return EFI_NOT_READY;
++  }
++
++  Info = Mode->Info;
++  PhysicalMode = Private->PrimaryGraphicsOutput == NULL ? NULL : Private->PrimaryGraphicsOutput->Mode;
++  if (PhysicalMode == NULL || PhysicalMode->Info == NULL ||
++      PhysicalMode->SizeOfInfo < sizeof (*Info) ||
++      PhysicalMode->MaxMode == 0 || PhysicalMode->Mode >= PhysicalMode->MaxMode) {
++    ZeroMem (Mode, sizeof (*Mode));
++    Mode->Info = Info;
++    ZeroMem (Info, sizeof (*Info));
++    Info->PixelFormat = PixelBltOnly;
++    Mode->SizeOfInfo = sizeof (*Info);
++    Mode->Mode = 0xffff;
++    return EFI_NOT_READY;
++  }
++
++  CopyMem (Mode, PhysicalMode, sizeof (*Mode));
++  Mode->Info = Info;
++  CopyMem (Info, PhysicalMode->Info, sizeof (*Info));
++  Mode->SizeOfInfo = sizeof (*Info);
++  return EFI_SUCCESS;
++}
++
+ CHAR16  mCrLfString[3] = { CHAR_CARRIAGE_RETURN, CHAR_LINEFEED, CHAR_NULL };
+ 
+ /**
+@@ -50,6 +97,14 @@ ConSplitterGraphicsOutputQueryMode (
+   //
+   Private = GRAPHICS_OUTPUT_SPLITTER_PRIVATE_DATA_FROM_THIS (This);
+ 
++  if (ConSplitterPrimaryGopEnabled ()) {
++    if (Private->PrimaryGraphicsOutput == NULL) {
++      return EFI_NOT_READY;
++    }
++    return Private->PrimaryGraphicsOutput->QueryMode (
++               Private->PrimaryGraphicsOutput, ModeNumber, SizeOfInfo, Info);
++  }
++
+   GraphicsOutput = NULL;
+ 
+   if (Private->CurrentNumberOfGraphicsOutput == 1) {
+@@ -118,11 +173,25 @@ ConSplitterGraphicsOutputSetMode (
+   UINTN                                 SizeOfInfo;
+   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info;
+ 
++  if (This == NULL || This->Mode == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
+   if (ModeNumber >= This->Mode->MaxMode) {
+     return EFI_UNSUPPORTED;
+   }
+ 
+   Private = GRAPHICS_OUTPUT_SPLITTER_PRIVATE_DATA_FROM_THIS (This);
++  if (ConSplitterPrimaryGopEnabled ()) {
++    if (Private->PrimaryGraphicsOutput == NULL) {
++      return EFI_NOT_READY;
++    }
++    Status = Private->PrimaryGraphicsOutput->SetMode (Private->PrimaryGraphicsOutput, ModeNumber);
++    ReturnStatus = ConSplitterSyncPrimaryGop (Private);
++    DEBUG ((DEBUG_WARN, "ConSplitter: primary GOP SetMode %u status=%r format=%u FB=%lx bytes=%lu\n",
++            ModeNumber, Status, This->Mode->Info->PixelFormat, This->Mode->FrameBufferBase,
++            (UINT64)This->Mode->FrameBufferSize));
++    return Status == EFI_SUCCESS ? ReturnStatus : Status;
++  }
+   Mode    = &Private->GraphicsOutputModeBuffer[ModeNumber];
+ 
+   ReturnStatus           = EFI_SUCCESS;
+@@ -253,6 +322,15 @@ ConSplitterGraphicsOutputBlt (
+ 
+   Private = GRAPHICS_OUTPUT_SPLITTER_PRIVATE_DATA_FROM_THIS (This);
+ 
++  if (ConSplitterPrimaryGopEnabled ()) {
++    if (Private->PrimaryGraphicsOutput == NULL) {
++      return EFI_NOT_READY;
++    }
++    return Private->PrimaryGraphicsOutput->Blt (
++               Private->PrimaryGraphicsOutput, BltBuffer, BltOperation,
++               SourceX, SourceY, DestinationX, DestinationY, Width, Height, Delta);
++  }
++
+   ReturnStatus = EFI_SUCCESS;
+ 
+   //

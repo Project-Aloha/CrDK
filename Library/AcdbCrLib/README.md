@@ -1,0 +1,11 @@
+# AcdbCrLib
+
+This portable, allocation-free library reads AudioReach ACDB type0 container framing and HEAD version1 metadata. It exposes chunk spans, codec triples and the declared OEM byte span. It does not yet query graph keys, decode calibration tables, program codecs, or send ADSP commands. There is no active UEFI or Windows consumer.
+
+The implementation is original bounded C under BSD-3-Clause, based on the file-format definitions in Qualcomm's [acdb_parser.c](https://github.com/AudioReach/audioreach-graphservices/blob/3094583c726710b66eb0204fc5d6a7b336d9e575/acdb/src/acdb_parser.c) and [acdb_parser.h](https://github.com/AudioReach/audioreach-graphservices/blob/3094583c726710b66eb0204fc5d6a7b336d9e575/acdb/inc/acdb_parser.h). The upstream copyright, license and disclaimer are preserved in LICENSE. No unchecked structure casts or upstream compound magic/type condition are reused.
+
+Caller-owned backing bytes must remain readable and immutable during each call and during subsequent use of returned offsets. Each API revalidates the entire framing and HEAD; it retains no pointer or validation handle. Input may be unaligned. Outputs require DWORD alignment and complete separation from backing storage, and every failure preserves outputs. Files larger than UINT32_MAX are rejected explicitly.
+
+The12-byte properties and8-byte chunk headers are little-endian. Chunks are contiguous without implied padding. HEAD codec count and OEM length are bounded before use. Unknown framed chunks are allowed, duplicate HEAD is rejected, and lookup rejects ambiguous duplicate matching chunk IDs. Indexed iteration can report repeated unknown chunks. File-version bytes are metadata only. Unknown HEAD versions/types return UNSUPPORTED. OEM bytes need not be NUL terminated. Real public fixtures include both42-byte and48-byte HEAD chunks; the latter carry six trailing bytes outside the OEM span, so HEAD trailing bytes are preserved rather than assigned invented semantics.
+
+Run `python3 Platforms/CranePkg/Tests/run_acdb_tests.py --output .tmp/acdb-tests`. It checks all16 pinned genuine upstream calibration containers and hostile mutations under native/NT ASan+UBSan. `check_acdb_arm64.py` compiles actual ARM64 EFI/WDK objects. The fixture inventory and attribution are in `Tests/Fixtures/AcdbCr`. No fixture is asserted to be stock HDK8450 calibration.

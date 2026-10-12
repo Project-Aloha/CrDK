@@ -1,0 +1,1002 @@
+diff --git a/EmbeddedPkg/Universal/MmcDxe/Mmc.c b/EmbeddedPkg/Universal/MmcDxe/Mmc.c
+index 7f4df56fc8..9f8e2c89b1 100644
+--- a/EmbeddedPkg/Universal/MmcDxe/Mmc.c
++++ b/EmbeddedPkg/Universal/MmcDxe/Mmc.c
+@@ -42,6 +42,24 @@ LIST_ENTRY  mMmcHostPool;
+ **/
+ 
+ EFI_EVENT  gCheckCardsEvent;
++STATIC BOOLEAN mCheckingCards;
++
++STATIC
++MMC_HOST_INSTANCE *
++FindMmcHost (
++  IN EFI_HANDLE Controller
++  )
++{
++  LIST_ENTRY *Link;
++  MMC_HOST_INSTANCE *Instance;
++  for (Link = mMmcHostPool.ForwardLink; Link != &mMmcHostPool; Link = Link->ForwardLink) {
++    Instance = MMC_HOST_INSTANCE_FROM_LINK (Link);
++    if (Instance->ControllerHandle == Controller) {
++      return Instance;
++    }
++  }
++  return NULL;
++}
+ 
+ /**
+   Initialize the MMC Host Pool to support multiple MMC devices
+@@ -76,109 +94,95 @@ RemoveMmcHost (
+   RemoveEntryList (&(MmcHostInstance->Link));
+ }
+ 
+-MMC_HOST_INSTANCE *
++EFI_STATUS
+ CreateMmcHostInstance (
+-  IN EFI_MMC_HOST_PROTOCOL  *MmcHost
++  IN MMC_HOST_INSTANCE *MmcHostInstance
+   )
+ {
+-  EFI_STATUS                Status;
+-  MMC_HOST_INSTANCE         *MmcHostInstance;
+-  EFI_DEVICE_PATH_PROTOCOL  *NewDevicePathNode;
+-  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+-
+-  MmcHostInstance = AllocateZeroPool (sizeof (MMC_HOST_INSTANCE));
+-  if (MmcHostInstance == NULL) {
+-    return NULL;
+-  }
+-
+-  MmcHostInstance->Signature = MMC_HOST_INSTANCE_SIGNATURE;
++  EFI_STATUS Status;
++  EFI_DEVICE_PATH_PROTOCOL *Node;
++  EFI_DEVICE_PATH_PROTOCOL End;
++  EFI_MMC_HOST_PROTOCOL *MmcHost;
+ 
++  MmcHost = MmcHostInstance->MmcHost;
+   MmcHostInstance->State = MmcHwInitializationState;
+-
+   MmcHostInstance->BlockIo.Media = AllocateCopyPool (sizeof (EFI_BLOCK_IO_MEDIA), &mMmcMediaTemplate);
+   if (MmcHostInstance->BlockIo.Media == NULL) {
+-    goto FREE_INSTANCE;
++    return EFI_OUT_OF_RESOURCES;
+   }
+-
+-  MmcHostInstance->BlockIo.Revision    = EFI_BLOCK_IO_INTERFACE_REVISION;
+-  MmcHostInstance->BlockIo.Reset       = MmcReset;
+-  MmcHostInstance->BlockIo.ReadBlocks  = MmcReadBlocks;
++  MmcHostInstance->BlockIo.Revision = EFI_BLOCK_IO_INTERFACE_REVISION;
++  MmcHostInstance->BlockIo.Reset = MmcReset;
++  MmcHostInstance->BlockIo.ReadBlocks = MmcReadBlocks;
+   MmcHostInstance->BlockIo.WriteBlocks = MmcWriteBlocks;
+   MmcHostInstance->BlockIo.FlushBlocks = MmcFlushBlocks;
+-
+-  MmcHostInstance->MmcHost = MmcHost;
+-
+-  // Create DevicePath for the new MMC Host
+-  Status = MmcHost->BuildDevicePath (MmcHost, &NewDevicePathNode);
+-  if (EFI_ERROR (Status)) {
+-    goto FREE_MEDIA;
++  Node = NULL;
++  Status = MmcHost->BuildDevicePath (MmcHost, &Node);
++  if (Status != EFI_SUCCESS) {
++    if (Node != NULL) { FreePool (Node); }
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+-
+-  DevicePath = (EFI_DEVICE_PATH_PROTOCOL *)AllocatePool (END_DEVICE_PATH_LENGTH);
+-  if (DevicePath == NULL) {
+-    goto FREE_MEDIA;
++  if (Node == NULL) {
++    return EFI_DEVICE_ERROR;
++  }
++  SetDevicePathEndNode (&End);
++  MmcHostInstance->DevicePath = AppendDevicePathNode (&End, Node);
++  FreePool (Node);
++  if (MmcHostInstance->DevicePath == NULL) {
++    return EFI_OUT_OF_RESOURCES;
+   }
+-
+-  SetDevicePathEndNode (DevicePath);
+-  MmcHostInstance->DevicePath = AppendDevicePathNode (DevicePath, NewDevicePathNode);
+-
+-  // Publish BlockIO protocol interface
+   Status = gBS->InstallMultipleProtocolInterfaces (
+                   &MmcHostInstance->MmcHandle,
+-                  &gEfiBlockIoProtocolGuid,
+-                  &MmcHostInstance->BlockIo,
+-                  &gEfiDevicePathProtocolGuid,
+-                  MmcHostInstance->DevicePath,
+-                  NULL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    goto FREE_DEVICE_PATH;
++                  &gEfiBlockIoProtocolGuid, &MmcHostInstance->BlockIo,
++                  &gEfiDevicePathProtocolGuid, MmcHostInstance->DevicePath,
++                  NULL);
++  if (Status == EFI_SUCCESS) {
++    MmcHostInstance->Published = TRUE;
+   }
+-
+-  return MmcHostInstance;
+-
+-FREE_DEVICE_PATH:
+-  FreePool (DevicePath);
+-
+-FREE_MEDIA:
+-  FreePool (MmcHostInstance->BlockIo.Media);
+-
+-FREE_INSTANCE:
+-  FreePool (MmcHostInstance);
+-
+-  return NULL;
++  return EFI_ERROR (Status) ? Status : (Status == EFI_SUCCESS ? EFI_SUCCESS : EFI_NOT_READY);
+ }
+ 
+ EFI_STATUS
+ DestroyMmcHostInstance (
+-  IN MMC_HOST_INSTANCE  *MmcHostInstance
++  IN MMC_HOST_INSTANCE *MmcHostInstance
+   )
+ {
+-  EFI_STATUS  Status;
++  EFI_STATUS Status;
+ 
+-  // Uninstall Protocol Interfaces
+-  Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  MmcHostInstance->MmcHandle,
+-                  &gEfiBlockIoProtocolGuid,
+-                  &(MmcHostInstance->BlockIo),
+-                  &gEfiDevicePathProtocolGuid,
+-                  MmcHostInstance->DevicePath,
+-                  NULL
+-                  );
+-  ASSERT_EFI_ERROR (Status);
+-
+-  // Free Memory allocated for the instance
+-  if (MmcHostInstance->BlockIo.Media) {
+-    FreePool (MmcHostInstance->BlockIo.Media);
++  /* Caller holds TPL_NOTIFY. Retain the exact instance on every failed
++     uninstall/close, including synchronous nested DisconnectController. */
++  if (MmcHostInstance->Busy || MmcHostInstance->CleanupActive || mCheckingCards) {
++    return EFI_NOT_READY;
+   }
+-
+-  if (MmcHostInstance->CardInfo.ECSDData) {
++  MmcHostInstance->Stopping = TRUE;
++  MmcHostInstance->CleanupActive = TRUE;
++  if (MmcHostInstance->Published) {
++    Status = gBS->UninstallMultipleProtocolInterfaces (
++                    MmcHostInstance->MmcHandle,
++                    &gEfiBlockIoProtocolGuid, &MmcHostInstance->BlockIo,
++                    &gEfiDevicePathProtocolGuid, MmcHostInstance->DevicePath,
++                    NULL);
++    if (Status != EFI_SUCCESS) { goto Retain; }
++    MmcHostInstance->Published = FALSE;
++  }
++  if (MmcHostInstance->HostOpened) {
++    Status = gBS->CloseProtocol (MmcHostInstance->ControllerHandle,
++                                &gEmbeddedMmcHostProtocolGuid,
++                                MmcHostInstance->DriverBindingHandle,
++                                MmcHostInstance->ControllerHandle);
++    if (Status != EFI_SUCCESS) { goto Retain; }
++    MmcHostInstance->HostOpened = FALSE;
++  }
++  if (MmcHostInstance->DevicePath != NULL) { FreePool (MmcHostInstance->DevicePath); }
++  if (MmcHostInstance->BlockIo.Media != NULL) { FreePool (MmcHostInstance->BlockIo.Media); }
++  if (MmcHostInstance->CardInfo.ECSDData != NULL) {
+     FreePages (MmcHostInstance->CardInfo.ECSDData, EFI_SIZE_TO_PAGES (sizeof (ECSD)));
+   }
+-
++  RemoveMmcHost (MmcHostInstance);
+   FreePool (MmcHostInstance);
+-
+-  return Status;
++  return EFI_SUCCESS;
++Retain:
++  MmcHostInstance->CleanupActive = FALSE;
++  return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+ }
+ 
+ /**
+@@ -258,59 +262,55 @@ MmcDriverBindingSupported (
+ EFI_STATUS
+ EFIAPI
+ MmcDriverBindingStart (
+-  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN EFI_HANDLE                   Controller,
+-  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN EFI_DEVICE_PATH_PROTOCOL *RemainingDevicePath
+   )
+ {
+-  EFI_STATUS             Status;
+-  MMC_HOST_INSTANCE      *MmcHostInstance;
+-  EFI_MMC_HOST_PROTOCOL  *MmcHost;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  MMC_HOST_INSTANCE *Instance;
+ 
+-  //
+-  // Check RemainingDevicePath validation
+-  //
+-  if (RemainingDevicePath != NULL) {
+-    //
+-    // Check if RemainingDevicePath is the End of Device Path Node,
+-    // if yes, return EFI_SUCCESS
+-    //
+-    if (IsDevicePathEnd (RemainingDevicePath)) {
+-      return EFI_SUCCESS;
+-    }
++  if ((RemainingDevicePath != NULL) && IsDevicePathEnd (RemainingDevicePath)) {
++    return EFI_SUCCESS;
+   }
+-
+-  //
+-  // Get the Mmc Host protocol
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEmbeddedMmcHostProtocolGuid,
+-                  (VOID **)&MmcHost,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_BY_DRIVER
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    if (Status == EFI_ALREADY_STARTED) {
+-      return EFI_SUCCESS;
+-    }
+-
+-    return Status;
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (mCheckingCards) { Status = EFI_NOT_READY; goto Exit; }
++  Instance = FindMmcHost (Controller);
++  if (Instance != NULL) {
++    if (!Instance->Stopping) { Status = EFI_ALREADY_STARTED; goto Exit; }
++    Status = DestroyMmcHostInstance (Instance);
++    if (Status != EFI_SUCCESS) { goto Exit; }
+   }
+-
+-  MmcHostInstance = CreateMmcHostInstance (MmcHost);
+-  if (MmcHostInstance != NULL) {
+-    // Add the handle to the pool
+-    InsertMmcHost (MmcHostInstance);
+-
+-    MmcHostInstance->Initialized = FALSE;
+-
+-    // Detect card presence now
+-    CheckCardsCallback (NULL, NULL);
++  /* Reserve tracking before acquiring BY_DRIVER ownership. A failed close
++     during partial startup must remain reachable for a later Stop retry. */
++  Instance = AllocateZeroPool (sizeof (*Instance));
++  if (Instance == NULL) { Status = EFI_OUT_OF_RESOURCES; goto Exit; }
++  Instance->Signature = MMC_HOST_INSTANCE_SIGNATURE;
++  Instance->ControllerHandle = Controller;
++  Instance->DriverBindingHandle = This->DriverBindingHandle;
++  Instance->Busy = TRUE;
++  InsertMmcHost (Instance);
++  Status = gBS->OpenProtocol (Controller, &gEmbeddedMmcHostProtocolGuid,
++                             (VOID **)&Instance->MmcHost, This->DriverBindingHandle,
++                             Controller, EFI_OPEN_PROTOCOL_BY_DRIVER);
++  if (Status == EFI_SUCCESS) {
++    Instance->HostOpened = TRUE;
++    Status = CreateMmcHostInstance (Instance);
+   }
+-
++  Instance->Busy = FALSE;
++  if (Status != EFI_SUCCESS) {
++    Instance->Stopping = TRUE;
++    DestroyMmcHostInstance (Instance);
++    if (!EFI_ERROR (Status)) { Status = EFI_NOT_READY; }
++    goto Exit;
++  }
++  gBS->RestoreTPL (OldTpl);
++  CheckCardsCallback (NULL, NULL);
+   return EFI_SUCCESS;
++Exit:
++  gBS->RestoreTPL (OldTpl);
++  return Status;
+ }
+ 
+ /**
+@@ -319,81 +319,99 @@ MmcDriverBindingStart (
+ EFI_STATUS
+ EFIAPI
+ MmcDriverBindingStop (
+-  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN  EFI_HANDLE                   Controller,
+-  IN  UINTN                        NumberOfChildren,
+-  IN  EFI_HANDLE                   *ChildHandleBuffer
++  IN EFI_DRIVER_BINDING_PROTOCOL *This,
++  IN EFI_HANDLE Controller,
++  IN UINTN NumberOfChildren,
++  IN EFI_HANDLE *ChildHandleBuffer
+   )
+ {
+-  EFI_STATUS         Status = EFI_SUCCESS;
+-  LIST_ENTRY         *CurrentLink;
+-  MMC_HOST_INSTANCE  *MmcHostInstance;
+-
+-  MMC_TRACE ("MmcDriverBindingStop()");
+-
+-  // For each MMC instance
+-  CurrentLink = mMmcHostPool.ForwardLink;
+-  while (CurrentLink != NULL && CurrentLink != &mMmcHostPool && (Status == EFI_SUCCESS)) {
+-    MmcHostInstance = MMC_HOST_INSTANCE_FROM_LINK (CurrentLink);
+-    ASSERT (MmcHostInstance != NULL);
+-
+-    // Close gEmbeddedMmcHostProtocolGuid
+-    Status = gBS->CloseProtocol (
+-                    Controller,
+-                    &gEmbeddedMmcHostProtocolGuid,
+-                    This->DriverBindingHandle,
+-                    Controller
+-                    );
+-
+-    // Remove MMC Host Instance from the pool
+-    RemoveMmcHost (MmcHostInstance);
+-
+-    // Destroy MmcHostInstance
+-    DestroyMmcHostInstance (MmcHostInstance);
+-  }
+-
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  MMC_HOST_INSTANCE *Instance;
++
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  Instance = FindMmcHost (Controller);
++  Status = Instance == NULL ? EFI_NOT_FOUND : DestroyMmcHostInstance (Instance);
++  gBS->RestoreTPL (OldTpl);
+   return Status;
+ }
+ 
+ VOID
+ EFIAPI
+ CheckCardsCallback (
+-  IN  EFI_EVENT  Event,
+-  IN  VOID       *Context
++  IN EFI_EVENT Event,
++  IN VOID *Context
+   )
+ {
+-  LIST_ENTRY         *CurrentLink;
+-  MMC_HOST_INSTANCE  *MmcHostInstance;
+-  EFI_STATUS         Status;
+-
+-  CurrentLink = mMmcHostPool.ForwardLink;
+-  while (CurrentLink != NULL && CurrentLink != &mMmcHostPool) {
+-    MmcHostInstance = MMC_HOST_INSTANCE_FROM_LINK (CurrentLink);
+-    ASSERT (MmcHostInstance != NULL);
+-
+-    if (MmcHostInstance->MmcHost->IsCardPresent (MmcHostInstance->MmcHost) == !MmcHostInstance->Initialized) {
+-      MmcHostInstance->State                       = MmcHwInitializationState;
+-      MmcHostInstance->BlockIo.Media->MediaPresent = !MmcHostInstance->Initialized;
+-      MmcHostInstance->Initialized                 = !MmcHostInstance->Initialized;
+-
+-      if (MmcHostInstance->BlockIo.Media->MediaPresent) {
+-        InitializeMmcDevice (MmcHostInstance);
++  LIST_ENTRY *Link;
++  MMC_HOST_INSTANCE *Instance;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  BOOLEAN Present;
++
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if (mCheckingCards) { gBS->RestoreTPL (OldTpl); return; }
++  mCheckingCards = TRUE;
++  gBS->RestoreTPL (OldTpl);
++  for (Link = mMmcHostPool.ForwardLink; Link != &mMmcHostPool; Link = Link->ForwardLink) {
++    Instance = MMC_HOST_INSTANCE_FROM_LINK (Link);
++    if (Instance->Stopping || Instance->Busy || !Instance->Published) { continue; }
++    Instance->Busy = TRUE;
++    Present = Instance->MmcHost->IsCardPresent (Instance->MmcHost);
++    if (!Present || !Instance->CardPresent) {
++      Instance->InitializationAttempts = 0;
++    }
++    Instance->CardPresent = Present;
++    if (!Present && Instance->Initialized) {
++      Instance->Initialized = FALSE;
++      Instance->BlockIo.Media->MediaPresent = FALSE;
++      Instance->BlockIo.Media->LastBlock = 0;
++      Instance->BlockIo.Media->BlockSize = 512;
++      Instance->BlockIo.Media->ReadOnly = FALSE;
++      Instance->BlockIo.Media->MediaId++;
++      Instance->State = MmcHwInitializationState;
++      Instance->ChangePending = TRUE;
++      DEBUG ((DEBUG_INIT, "MMC card removed: media=%u\n", Instance->BlockIo.Media->MediaId));
++    } else if (Present && !Instance->Initialized && (Instance->InitializationAttempts < 3)) {
++      Instance->InitializationAttempts++;
++      if (Instance->CardInfo.ECSDData != NULL) {
++        FreePages (Instance->CardInfo.ECSDData, EFI_SIZE_TO_PAGES (sizeof (ECSD)));
+       }
+-
+-      Status = gBS->ReinstallProtocolInterface (
+-                      (MmcHostInstance->MmcHandle),
+-                      &gEfiBlockIoProtocolGuid,
+-                      &(MmcHostInstance->BlockIo),
+-                      &(MmcHostInstance->BlockIo)
+-                      );
+-
+-      if (EFI_ERROR (Status)) {
+-        Print (L"MMC Card: Error reinstalling BlockIo interface\n");
++      ZeroMem (&Instance->CardInfo, sizeof (Instance->CardInfo));
++      Instance->State = MmcHwInitializationState;
++      Instance->BlockIo.Media->MediaPresent = FALSE;
++      Status = InitializeMmcDevice (Instance);
++      if (Status == EFI_SUCCESS) {
++        Instance->Initialized = TRUE;
++        Instance->BlockIo.Media->MediaPresent = TRUE;
++        Instance->ChangePending = TRUE;
++        DEBUG ((DEBUG_INIT, "MMC card ready: media=%u last-block=%Lu block-size=%u\n",
++          Instance->BlockIo.Media->MediaId, Instance->BlockIo.Media->LastBlock,
++          Instance->BlockIo.Media->BlockSize));
++      } else {
++        Instance->BlockIo.Media->MediaPresent = FALSE;
++        Instance->BlockIo.Media->LastBlock = 0;
++        Instance->BlockIo.Media->BlockSize = 512;
++        Instance->State = MmcHwInitializationState;
++        DEBUG ((DEBUG_ERROR, "MMC card initialization: %r\n", Status));
+       }
+     }
+-
+-    CurrentLink = CurrentLink->ForwardLink;
++    Instance->Busy = FALSE;
++    if (Instance->ChangePending) {
++      /* Reinstall synchronously reconnects partition/filesystem drivers.
++         Release I/O exclusion so those consumers can read the new media.
++         mCheckingCards still prevents nested scans and instance destruction.
++         Clear this notification before calling out: nested I/O may discover
++         another media change, which must survive a successful reinstall. */
++      Instance->ChangePending = FALSE;
++      Status = gBS->ReinstallProtocolInterface (Instance->MmcHandle,
++                    &gEfiBlockIoProtocolGuid, &Instance->BlockIo, &Instance->BlockIo);
++      if (Status != EFI_SUCCESS) { Instance->ChangePending = TRUE; }
++    }
+   }
++  gBS->RaiseTPL (TPL_NOTIFY);
++  mCheckingCards = FALSE;
++  gBS->RestoreTPL (OldTpl);
+ }
+ 
+ EFI_DRIVER_BINDING_PROTOCOL  gMmcDriverBinding = {
+diff --git a/EmbeddedPkg/Universal/MmcDxe/Mmc.h b/EmbeddedPkg/Universal/MmcDxe/Mmc.h
+index 23cabb7cf5..bceb84f6f1 100644
+--- a/EmbeddedPkg/Universal/MmcDxe/Mmc.h
++++ b/EmbeddedPkg/Universal/MmcDxe/Mmc.h
+@@ -39,7 +39,7 @@
+ #define MMC_CSD_GET_FILEFORMAT(Response)     ((Response[0] >> 10) & 0x3)
+ #define MMC_CSD_GET_FILEFORMATGRP(Response)  ((Response[0] >> 15) & 0x1)
+ #define MMC_CSD_GET_DEVICESIZE(csd)          (((Response[1] >> 30) & 0x3) | ((Response[2] & 0x3FF) << 2))
+-#define HC_MMC_CSD_GET_DEVICESIZE(Response)  ((Response[1] >> 16) | ((Response[2] & 0x40) << 16));
++#define HC_MMC_CSD_GET_DEVICESIZE(Response)  (((Response)[1] >> 16) | (((Response)[2] & 0x3F) << 16))
+ #define MMC_CSD_GET_DEVICESIZEMULT(csd)      ((Response[1] >> 15) & 0x7)
+ 
+ #define MMC_R0_READY_FOR_DATA  (1 << 8)
+@@ -338,6 +338,16 @@ typedef struct _MMC_HOST_INSTANCE {
+   EFI_MMC_HOST_PROTOCOL       *MmcHost;
+ 
+   BOOLEAN                     Initialized;
++  EFI_HANDLE                  ControllerHandle;
++  EFI_HANDLE                  DriverBindingHandle;
++  BOOLEAN                     HostOpened;
++  BOOLEAN                     Published;
++  BOOLEAN                     Busy;
++  BOOLEAN                     Stopping;
++  BOOLEAN                     CleanupActive;
++  BOOLEAN                     ChangePending;
++  BOOLEAN                     CardPresent;
++  UINTN                       InitializationAttempts;
+ } MMC_HOST_INSTANCE;
+ 
+ #define MMC_HOST_INSTANCE_SIGNATURE  SIGNATURE_32('m', 'm', 'c', 'h')
+diff --git a/EmbeddedPkg/Universal/MmcDxe/MmcBlockIo.c b/EmbeddedPkg/Universal/MmcDxe/MmcBlockIo.c
+index 7825a90f8d..32c32e5c81 100644
+--- a/EmbeddedPkg/Universal/MmcDxe/MmcBlockIo.c
++++ b/EmbeddedPkg/Universal/MmcDxe/MmcBlockIo.c
+@@ -16,8 +16,10 @@ MmcNotifyState (
+   IN MMC_STATE          State
+   )
+ {
+-  MmcHostInstance->State = State;
+-  return MmcHostInstance->MmcHost->NotifyState (MmcHostInstance->MmcHost, State);
++  EFI_STATUS Status;
++  Status = MmcHostInstance->MmcHost->NotifyState (MmcHostInstance->MmcHost, State);
++  if (Status == EFI_SUCCESS) { MmcHostInstance->State = State; }
++  return EFI_ERROR (Status) ? Status : (Status == EFI_SUCCESS ? EFI_SUCCESS : EFI_NOT_READY);
+ }
+ 
+ EFI_STATUS
+@@ -49,16 +51,17 @@ MmcGetCardStatus (
+     }
+ 
+     // Read Response
+-    MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1, Response);
++    Status = MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1, Response);
++    if (Status != EFI_SUCCESS) { return EFI_ERROR (Status) ? Status : EFI_NOT_READY; }
+     PrintResponseR1 (Response[0]);
+   }
+ 
+   return Status;
+ }
+ 
++STATIC
+ EFI_STATUS
+-EFIAPI
+-MmcReset (
++MmcResetWorker (
+   IN EFI_BLOCK_IO_PROTOCOL  *This,
+   IN BOOLEAN                ExtendedVerification
+   )
+@@ -74,6 +77,8 @@ MmcReset (
+ 
+   // If a card is not present then clear all media settings
+   if (!MmcHostInstance->MmcHost->IsCardPresent (MmcHostInstance->MmcHost)) {
++    MmcHostInstance->Initialized = FALSE;
++    MmcHostInstance->BlockIo.Media->MediaId++;
+     MmcHostInstance->BlockIo.Media->MediaPresent = FALSE;
+     MmcHostInstance->BlockIo.Media->LastBlock    = 0;
+     MmcHostInstance->BlockIo.Media->BlockSize    = 512;  // Should be zero but there is a bug in DiskIo
+@@ -81,6 +86,7 @@ MmcReset (
+ 
+     // Indicate that the driver requires initialization
+     MmcHostInstance->State = MmcHwInitializationState;
++    MmcHostInstance->ChangePending = TRUE;
+ 
+     return EFI_SUCCESS;
+   }
+@@ -90,6 +96,31 @@ MmcReset (
+   return EFI_SUCCESS;
+ }
+ 
++EFI_STATUS
++EFIAPI
++MmcReset (
++  IN EFI_BLOCK_IO_PROTOCOL *This,
++  IN BOOLEAN ExtendedVerification
++  )
++{
++  MMC_HOST_INSTANCE *Instance;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  Instance = MMC_HOST_INSTANCE_FROM_BLOCK_IO_THIS (This);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if ((OldTpl > TPL_CALLBACK) || Instance->Stopping || Instance->Busy) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  Instance->Busy = TRUE;
++  gBS->RestoreTPL (OldTpl);
++  Status = MmcResetWorker (This, ExtendedVerification);
++  gBS->RaiseTPL (TPL_NOTIFY);
++  Instance->Busy = FALSE;
++  gBS->RestoreTPL (OldTpl);
++  return Status;
++}
++
+ EFI_STATUS
+ MmcDetectCard (
+   EFI_MMC_HOST_PROTOCOL  *MmcHost
+@@ -113,16 +144,44 @@ MmcStopTransmission (
+   // Command 12 - Stop transmission (ends read or write)
+   // Normally only needed for streaming transfers or after error.
+   Status = MmcHost->SendCommand (MmcHost, MMC_CMD12, 0);
+-  if (!EFI_ERROR (Status)) {
+-    MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1b, Response);
++  if (Status == EFI_SUCCESS) {
++    Status = MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1b, Response);
+   }
+ 
+-  return Status;
++  return EFI_ERROR (Status) ? Status : (Status == EFI_SUCCESS ? EFI_SUCCESS : EFI_NOT_READY);
+ }
+ 
+ #define MMCI0_BLOCKLEN  512
+ #define MMCI0_TIMEOUT   10000
+ 
++STATIC
++EFI_STATUS
++MmcWaitForTransfer (
++  IN MMC_HOST_INSTANCE *Instance,
++  IN UINTN Attempts
++  )
++{
++  EFI_STATUS Status;
++  UINT32 Response[4];
++  UINTN Index;
++  EFI_MMC_HOST_PROTOCOL *Host;
++
++  Host = Instance->MmcHost;
++  for (Index = 0; Index < Attempts; ++Index) {
++    if (!Host->IsCardPresent (Host)) { return EFI_NO_MEDIA; }
++    Status = Host->SendCommand (Host, MMC_CMD13, (UINT32)Instance->CardInfo.RCA << 16);
++    if (Status != EFI_SUCCESS) { return EFI_ERROR (Status) ? Status : EFI_NOT_READY; }
++    Status = Host->ReceiveResponse (Host, MMC_RESPONSE_TYPE_R1, Response);
++    if (Status != EFI_SUCCESS) { return EFI_ERROR (Status) ? Status : EFI_NOT_READY; }
++    if ((Response[0] & MMC_R0_READY_FOR_DATA) &&
++        (MMC_R0_CURRENTSTATE (Response) == MMC_R0_STATE_TRAN)) {
++      return EFI_SUCCESS;
++    }
++    gBS->Stall (100);
++  }
++  return EFI_NOT_READY;
++}
++
+ STATIC
+ EFI_STATUS
+ MmcTransferBlock (
+@@ -137,8 +196,6 @@ MmcTransferBlock (
+ {
+   EFI_STATUS             Status;
+   UINTN                  CmdArg;
+-  INTN                   Timeout;
+-  UINT32                 Response[4];
+   MMC_HOST_INSTANCE      *MmcHostInstance;
+   EFI_MMC_HOST_PROTOCOL  *MmcHost;
+ 
+@@ -165,73 +222,58 @@ MmcTransferBlock (
+     }
+   }
+ 
+-  Status = MmcHost->SendCommand (MmcHost, Cmd, CmdArg);
+-  if (EFI_ERROR (Status)) {
++  if (CmdArg > MAX_UINT32) { return EFI_INVALID_PARAMETER; }
++  Status = MmcHost->SendCommand (MmcHost, Cmd, (UINT32)CmdArg);
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "%a(MMC_CMD%d): Error %r\n", __func__, Cmd, Status));
+-    return Status;
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+ 
+   if (Transfer == MMC_IOBLOCKS_READ) {
+     // Read Data
+     Status = MmcHost->ReadBlockData (MmcHost, Lba, BufferSize, Buffer);
+-    if (EFI_ERROR (Status)) {
++    if (Status != EFI_SUCCESS) {
+       DEBUG ((DEBUG_BLKIO, "%a(): Error Read Block Data and Status = %r\n", __func__, Status));
+       MmcStopTransmission (MmcHost);
+-      return Status;
++      return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+     }
+ 
+     Status = MmcNotifyState (MmcHostInstance, MmcProgrammingState);
+-    if (EFI_ERROR (Status)) {
++    if (Status != EFI_SUCCESS) {
+       DEBUG ((DEBUG_ERROR, "%a() : Error MmcProgrammingState\n", __func__));
+-      return Status;
++      return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+     }
+   } else {
+     // Write Data
+     Status = MmcHost->WriteBlockData (MmcHost, Lba, BufferSize, Buffer);
+-    if (EFI_ERROR (Status)) {
++    if (Status != EFI_SUCCESS) {
+       DEBUG ((DEBUG_BLKIO, "%a(): Error Write Block Data and Status = %r\n", __func__, Status));
+       MmcStopTransmission (MmcHost);
+-      return Status;
+-    }
+-  }
+-
+-  // Command 13 - Read status and wait for programming to complete (return to tran)
+-  Timeout     = MMCI0_TIMEOUT;
+-  CmdArg      = MmcHostInstance->CardInfo.RCA << 16;
+-  Response[0] = 0;
+-  while (  !(Response[0] & MMC_R0_READY_FOR_DATA)
+-        && (MMC_R0_CURRENTSTATE (Response) != MMC_R0_STATE_TRAN)
+-        && Timeout--)
+-  {
+-    Status = MmcHost->SendCommand (MmcHost, MMC_CMD13, CmdArg);
+-    if (!EFI_ERROR (Status)) {
+-      MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1, Response);
+-      if (Response[0] & MMC_R0_READY_FOR_DATA) {
+-        break;  // Prevents delay once finished
+-      }
++      return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+     }
+   }
+ 
++  /* A multi-block stream stays DATA/RCV until CMD12. Terminate it before
++     requiring READY+TRAN; a successful status response alone is insufficient. */
+   if (BufferSize > This->Media->BlockSize) {
+-    Status = MmcHost->SendCommand (MmcHost, MMC_CMD12, 0);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_BLKIO, "%a(): Error and Status:%r\n", __func__, Status));
+-    }
+-
+-    MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1b, Response);
++    Status = MmcStopTransmission (MmcHost);
++    if (Status != EFI_SUCCESS) { return Status; }
+   }
++  Status = MmcWaitForTransfer (MmcHostInstance, MMCI0_TIMEOUT);
++  if (Status != EFI_SUCCESS) { return Status; }
+ 
+   Status = MmcNotifyState (MmcHostInstance, MmcTransferState);
+-  if (EFI_ERROR (Status)) {
++  if (Status != EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "MmcIoBlocks() : Error MmcTransferState\n"));
+-    return Status;
++    return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
+   }
+ 
+   return Status;
+ }
+ 
++STATIC
+ EFI_STATUS
+-MmcIoBlocks (
++MmcIoBlocksWorker (
+   IN EFI_BLOCK_IO_PROTOCOL  *This,
+   IN UINTN                  Transfer,
+   IN UINT32                 MediaId,
+@@ -240,10 +282,7 @@ MmcIoBlocks (
+   OUT VOID                  *Buffer
+   )
+ {
+-  UINT32                 Response[4];
+   EFI_STATUS             Status;
+-  UINTN                  CmdArg;
+-  INTN                   Timeout;
+   UINTN                  Cmd;
+   MMC_HOST_INSTANCE      *MmcHostInstance;
+   EFI_MMC_HOST_PROTOCOL  *MmcHost;
+@@ -252,6 +291,7 @@ MmcIoBlocks (
+   UINTN                  ConsumeSize;
+   UINT32                 MaxBlock;
+   UINTN                  RemainingBlock;
++  BOOLEAN                MultiBlock;
+ 
+   BlockCount      = 1;
+   MmcHostInstance = MMC_HOST_INSTANCE_FROM_BLOCK_IO_THIS (This);
+@@ -282,12 +322,14 @@ MmcIoBlocks (
+     return EFI_BAD_BUFFER_SIZE;
+   }
+ 
+-  if (MMC_HOST_HAS_ISMULTIBLOCK (MmcHost) && MmcHost->IsMultiBlock (MmcHost)) {
++  MultiBlock = MMC_HOST_HAS_ISMULTIBLOCK (MmcHost) && MmcHost->IsMultiBlock (MmcHost);
++  if (MultiBlock) {
+     BlockCount = BufferSize / This->Media->BlockSize;
+   }
+ 
+   // All blocks must be within the device
+-  if ((Lba + (BufferSize / This->Media->BlockSize)) > (This->Media->LastBlock + 1)) {
++  if ((Lba > This->Media->LastBlock) ||
++      ((BufferSize / This->Media->BlockSize - 1) > (This->Media->LastBlock - Lba))) {
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+@@ -311,24 +353,8 @@ MmcIoBlocks (
+       BlockCount = MaxBlock;
+     }
+ 
+-    // Check if the Card is in Ready status
+-    CmdArg      = MmcHostInstance->CardInfo.RCA << 16;
+-    Response[0] = 0;
+-    Timeout     = 20;
+-    while (  (!(Response[0] & MMC_R0_READY_FOR_DATA))
+-          && (MMC_R0_CURRENTSTATE (Response) != MMC_R0_STATE_TRAN)
+-          && Timeout--)
+-    {
+-      Status = MmcHost->SendCommand (MmcHost, MMC_CMD13, CmdArg);
+-      if (!EFI_ERROR (Status)) {
+-        MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1, Response);
+-      }
+-    }
+-
+-    if (0 == Timeout) {
+-      DEBUG ((DEBUG_ERROR, "The Card is busy\n"));
+-      return EFI_NOT_READY;
+-    }
++    Status = MmcWaitForTransfer (MmcHostInstance, 20);
++    if (Status != EFI_SUCCESS) { return Status; }
+ 
+     if (Transfer == MMC_IOBLOCKS_READ) {
+       if (BlockCount == 1) {
+@@ -356,9 +382,10 @@ MmcIoBlocks (
+     Status = MmcTransferBlock (This, Cmd, Transfer, MediaId, Lba, ConsumeSize, Buffer);
+     if (EFI_ERROR (Status)) {
+       DEBUG ((DEBUG_ERROR, "%a(): Failed to transfer block and Status:%r\n", __func__, Status));
++      return Status;
+     }
+ 
+-    RemainingBlock                -= BlockCount;
++    if (MultiBlock) { RemainingBlock -= BlockCount; }
+     BytesRemainingToBeTransferred -= ConsumeSize;
+     if (BytesRemainingToBeTransferred > 0) {
+       Lba   += BlockCount;
+@@ -369,6 +396,34 @@ MmcIoBlocks (
+   return EFI_SUCCESS;
+ }
+ 
++EFI_STATUS
++MmcIoBlocks (
++  IN EFI_BLOCK_IO_PROTOCOL *This,
++  IN UINTN Transfer,
++  IN UINT32 MediaId,
++  IN EFI_LBA Lba,
++  IN UINTN BufferSize,
++  OUT VOID *Buffer
++  )
++{
++  MMC_HOST_INSTANCE *Instance;
++  EFI_STATUS Status;
++  EFI_TPL OldTpl;
++  Instance = MMC_HOST_INSTANCE_FROM_BLOCK_IO_THIS (This);
++  OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
++  if ((OldTpl > TPL_CALLBACK) || Instance->Stopping || Instance->Busy) {
++    gBS->RestoreTPL (OldTpl);
++    return EFI_NOT_READY;
++  }
++  Instance->Busy = TRUE;
++  gBS->RestoreTPL (OldTpl);
++  Status = MmcIoBlocksWorker (This, Transfer, MediaId, Lba, BufferSize, Buffer);
++  gBS->RaiseTPL (TPL_NOTIFY);
++  Instance->Busy = FALSE;
++  gBS->RestoreTPL (OldTpl);
++  return Status;
++}
++
+ EFI_STATUS
+ EFIAPI
+ MmcReadBlocks (
+diff --git a/EmbeddedPkg/Universal/MmcDxe/MmcIdentification.c b/EmbeddedPkg/Universal/MmcDxe/MmcIdentification.c
+index 57388d9f46..a73f8145cf 100755
+--- a/EmbeddedPkg/Universal/MmcDxe/MmcIdentification.c
++++ b/EmbeddedPkg/Universal/MmcDxe/MmcIdentification.c
+@@ -19,6 +19,8 @@ typedef union {
+ 
+ #define MAX_RETRY_COUNT        1000
+ #define CMD_RETRY_COUNT        20
++#define SD_OP_COND_RETRY_COUNT  100
++#define SD_OP_COND_DELAY_US     10000
+ #define RCA_SHIFT_OFFSET       16
+ #define EMMC_CARD_SIZE         512
+ #define EMMC_ECSD_SIZE_OFFSET  53
+@@ -251,6 +253,7 @@ EmmcIdentificationMode (
+ 
+ FreePageExit:
+   FreePages (MmcHostInstance->CardInfo.ECSDData, EFI_SIZE_TO_PAGES (sizeof (ECSD)));
++  MmcHostInstance->CardInfo.ECSDData = NULL;
+   return Status;
+ }
+ 
+@@ -350,15 +353,17 @@ InitializeSdMmcDevice (
+   UINT32                 Response[4];
+   UINT32                 Buffer[128];
+   UINT32                 Speed;
++  UINT32                 BusWidth;
+   UINTN                  BlockSize;
+-  UINTN                  CardSize;
+-  UINTN                  NumBlocks;
++  UINT64                 CardSize;
++  UINT64                 NumBlocks;
+   BOOLEAN                CccSwitch;
+   SCR                    Scr;
+   EFI_STATUS             Status;
+   EFI_MMC_HOST_PROTOCOL  *MmcHost;
+ 
+   Speed   = SD_DEFAULT_SPEED;
++  BusWidth = 1;
+   MmcHost = MmcHostInstance->MmcHost;
+ 
+   // Send a command to get Card specific data
+@@ -503,7 +508,7 @@ InitializeSdMmcDevice (
+ 
+         if ((Buffer[4] & SWITCH_CMD_SUCCESS_MASK) != 0x01000000) {
+           DEBUG ((DEBUG_ERROR, "Problem switching SD card into high-speed mode\n"));
+-          return Status;
++          return EFI_DEVICE_ERROR;
+         }
+       }
+     }
+@@ -523,10 +528,11 @@ InitializeSdMmcDevice (
+       DEBUG ((DEBUG_ERROR, "%a (MMC_CMD6): Error and Status = %r\n", __func__, Status));
+       return Status;
+     }
++    BusWidth = BUSWIDTH_4;
+   }
+ 
+   if (MMC_HOST_HAS_SETIOS (MmcHost)) {
+-    Status = MmcHost->SetIos (MmcHost, Speed, BUSWIDTH_4, EMMCBACKWARD);
++    Status = MmcHost->SetIos (MmcHost, Speed, BusWidth, EMMCBACKWARD);
+     if (EFI_ERROR (Status)) {
+       DEBUG ((DEBUG_ERROR, "%a (SetIos): Error and Status = %r\n", __func__, Status));
+       return Status;
+@@ -548,12 +554,14 @@ MmcIdentificationMode (
+   UINTN                  Timeout;
+   UINTN                  CmdArg;
+   BOOLEAN                IsHCS;
++  BOOLEAN                IsSd;
+   EFI_MMC_HOST_PROTOCOL  *MmcHost;
+   OCR_RESPONSE           OcrResponse;
+ 
+   MmcHost = MmcHostInstance->MmcHost;
+   CmdArg  = 0;
+   IsHCS   = FALSE;
++  IsSd    = FALSE;
+ 
+   if (MmcHost == NULL) {
+     return EFI_INVALID_PARAMETER;
+@@ -630,6 +638,9 @@ MmcIdentificationMode (
+   // Check which kind of card we are using. Ver2.00 or later SD Memory Card (PL180 is SD v1.1)
+   CmdArg = (0x0UL << 12 | BIT8 | 0xCEUL << 0);
+   Status = MmcHost->SendCommand (MmcHost, MMC_CMD8, CmdArg);
++  if (Status == EFI_NO_MEDIA) {
++    return Status;
++  }
+   if (Status == EFI_SUCCESS) {
+     DEBUG ((DEBUG_ERROR, "Card is SD2.0 => Supports high capacity\n"));
+     IsHCS  = TRUE;
+@@ -650,11 +661,15 @@ MmcIdentificationMode (
+   }
+ 
+   // We need to wait for the MMC or SD card is ready => (gCardInfo.OCRData.PowerUp == 1)
+-  Timeout = MAX_RETRY_COUNT;
++  Timeout = SD_OP_COND_RETRY_COUNT;
+   while (Timeout > 0) {
+     // SD Card or MMC Card ? CMD55 indicates to the card that the next command is an application specific command
+     Status = MmcHost->SendCommand (MmcHost, MMC_CMD55, 0);
++    if ((Status == EFI_NO_MEDIA) || (EFI_ERROR (Status) && (IsHCS || IsSd))) {
++      return Status;
++    }
+     if (Status == EFI_SUCCESS) {
++      IsSd = TRUE;
+       DEBUG ((DEBUG_INFO, "Card should be SD\n"));
+       if (IsHCS) {
+         MmcHostInstance->CardInfo.CardType = SD_CARD_2;
+@@ -663,7 +678,7 @@ MmcIdentificationMode (
+       }
+ 
+       // Note: The first time CmdArg will be zero
+-      CmdArg = ((UINTN *)&(MmcHostInstance->CardInfo.OCRData))[0];
++      CmdArg = ((UINT32 *)&(MmcHostInstance->CardInfo.OCRData))[0];
+       if (IsHCS) {
+         CmdArg |= BIT30;
+       }
+@@ -694,9 +709,16 @@ MmcIdentificationMode (
+       }
+     }
+ 
++    // Retry a valid OCR whose busy bit is clear, as Linux mmc_send_app_op_cond
++    // does. A failed transaction is not an OCR busy response: propagate it
++    // so the bounded insertion retry can restart the complete card sequence.
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
+     if (!EFI_ERROR (Status)) {
+       if (!MmcHostInstance->CardInfo.OCRData.PowerUp) {
+-        gBS->Stall (1);
++        gBS->Stall (SD_OP_COND_DELAY_US);
+         Timeout--;
+       } else {
+         if ((MmcHostInstance->CardInfo.CardType == SD_CARD_2) && (MmcHostInstance->CardInfo.OCRData.AccessMode & BIT1)) {
+@@ -707,7 +729,7 @@ MmcIdentificationMode (
+         break;  // The MMC/SD card is ready. Continue the Identification Mode
+       }
+     } else {
+-      gBS->Stall (1);
++      gBS->Stall (SD_OP_COND_DELAY_US);
+       Timeout--;
+     }
+   }
+@@ -750,7 +772,7 @@ MmcIdentificationMode (
+   // will be visible to the host in the response to the next command"
+   // The status returned for this CMD3 will be 2 - identification
+   //
+-  CmdArg = 1;
++  CmdArg = MmcHostInstance->CardInfo.CardType == MMC_CARD ? (1U << 16) : 0;
+   Status = MmcHost->SendCommand (MmcHost, MMC_CMD3, CmdArg);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "MmcIdentificationMode(MMC_CMD3): Error\n"));
+@@ -769,7 +791,7 @@ MmcIdentificationMode (
+   if (MmcHostInstance->CardInfo.CardType != MMC_CARD) {
+     MmcHostInstance->CardInfo.RCA = Response[0] >> 16;
+   } else {
+-    MmcHostInstance->CardInfo.RCA = CmdArg;
++    MmcHostInstance->CardInfo.RCA = CmdArg >> 16;
+   }
+ 
+   Status = MmcNotifyState (MmcHostInstance, MmcStandByState);

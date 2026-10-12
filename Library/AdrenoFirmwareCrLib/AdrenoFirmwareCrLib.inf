@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AdrenoFirmwareCrLib
+  FILE_GUID = BD052979-1B7D-4A99-98F2-A1DB45BB5510
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AdrenoFirmwareCrLib
+[Sources]
+  AdrenoFirmware.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

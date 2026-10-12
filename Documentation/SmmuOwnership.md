@@ -1,119 +1,89 @@
-# Waipio SMMU ownership
+# SMMU ownership and allocation
 
-This note defines the boundary between the Qualcomm `HALIOMMUDxe` binary and
-`SmmuCrDxe` on the two SM8450 Waipio targets. The conclusions below come from
-static analysis of the binaries currently packaged in this tree. They are not
-runtime proof from either board.
+The Crane DXE driver uses the existing SMMUv2 controller without resetting its global state.
+SM8450 calls `QcomMmuDetachHelperLib.MmuDetach()` in PrePi and preserves its
+explicit MDSS SID keep list. The helper verifies stream retirement and global
+TLB synchronization, then disables only eligible referenced banks. It preserves
+stage-2, foreign, kept and Qualcomm final banks; failed handoff stops SM8450
+before DXE. This early helper is distinct from the later per-domain DXE teardown
+described below; mocked tests do not prove successful hardware release.
+The caller must stop the device before attaching or detaching its DMA stream.
+An existing standard IOMMU provider is not, by itself, evidence that a particular
+stream has been configured; that requires an explicit platform ownership contract.
+See [the SM8450 source audit](Sm8450SmmuAudit.md) for the actual detach call paths,
+the early helper versus DXE per-domain detach, and the ExitBootServices failure limit.
 
-## Audited binaries
+## Linux and Android references
 
-| Target | SHA-256 | Private protocol GUID RVA | Protocol RVA |
-| --- | --- | --- | --- |
-| `qcom-hdk8450` | `e3419b374821c762dc8a95ab3615d9feff02157dddbe24f0f885438f197db7ae` | `0xe078` | `0xe0c8` |
-| `qcom-mtp8450` | `175149cda90137ab19686b6ef36d2de4ca3d0021e5cbe4fe7f262c315346ce45` | `0xe068` | `0xe0b8` |
+This allocation contract is based on public source:
 
-Both files are AArch64 PE32+ EFI boot-service drivers with a PE entry RVA of
-`0x1000`. Neither contains the EDKII IOMMU protocol GUID
-`4e939de9-d948-4b0f-88ed-e6e1ce517c1e`. Both contain Qualcomm's private
-protocol GUID `54b6d3b4-5d33-4f91-8600-6c41d5deb19a` and publish revision
-`0x00010002`.
+- Linux revision `40288c9206c17eb66a603262e06a58d300d0f279`,
+  `drivers/iommu/arm/arm-smmu/arm-smmu.c`: `arm_smmu_write_context_bank()`
+  disables an unassigned bank by clearing SCTLR. Teardown releases the software
+  allocation bitmap without clearing TTBR, TCR, MAIR, CBAR or CBA2R.
+- OnePlus SM8450 Android kernel revision
+  `449760504b3a75728eb60479f5b34dc51cb263ce`,
+  [arm-smmu.c](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8450/blob/449760504b3a75728eb60479f5b34dc51cb263ce/drivers/iommu/arm/arm-smmu/arm-smmu.c):
+  `arm_smmu_handoff_cbs()` preserves matched handoff streams and reserves the
+  context banks they reference in the allocation bitmap.
+- The same Android revision,
+  [arm-smmu-qcom.c](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8450/blob/449760504b3a75728eb60479f5b34dc51cb263ce/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c):
+  the Qualcomm handoff path reconstructs existing SMR/S2CR mappings and reserves
+  their context banks. Qualcomm bypass-bank handling also motivates retaining
+  the final bank rather than allocating it to a Crane domain.
 
-The private protocol's init callback at `0x16e8` returns a function table. In
-the HDK image that table starts at `0xe0e0`; the MTP data is shifted by 16 bytes
-but contains the same code RVAs. The relevant callbacks are:
+No binary disassembly or private driver source is required for this contract.
 
-| Operation | RVA |
-| --- | --- |
-| domain create / delete | `0x1928` / `0x19d0` |
-| attach / detach named component | `0x1b40` / `0x2858` |
-| configure domain | `0x2d98` |
-| configure bypass domain | `0x3028` |
-| map / unmap | `0x4408` / `0x4678` |
+## Allocation and preservation
 
-The semantic driver entry at `0x1738` installs the private protocol and then
-calls the IORT parser at `0x6f64` in the HDK image or `0x6f54` in the MTP image.
-The entry path does not call the SMMU register-access helpers and does not reset
-the global SMMU, allocate a context bank, or install an SMR. Hardware changes
-occur only when a client invokes the private function table.
+`SmmuAttach()` rejects every valid exact or wildcard SMR matching the requested
+SID, including existing bypass streams. It allocates an invalid SMR and a bank
+that is outside the stage-2 and final bypass ranges, has SCTLR.M clear, and is
+not referenced by any valid translating SMR/S2CR pair. Nonzero disabled-bank
+configuration is not allocation state and must not cause false exhaustion.
+ASIDs present in either TTBR of enabled or stream-bound banks remain reserved.
 
-## Context-bank behavior
+The selected bank's original stream and translation configuration is saved.
+An empty translation table is published and its ASID invalidated before the
+new valid stream match is installed. Mapping changes use break-before-make,
+cache publication and TLB synchronization. Unmapped DMA is not granted access.
 
-The context-bank allocator is the byte-identical routine at
-`0x2178..0x22e8`. It reads every CBAR and accepts a bank when its type is 0 or
-2, or when its type is 1 and VMID is `0xff`. It then programs type 1, VMID 0,
-memory attributes `0xf`, and the requested `CBA2R.VA64` value.
+Detach first removes the stream match and completes invalidation, then disables
+the bank, restores the saved configuration and invalid stream state, and restores
+the original disabled SCTLR value. Format/TCR controls precede TTBR restoration;
+short-descriptor contexts use their original 32-bit accesses. Required writes
+are verified before proceeding. Failed programming retains domain ownership and
+tables; a TLB timeout additionally stops further commands to the controller.
+The adapter serializes these operations and requires device quiescence before
+resource release. Retention during boot does not reserve arbitrary caller pages
+against OS reclamation after a failed ExitBootServices fence.
 
-Crane programs `CBAR=0x0001f300`. This is type 1 with a VMID other than
-`0xff`, so the audited HAL allocator does not regard a Crane bank as free.
-HAL domain deletion releases only context banks recorded in that HAL domain's
-private object list; its release helper at `0x1ab8` writes type 1 with VMID
-`0xff`. No path was found which sweeps or resets every context bank.
+SM8450 supplies MDSS ACTLR=1 for SID/mask 0x2800/0x402 from public Android DT.
+Only matching, newly owned banks are changed, verified and restored. The driver
+does not unlock secure/global ACTLR protection or modify foreign contexts.
 
-`SmmuLib` applies a more conservative rule in the other direction. It rejects
-a bank with a live SCTLR or residual CBAR, CBA2R, TTBR, TCR, or MAIR state and
-therefore preserves banks configured before `SmmuCrDxe` starts. The two
-allocators can consequently use distinct context banks if no third component
-resets the controller.
+This preserves observable hardware ownership. A separate firmware component
+must not concurrently claim the same disabled, unreferenced bank without a
+shared ownership contract. There is no fallback to global reset or bypass.
 
-## Stream-map behavior
+## Boot evidence and validation
 
-The HAL SMR allocator at `0x24f8..0x261c` scans all but the final SMR and uses
-the first entry whose valid bit is clear. It does not overwrite a valid Crane
-entry. It also does not check whether another valid entry already matches the
-same SID or an overlapping masked SID. A HAL attach for a SID already owned by
-Crane can therefore create a duplicate match with undefined selection between
-the two S2CRs.
+The HDK8450 log reports ID0 `0x4C017E71`, ID1 `0x6000004B`, and ID2 `0x00005111`:
+113 stream matching entries and 75 context banks. PCIe SIDs `0x1C00`/`0x1C80`
+and QUP SID `0x56` failed bank allocation under the previous all-zero-register
+predicate. This log does not contain the actual bank registers, so it does not
+prove stale configuration was the only source of exhaustion.
 
-The detach helper at `0x2b98..0x2cb8` is a stronger conflict. It scans from
-entry zero and clears the first SMR whose raw value equals `VALID | SID` (and
-the associated S2CR). It does not verify that the S2CR points to the context
-bank owned by the calling HAL domain. If HAL and Crane contain duplicate exact
-matches, a HAL detach can clear Crane's entry.
+The host regression uses that geometry with nonzero stale configuration in
+all banks. It checks reuse and detach restoration while preserving enabled,
+stream-bound and reserved banks, their ASIDs, and unrelated streams. It also
+checks genuine stream/bank exhaustion. The old predicate fails this fixture.
+These checks do not prove board DMA or device enumeration.
 
-Crane avoids the reverse collision: `SmmuAttach()` rejects any existing valid
-SMR which exactly or mask-matches the requested SID, selects only an invalid
-SMR, and records/restores the registers it changes. This protects mappings
-that existed before Crane attached, but it cannot prevent a later private-HAL
-client from creating or detaching a duplicate mapping.
-
-## Required ownership contract
-
-Coexistence is valid only under all of these conditions:
-
-1. `HALIOMMUDxe` runs before `SmmuCrDxe`, so Crane observes all mappings made
-   during HAL startup.
-2. Crane owns PCIe SIDs `0x1c00`, `0x1c01`, `0x1c80`, and `0x1c81` from attach
-   through detach. No caller may pass those SIDs, or an overlapping mask, to
-   the Qualcomm private HAL protocol during that interval.
-3. HAL clients may continue to own other valid SMRs and context banks. Crane
-   must continue to allocate only invalid SMRs and banks which pass its full
-   in-use check.
-4. Neither driver nor a later firmware component may globally reset the SMMU
-   or rewrite unmatched-stream policy while either owner has live mappings.
-5. A HAL detach/delete may operate only on resources allocated by that HAL
-   domain. This is a software contract because the audited detach helper does
-   not enforce ownership in hardware.
-
-The private HAL protocol is not an implementation of
-`EDKII_IOMMU_PROTOCOL`, so locating `gEdkiiIoMmuProtocolGuid` cannot detect its
-presence or prove that it owns PCIe streams. The current target setting
-`ExternalIoMmuOwnsPcieStreams = FALSE` reflects the binary evidence: HAL is
-present, but no audited startup path claims PCIe. The generic MU PCI stack does
-not call the private HAL protocol. Several packaged Qualcomm storage, USB, and
-display drivers contain its GUID, however, so private-protocol use for their
-own IORT components remains possible after Crane starts.
-
-## Evidence limits and runtime checks
-
-An older Qualcomm source tree was used to name the stripped routines and
-cross-check their data structures. It is not treated as the source used to
-build either Waipio binary. Addresses, comparisons, and register writes stated
-above were checked in both packaged binaries; high-level names derived only
-from the older source are not binary provenance.
-
-Board validation still needs register snapshots of CR0, every valid SMR/S2CR,
-and every used CBAR/CBA2R/context bank before HAL, before Crane, after PCIe
-attach, and after PCIe detach. It should also trace calls to the private attach
-and detach callbacks and verify that none resolves to the four PCIe SIDs while
-Crane owns them. A successful firmware build or link enumeration alone does
-not validate this ownership contract or DMA isolation.
+Boot diagnostics use DEBUG_ERROR for visibility with the existing DEBUG image
+mask. They record probe and allocation stages, SID/SMR/CB/ASID assignments,
+register readback failures, TLB synchronization and mapping outcomes. A
+bank-allocation failure reports bank configuration and exclusion reasons.
+The level carries diagnostic progress as well as errors. LT9611 FIFO/GPI/FIFO
+success, actual display output, and UFS/PCIe enumeration still require a new
+hardware boot.

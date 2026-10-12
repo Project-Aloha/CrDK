@@ -1,0 +1,15 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PmicTypeCCrLib
+  FILE_GUID = 09b7b79f-076e-43ec-9f42-985d35b65a60
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PmicTypeCCrLib
+[Sources]
+  PmicTypeC.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib

@@ -1,220 +1,139 @@
+/* Native IRQ convenience adapter. Windows GPIO uses its class extension.
+ * SPDX-License-Identifier: MIT */
 #include "gpio_internal.h"
 #include <oskal/cr_memory.h>
-#include <Library/pdc.h>
+
+#ifndef _KERNEL_MODE
 typedef struct {
+  GpioDeviceContext *Context;
+  PdcDeviceContext *Pdc;
+  UINT16 Pin;
+  CR_INTERRUPT_TRIGGER_TYPE Type;
   CR_INTERRUPT_HANDLER Handler;
-  UINT16               PinNumber;
-  VOID                *Param;
-  GpioPinInfo         *PinInfo;
-} GPIO_INTERRUPT_ENTRY;
+  VOID *Param;
+  UINT32 OldConfig,OldTarget;
+} GPIO_INTERRUPT_OWNER;
+STATIC GPIO_INTERRUPT_OWNER mGpioOwners[GPIO_PINS_MAX];
 
-// Internal GPIO IRQ table
-STATIC GPIO_INTERRUPT_ENTRY mGpioIntTable[GPIO_PINS_MAX];
-
-#define GPIO_INDEX_INVALID 0xFFFF
-
-// ISR on GPIO interrupt
-VOID GpioIsr(VOID *context_param)
-{
-  // Check irq enabled pins's irq status register
-  GpioDeviceContext   *Context   = (GpioDeviceContext *)context_param;
-  GpioPinInfo         *PinInfo   = NULL;
-  CR_INTERRUPT_HANDLER Handler   = NULL;
-  UINT16               Handled   = 0;
-  UINT16               PinNumber = GPIO_INDEX_INVALID;
-
-  log_info("GpioIsr: Handling GPIO interrupts");
-
-  for (UINT16 i = 0; i < GPIO_PINS_MAX; i++) {
-    PinInfo   = mGpioIntTable[i].PinInfo;
-    Handler   = mGpioIntTable[i].Handler;
-    PinNumber = mGpioIntTable[i].PinNumber;
-
-    if ((PinInfo != NULL) && (PinNumber < Context->PinCount) &&
-        (Handler != NULL)) {
-      // Read interrupt status register
-      UINT32 IntStatusRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
-          Context, GPIO_CFG_REG_TYPE_INT_STATUS_REG, PinNumber));
-      // GpioInterruptStatusRegInfo *IntStatusRegInfo = (VOID *)&IntStatusRegVal;
-      // if (IntStatusRegInfo->InterruptStatus) {
-      if (IntStatusRegVal & Context->GpioPins[PinNumber].pRegCfg->InterruptStatusMsk) {
-        // Call registered handler with cust param
-        Handler(mGpioIntTable[i].Param);
-        // Ignore Interrupt Ack high flag for new platforms.
-        GpioCleanIrqStatus(Context, PinNumber);
-        log_info("GpioIsr: Handled IRQ on Gpio %d", PinNumber);
-      }
-      Handled++;
-    }
-    else {
-      // Reached empty entry, stop checking
-      if (Handled == 0) {
-        log_err(
-            CR_LOG_CHAR8_STR_FMT
-            ": Spurious IRQ, no handler found for any GPIO pin",
-            __FUNCTION__);
-      }
-      break;
+STATIC CR_STATUS ValidatePin(GpioDeviceContext *Ctx,UINT16 Pin,
+                             CR_INTERRUPT_TRIGGER_TYPE Type) {
+  if (Ctx==NULL || Ctx->PinCount>GPIO_PINS_MAX || Pin>=Ctx->PinCount ||
+      Ctx->GpioPins[Pin].pRegCfg==NULL || (UINT32)Type>CR_INTERRUPT_TRIGGER_EDGE_BOTH)
+    return CR_INVALID_PARAMETER;
+  GpioPinInfo *P=&Ctx->GpioPins[Pin];GpioConfigRegInfo *R=P->pRegCfg;
+  if (P->Reserved || !R->InterruptEnMsk || !R->InterruptDetectionMsk ||
+      !R->InterruptRawStatusMsk || !R->InterruptStatusMsk ||
+      (R->InterruptDetectionWidth!=1 && R->InterruptDetectionWidth!=2))
+    return CR_UNSUPPORTED;
+  if (P->PdcPinNumber==GPIO_PDC_PIN_NUMBER_INVALID &&
+      R->InterruptDetectionWidth==1 && Type==CR_INTERRUPT_TRIGGER_EDGE_BOTH)
+    return CR_UNSUPPORTED;
+  UINT32 Offsets[]={R->IntCfgRegOffset,R->IntStatusRegOffset,R->IntTargetRegOffset};
+  for (UINTN I=0;I<ARRAY_SIZE(Offsets);++I)
+    if (P->PinAddress==0 || (P->PinAddress&3)!=0 || (Offsets[I]&3)!=0 ||
+        P->PinAddress>(UINTN)-1-Offsets[I] ||
+        P->PinAddress+Offsets[I]>(UINTN)-1-3) return CR_INVALID_PARAMETER;
+  return CR_SUCCESS;
+}
+STATIC VOID Restore(GPIO_INTERRUPT_OWNER *Owner) {
+  GpioConfigRegInfo *R=Owner->Context->GpioPins[Owner->Pin].pRegCfg;
+  UINT32 Mask=R->InterruptEnMsk|R->InterruptRawStatusMsk|
+              R->InterruptDetectionMsk|R->InterruptPolarityMsk;
+  UINTN Address=GpioGetCfgRegByIndex(Owner->Context,GPIO_CFG_REG_TYPE_INT_CFG_REG,Owner->Pin);
+  UINT32 Value=CrMmioRead32(Address);
+  CrMmioWrite32(Address,(Value&~Mask)|(Owner->OldConfig&Mask));
+  Address=GpioGetCfgRegByIndex(Owner->Context,GPIO_CFG_REG_TYPE_INT_TARGET_REG,Owner->Pin);
+  Value=CrMmioRead32(Address);Mask=R->InterruptTargetMsk;
+  CrMmioWrite32(Address,(Value&~Mask)|(Owner->OldTarget&Mask));
+}
+VOID GpioIsr(VOID *Parameter) {
+  GpioDeviceContext *Ctx=Parameter;
+  if (Ctx==NULL || Ctx->PinCount>GPIO_PINS_MAX) return;
+  // Holes and other controller entries must not hide later registrations.
+  for (UINTN I=0;I<GPIO_PINS_MAX;++I) {
+    GPIO_INTERRUPT_OWNER *Owner=&mGpioOwners[I];
+    if (Owner->Context!=Ctx || Owner->Pdc!=NULL || Owner->Handler==NULL) continue;
+    if (GpioReadIrqStatus(Ctx,Owner->Pin)) {
+      Owner->Handler(Owner->Param);GpioCleanIrqStatus(Ctx,Owner->Pin);
     }
   }
 }
-
-// Register IRQ on a GPIO pin
-CR_STATUS
-GpioRegisterGpioIrq(
-    IN GpioDeviceContext *Context, IN PdcDeviceContext *PdcContext,
-    IN UINT16 GpioIndex, IN CR_INTERRUPT_HANDLER InterruptHandler,
-    IN VOID *Param, IN CR_INTERRUPT_TRIGGER_TYPE TriggerType)
-{
-  CR_STATUS Status = CR_SUCCESS;
-
-  if (GpioIndex >= GPIO_PINS_MAX) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT ": Invalid GpioIndex %d", __FUNCTION__, GpioIndex);
-    return CR_INVALID_PARAMETER;
+CR_STATUS GpioRegisterGpioIrq(GpioDeviceContext *Ctx,PdcDeviceContext *Pdc,
+    UINT16 Pin,CR_INTERRUPT_HANDLER Handler,VOID *Param,CR_INTERRUPT_TRIGGER_TYPE Type) {
+  if (Handler==NULL) return CR_INVALID_PARAMETER;
+  CR_STATUS Status=ValidatePin(Ctx,Pin,Type);
+  if (CR_ERROR(Status)) return Status;
+  CR_INTERRUPT_GUARD Guard;
+  Status=CrInterruptGuardAcquire(&Guard);
+  if (CR_ERROR(Status)) return Status;
+  GPIO_INTERRUPT_OWNER *Owner=NULL;
+  for (UINTN I=0;I<GPIO_PINS_MAX;++I) {
+    if (mGpioOwners[I].Context==Ctx && mGpioOwners[I].Pin==Pin) {Status=CR_BUSY;goto Exit;}
+    if (mGpioOwners[I].Context==NULL && Owner==NULL) Owner=&mGpioOwners[I];
   }
-
-  // If this pin is not a PDC pin, use shared IRQ
-  if (Context->GpioPins[GpioIndex].PdcPinNumber ==
-      GPIO_PDC_PIN_NUMBER_INVALID) {
-    log_info(
-        CR_LOG_CHAR8_STR_FMT
-        ": Gpio %d is not a PDC pin, registering interrupt via shared IRQ",
-        __FUNCTION__, GpioIndex);
-
-    // Find a free entry and register
-    UINTN i;
-    for (i = 0; i < GPIO_PINS_MAX; i++) {
-      if (mGpioIntTable[i].Handler == NULL) {
-        mGpioIntTable[i].Handler   = InterruptHandler;
-        mGpioIntTable[i].Param     = Param;
-        mGpioIntTable[i].PinInfo   = &Context->GpioPins[GpioIndex];
-        mGpioIntTable[i].PinNumber = GpioIndex;
-        break;
-      }
-    }
-    if (i == GPIO_PINS_MAX) {
-      log_err(
-          CR_LOG_CHAR8_STR_FMT ": No free interrupt entries available",
-          __FUNCTION__);
-      return CR_OUT_OF_RESOURCES;
-    }
-
-    // Configure interrupt
-    Status = GpioSetInterruptCfg(Context, GpioIndex, TriggerType);
-    if (CR_ERROR(Status)) {
-      log_err(
-          CR_LOG_CHAR8_STR_FMT
-          ": Failed to configure interrupt for Gpio %d, Status=0x%X",
-          __FUNCTION__, GpioIndex, Status);
-      return Status;
-    }
-
-    // Enable interrupt
-    Status = GpioEnableInterrupt(Context, GpioIndex, TRUE);
-    if (CR_ERROR(Status)) {
-      log_err(
-          CR_LOG_CHAR8_STR_FMT
-          ": Failed to enable interrupt for Gpio %d, Status=0x%X",
-          __FUNCTION__, GpioIndex, Status);
-    }
+  if (Owner==NULL) {Status=CR_OUT_OF_RESOURCES;goto Exit;}
+  if (Ctx->GpioPins[Pin].PdcPinNumber!=GPIO_PDC_PIN_NUMBER_INVALID) {
+    if (Pdc==NULL) {Status=CR_INVALID_PARAMETER;goto Exit;}
+    UINT16 Before=Pdc->ActiveInterrupts;
+    Status=PdcRegisterInterrupt(Pdc,Ctx->GpioPins[Pin].PdcPinNumber,Handler,Param,Type);
+    if (CR_ERROR(Status) && Pdc->ActiveInterrupts==Before) goto Exit;
+    // Keep the route owner on failed backend cleanup for explicit retry.
+    *Owner=(GPIO_INTERRUPT_OWNER){.Context=Ctx,.Pdc=Pdc,.Pin=Pin,.Type=Type,
+                                  .Handler=Handler,.Param=Param};
+    ++Ctx->ActiveInterrupts;goto Exit;
   }
-  else {
-    // If it is a PDC pin, it has its own GIC SPI IRQ.
-    // Call PdcLib to register directly.
-    log_info(
-        CR_LOG_CHAR8_STR_FMT
-        ": Gpio %d is a PDC pin, registering interrupt via PdcLib",
-        __FUNCTION__, GpioIndex);
-    Status = PdcRegisterInterrupt(
-        PdcContext,                                // PDC Context
-        Context->GpioPins[GpioIndex].PdcPinNumber, // PDC Port Number
-        InterruptHandler,                          // Handler
-        Param,                                     // Parameters
-        TriggerType);                              // Gpio Trigger Type
-  }
+  if (!CrInterruptIsRegistered(&Ctx->InterruptConfig)) {Status=CR_NOT_READY;goto Exit;}
+  *Owner=(GPIO_INTERRUPT_OWNER){.Context=Ctx,.Pin=Pin,.Type=Type,.Handler=Handler,.Param=Param};
+  Owner->OldConfig=CrMmioRead32(GpioGetCfgRegByIndex(Ctx,GPIO_CFG_REG_TYPE_INT_CFG_REG,Pin));
+  Owner->OldTarget=CrMmioRead32(GpioGetCfgRegByIndex(Ctx,GPIO_CFG_REG_TYPE_INT_TARGET_REG,Pin));
+  Status=GpioSetInterruptCfg(Ctx,Pin,Type);
+  if (!CR_ERROR(Status)) Status=GpioEnableInterrupt(Ctx,Pin,TRUE);
+  if (CR_ERROR(Status)) {Restore(Owner);*Owner=(GPIO_INTERRUPT_OWNER){0};}
+  else ++Ctx->ActiveInterrupts;
+Exit:
+  CrInterruptGuardRelease(&Guard);
   return Status;
 }
-
-// Unregister IRQ on a GPIO pin
-CR_STATUS
-GpioUnregisterGpioIrq(
-    IN GpioDeviceContext *Context, IN UINT16 GpioIndex,
-    IN CR_INTERRUPT_TRIGGER_TYPE TriggerType)
-{
-  CR_STATUS Status = CR_SUCCESS;
-
-  if (GpioIndex >= GPIO_PINS_MAX) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT ": Invalid GpioIndex %d", __FUNCTION__, GpioIndex);
-    return CR_INVALID_PARAMETER;
+CR_STATUS GpioUnregisterGpioIrq(GpioDeviceContext *Ctx,UINT16 Pin,CR_INTERRUPT_TRIGGER_TYPE Type) {
+  CR_STATUS Status=ValidatePin(Ctx,Pin,Type);
+  if (CR_ERROR(Status)) return Status;
+  CR_INTERRUPT_GUARD Guard;
+  Status=CrInterruptGuardAcquire(&Guard);
+  if (CR_ERROR(Status)) return Status;
+  GPIO_INTERRUPT_OWNER *Owner=NULL;
+  for (UINTN I=0;I<GPIO_PINS_MAX;++I)
+    if (mGpioOwners[I].Context==Ctx && mGpioOwners[I].Pin==Pin) {Owner=&mGpioOwners[I];break;}
+  if (Owner==NULL) {Status=CR_NOT_FOUND;goto Exit;}
+  if (Owner->Type!=Type) {Status=CR_INVALID_PARAMETER;goto Exit;}
+  if (Owner->Pdc!=NULL)
+    Status=PdcUnregisterInterrupt(Owner->Pdc,Ctx->GpioPins[Pin].PdcPinNumber,Type);
+  else {
+    Status=GpioEnableInterrupt(Ctx,Pin,FALSE);
+    if (!CR_ERROR(Status)) Restore(Owner);
   }
-
-  // Disable interrupt
-  Status = GpioEnableInterrupt(Context, GpioIndex, FALSE);
-  if (CR_ERROR(Status)) {
-    log_err(
-        CR_LOG_CHAR8_STR_FMT
-        ": Failed to enable interrupt for Gpio %d, Status=0x%X",
-        __FUNCTION__, GpioIndex, Status);
-  }
-
-  // Find the entry and move entries forward
-  {
-    UINTN i;
-    for (i = 0; i < GPIO_PINS_MAX; i++) {
-      if (mGpioIntTable[i].PinInfo != NULL &&
-          mGpioIntTable[i].PinNumber == GpioIndex) {
-        // Clear the entry
-        mGpioIntTable[i].Handler   = NULL;
-        mGpioIntTable[i].Param     = NULL;
-        mGpioIntTable[i].PinInfo   = NULL;
-        mGpioIntTable[i].PinNumber = GPIO_INDEX_INVALID;
-        break;
-      }
-    }
-    if (i == GPIO_PINS_MAX) {
-      log_err(
-          CR_LOG_CHAR8_STR_FMT ": GpioIndex %d not found in interrupt table",
-          __FUNCTION__, GpioIndex);
-      return CR_NOT_FOUND;
-    }
-
-    // Move other entries forward to fill the gap
-    for (; i < GPIO_PINS_MAX - 1; i++) {
-      if (mGpioIntTable[i + 1].Handler != NULL) {
-        mGpioIntTable[i] = mGpioIntTable[i + 1];
-        // Clear the moved entry
-        mGpioIntTable[i + 1].Handler   = NULL;
-        mGpioIntTable[i + 1].Param     = NULL;
-        mGpioIntTable[i + 1].PinInfo   = NULL;
-        mGpioIntTable[i + 1].PinNumber = GPIO_INDEX_INVALID;
-      }
-      else {
-        break;
-      }
-    }
-  }
-
-  return CR_SUCCESS;
+  if (CR_ERROR(Status)) goto Exit;
+  *Owner=(GPIO_INTERRUPT_OWNER){0};--Ctx->ActiveInterrupts;
+Exit:
+  CrInterruptGuardRelease(&Guard);
+  return Status;
 }
-
-// Init IRQ
-CR_STATUS
-GpioInitIrq(GpioDeviceContext *Context)
-{
-  CR_STATUS Status;
-
-  // Register interrupt handler
-  Context->InterruptConfig.Handler = GpioIsr;
-  Context->InterruptConfig.Param   = Context;
-  Status = CrRegisterInterrupt(&Context->InterruptConfig);
-  if (CR_ERROR(Status)) {
-    log_err("Failed to register interrupt, Status=0x%X", Status);
-    return Status;
+CR_STATUS GpioInitIrq(GpioDeviceContext *Ctx) {
+  if (Ctx==NULL || Ctx->PinCount==0 || Ctx->PinCount>GPIO_PINS_MAX) return CR_INVALID_PARAMETER;
+  CR_INTERRUPT_GUARD Guard;
+  CR_STATUS Status=CrInterruptGuardAcquire(&Guard);
+  if (CR_ERROR(Status)) return Status;
+  /* OSKAL retains this exact address until successful unregister. Never
+   * register a temporary then copy it into the controller context. */
+  if (CrInterruptIsRegistered(&Ctx->InterruptConfig)) {
+    CrInterruptGuardRelease(&Guard);return CR_BUSY;
   }
-  log_info(
-      "GpioInitIrq: Registered IRQ %d for TLMM",
-      Context->InterruptConfig.InterruptNumber);
-  return CR_SUCCESS;
+  CR_INTERRUPT_CONFIG Saved=Ctx->InterruptConfig;
+  Ctx->InterruptConfig.Handler=GpioIsr;Ctx->InterruptConfig.Param=Ctx;
+  Status=CrRegisterInterrupt(&Ctx->InterruptConfig);
+  /* A failed backend rollback may still own the callback. Keep its stable
+   * configuration intact so the caller can explicitly retire it later. */
+  if (Status!=CR_SUCCESS && !CrInterruptIsRegistered(&Ctx->InterruptConfig))
+    Ctx->InterruptConfig=Saved;
+  CrInterruptGuardRelease(&Guard);return Status;
 }
+#endif

@@ -29,7 +29,7 @@ CrDalLocateProtocol (
                   NULL,
                   (VOID **)&mCrDal
                   );
-  if (EFI_ERROR (Status)) {
+  if (Status != EFI_SUCCESS) {
     mCrDal = NULL;
     return Status;
   }
@@ -104,7 +104,7 @@ CrDalGetDeviceInfo (
   }
 
   Status = CrDalLocateProtocol ();
-  if (EFI_ERROR (Status)) {
+  if (Status != EFI_SUCCESS) {
     return Status;
   }
 
@@ -116,6 +116,12 @@ CrDalGetDeviceInfo (
                     MinimumDataSize,
                     DeviceInfo
                     );
+  /* A synchronous query owns no completion path for positive nonfinal
+     results. Preserve the raw status and never publish its partial payload. */
+  if (Status != EFI_SUCCESS) {
+    *DeviceInfo = NULL;
+    return Status;
+  }
   if (!EFI_ERROR (Status)) {
     Status = CrDalValidateDeviceInfo (*DeviceInfo);
   }
@@ -151,7 +157,7 @@ CrDalGetDeviceCount (
   *DeviceCount = 0;
 
   Status = CrDalLocateProtocol ();
-  if (EFI_ERROR (Status)) {
+  if (Status != EFI_SUCCESS) {
     return Status;
   }
   Status = mCrDal->GetDeviceCount (mCrDal, DeviceCount);
@@ -175,7 +181,7 @@ CrDalGetDeviceByIndex (
   *DeviceInfo = NULL;
 
   Status = CrDalLocateProtocol ();
-  if (EFI_ERROR (Status)) {
+  if (Status != EFI_SUCCESS) {
     return Status;
   }
   Status = mCrDal->GetDeviceByIndex (mCrDal, Index, DeviceInfo);
@@ -445,6 +451,41 @@ CrDalClockInit (
   }
   Services = CrDalGetClockServices ();
   return (Services == NULL) ? CR_NOT_FOUND : Services->Initialize (ClockContext);
+}
+
+CONST CR_MDSS_TARGET *CrDalGetMdssContext(VOID)
+{
+  CONST CR_DAL_DEVICE_INFO *Info = NULL;
+  if (CrDalGetDeviceInfo(CrDalDeviceMdss, 0, CR_DAL_DATA_REVISION_1,
+      sizeof(CR_MDSS_TARGET), &Info) != EFI_SUCCESS || Info == NULL ||
+      Info->DataRevision != CR_DAL_DATA_REVISION_1 ||
+      Info->DataSize != sizeof(CR_MDSS_TARGET) ||
+      !(Info->Attributes & CR_DAL_DEVICE_ATTRIBUTE_IMMUTABLE)) return NULL;
+  CONST CR_MDSS_TARGET *Target = Info->Data;
+  return Target->Revision == CR_MDSS_TARGET_REVISION &&
+      Target->Size == sizeof(*Target) ? Target : NULL;
+}
+
+CONST CR_TARGET_UFS_CONTEXT *CrDalGetUfsContext(VOID)
+{
+  CONST CR_DAL_DEVICE_INFO *Info = NULL;
+  if (CrDalGetDeviceInfo(CrDalDeviceUfs, 0, CR_DAL_DATA_REVISION_1,
+      sizeof(CR_TARGET_UFS_CONTEXT), &Info) != EFI_SUCCESS || Info == NULL ||
+      Info->DataRevision != CR_DAL_DATA_REVISION_1 ||
+      Info->DataSize != sizeof(CR_TARGET_UFS_CONTEXT) ||
+      !(Info->Attributes & CR_DAL_DEVICE_ATTRIBUTE_IMMUTABLE)) return NULL;
+  CONST CR_TARGET_UFS_CONTEXT *C = Info->Data;
+  return CrTargetUfsValid(C) ? C : NULL;
+}
+
+CONST CR_TARGET_SD_CONTEXT *CrDalGetSdContext(VOID)
+{
+  CONST CR_DAL_DEVICE_INFO *Info = NULL;
+  if (CrDalGetDeviceInfo(CrDalDeviceSd,0,CR_DAL_DATA_REVISION_1,
+      sizeof(CR_TARGET_SD_CONTEXT),&Info) != EFI_SUCCESS || Info == NULL ||
+      !(Info->Attributes & CR_DAL_DEVICE_ATTRIBUTE_IMMUTABLE)) return NULL;
+  CONST CR_TARGET_SD_CONTEXT *C = Info->Data;
+  return CrTargetSdValid(C) ? C : NULL;
 }
 
 CR_STATUS

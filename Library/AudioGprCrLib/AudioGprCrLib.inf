@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AudioGprCrLib
+  FILE_GUID = 11AF8030-3F8B-463E-8A52-13E917477FA3
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AudioGprCrLib
+[Sources]
+  AudioGpr.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

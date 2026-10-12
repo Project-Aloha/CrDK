@@ -1,0 +1,3182 @@
+{
+  "repository": "https://github.com/AudioReach/audioreach-conf",
+  "commit": "d9b13696adc1e0fd34a6ce8ef383763a981574b9",
+  "fixtures": [
+    {
+      "path": "linux/reference/acdbdata/acdb_cal.acdb",
+      "sha256": "8dcca89a9d2f7e977a01439f3edd5d5cdb6148b5b9e12d792030b9d2c2d6dc74",
+      "size": 4228,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 32
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 116,
+          "size": 32
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 156,
+          "size": 68
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 232,
+          "size": 4
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 244,
+          "size": 80
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 332,
+          "size": 272
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 612,
+          "size": 144
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 764,
+          "size": 52
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 824,
+          "size": 12
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 844,
+          "size": 24
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 876,
+          "size": 40
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 924,
+          "size": 88
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 1020,
+          "size": 68
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 1096,
+          "size": 40
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 1144,
+          "size": 100
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 1252,
+          "size": 92
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 1352,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 1364,
+          "size": 188
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 1560,
+          "size": 2520
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 4088,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 4100,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 4112,
+          "size": 84
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 4204,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 4224,
+          "size": 4
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1759836851,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "nxp/reference/acdbdata/acdb_cal.acdb",
+      "sha256": "02996dfd452c019bf326979583418eb921319ee80aab2a1672230538ddefcedb",
+      "size": 2024,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 32
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 116,
+          "size": 32
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 156,
+          "size": 36
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 200,
+          "size": 4
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 212,
+          "size": 40
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 260,
+          "size": 72
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 340,
+          "size": 40
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 388,
+          "size": 20
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 416,
+          "size": 12
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 436,
+          "size": 8
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 452,
+          "size": 4
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 464,
+          "size": 0
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 472,
+          "size": 0
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 480,
+          "size": 0
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 488,
+          "size": 28
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 524,
+          "size": 12
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 544,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 556,
+          "size": 84
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 648,
+          "size": 1128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 1784,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 1796,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 1808,
+          "size": 84
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 1900,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 1920,
+          "size": 4
+        },
+        {
+          "id": 1431061319,
+          "name": "GCLU",
+          "offset": 1932,
+          "size": 16
+        },
+        {
+          "id": 1414218567,
+          "name": "GCKT",
+          "offset": 1956,
+          "size": 4
+        },
+        {
+          "id": 1413759815,
+          "name": "GCDT",
+          "offset": 1968,
+          "size": 16
+        },
+        {
+          "id": 1329873735,
+          "name": "GCDO",
+          "offset": 1992,
+          "size": 12
+        },
+        {
+          "id": 1162101575,
+          "name": "GCDE",
+          "offset": 2012,
+          "size": 12
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1769168153,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/GLYMUR/acdbdata/acdb_cal.acdb",
+      "sha256": "ac7aaf156dda019cbf417b1200a6c00aa86bd22e183ba45210432ec7a55c746e",
+      "size": 162622,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1236
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1766,
+          "size": 1132
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2906,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2942,
+          "size": 6820
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9770,
+          "size": 9720
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 19498,
+          "size": 6096
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 25602,
+          "size": 1284
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 26894,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 26934,
+          "size": 652
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 27594,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 28446,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 31782,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 32718,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 33138,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 35034,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 36754,
+          "size": 8
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 36770,
+          "size": 4064
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 40842,
+          "size": 119896
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 160746,
+          "size": 88
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 160842,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 160854,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 160954,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 160974,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 160986,
+          "size": 1636
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1789056952,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/Kaanapali/acdbdata/acdb_cal.acdb",
+      "sha256": "322ff9a7a24def2af483052046b3e26786785074ad916c98a07b77e5eda9a5b0",
+      "size": 154406,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9084
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18774,
+          "size": 5744
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24526,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25770,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25810,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26446,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27298,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 31990,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33886,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35606,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35618,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39558,
+          "size": 113128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 152694,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 152706,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 152718,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 152818,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 152838,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 152850,
+          "size": 1556
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779212325,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/MAHUA/acdbdata/acdb_cal.acdb",
+      "sha256": "da060dc652ad96a9cfe5b9d9d987a75ec77b6afafebb0726df2ab032fad837db",
+      "size": 154406,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9084
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18774,
+          "size": 5744
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24526,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25770,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25810,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26446,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27298,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 31990,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33886,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35606,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35618,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39558,
+          "size": 113128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 152694,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 152706,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 152718,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 152818,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 152838,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 152850,
+          "size": 1556
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779212863,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/X1E80100/acdbdata/acdb_cal.acdb",
+      "sha256": "22d24a2b58d5433077e7d959130197d2be0a91a7d8843e64d578cc7e5cc33aac",
+      "size": 154406,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9084
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18774,
+          "size": 5744
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24526,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25770,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25810,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26446,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27298,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 31990,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33886,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35606,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35618,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39558,
+          "size": 113128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 152694,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 152706,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 152718,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 152818,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 152838,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 152850,
+          "size": 1556
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779212121,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/nord/acdbdata/acdb_cal.acdb",
+      "sha256": "4fd3c9bc688bf07b09e7c57b5101b35d652476b844b7716694bdd136028cccb0",
+      "size": 4050088,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 1596
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 1680,
+          "size": 33512
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 35200,
+          "size": 8340
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 43548,
+          "size": 92
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 43648,
+          "size": 29972
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 73628,
+          "size": 66736
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 140372,
+          "size": 33224
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 173604,
+          "size": 17236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 190848,
+          "size": 44
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 190900,
+          "size": 9212
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 200120,
+          "size": 4336
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 204464,
+          "size": 17312
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 221784,
+          "size": 5028
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 226820,
+          "size": 800
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 227628,
+          "size": 12808
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 240444,
+          "size": 11028
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 251480,
+          "size": 168
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 251656,
+          "size": 35256
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 286920,
+          "size": 3516128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 3803056,
+          "size": 128
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 3803192,
+          "size": 4
+        },
+        {
+          "id": 1145258838,
+          "name": "VCCD",
+          "offset": 3803204,
+          "size": 161132
+        },
+        {
+          "id": 1263354710,
+          "name": "VCMK",
+          "offset": 3964344,
+          "size": 344
+        },
+        {
+          "id": 1414218582,
+          "name": "VCKT",
+          "offset": 3964696,
+          "size": 132
+        },
+        {
+          "id": 1431061334,
+          "name": "VCLU",
+          "offset": 3964836,
+          "size": 11288
+        },
+        {
+          "id": 1162101590,
+          "name": "VCDE",
+          "offset": 3976132,
+          "size": 25096
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 4001236,
+          "size": 276
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 4001520,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 4001540,
+          "size": 436
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 4001984,
+          "size": 48004
+        },
+        {
+          "id": 1431061319,
+          "name": "GCLU",
+          "offset": 4049996,
+          "size": 16
+        },
+        {
+          "id": 1414218567,
+          "name": "GCKT",
+          "offset": 4050020,
+          "size": 4
+        },
+        {
+          "id": 1413759815,
+          "name": "GCDT",
+          "offset": 4050032,
+          "size": 16
+        },
+        {
+          "id": 1329873735,
+          "name": "GCDO",
+          "offset": 4050056,
+          "size": 12
+        },
+        {
+          "id": 1162101575,
+          "name": "GCDE",
+          "offset": 4050076,
+          "size": 12
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1788977740,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcm6490/acdbdata/acdb_cal.acdb",
+      "sha256": "b66c8e3470cba46bf13ac082a75400e75d7bfd2b0c227c6e9fd437ad718efaca",
+      "size": 154406,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9084
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18774,
+          "size": 5744
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24526,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25770,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25810,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26446,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27298,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 31990,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33886,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35606,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35618,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39558,
+          "size": 113128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 152694,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 152706,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 152718,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 152818,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 152838,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 152850,
+          "size": 1556
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779213016,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcs615/acdbdata/acdb_cal.acdb",
+      "sha256": "2876479c8bdb9a79bc10b6c880c85216930c851d458d718d997a5f08c806b2ea",
+      "size": 2766958,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 1384
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 1462,
+          "size": 21596
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 23066,
+          "size": 6828
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 29902,
+          "size": 76
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 29986,
+          "size": 25496
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 55490,
+          "size": 53908
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 109406,
+          "size": 25312
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 134726,
+          "size": 14180
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 148914,
+          "size": 44
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 148966,
+          "size": 7444
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 156418,
+          "size": 3532
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 159958,
+          "size": 13752
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 173718,
+          "size": 4080
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 177806,
+          "size": 768
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 178582,
+          "size": 9808
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 188398,
+          "size": 8740
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 197146,
+          "size": 80
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 197234,
+          "size": 27688
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 224930,
+          "size": 2338084
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 2563022,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 2563034,
+          "size": 4
+        },
+        {
+          "id": 1145258838,
+          "name": "VCCD",
+          "offset": 2563046,
+          "size": 145236
+        },
+        {
+          "id": 1263354710,
+          "name": "VCMK",
+          "offset": 2708290,
+          "size": 344
+        },
+        {
+          "id": 1414218582,
+          "name": "VCKT",
+          "offset": 2708642,
+          "size": 132
+        },
+        {
+          "id": 1431061334,
+          "name": "VCLU",
+          "offset": 2708782,
+          "size": 11288
+        },
+        {
+          "id": 1162101590,
+          "name": "VCDE",
+          "offset": 2720078,
+          "size": 24140
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 2744226,
+          "size": 268
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 2744502,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 2744522,
+          "size": 448
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 2744978,
+          "size": 21980
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779209684,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcs8275/acdbdata/acdb_cal.acdb",
+      "sha256": "7778b867e37f0cd230bb0431a594c2bad72952b7fb40cf11bc4d2d1eb75279ba",
+      "size": 162612,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 528,
+          "size": 1236
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1772,
+          "size": 1132
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2912,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2948,
+          "size": 6820
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9776,
+          "size": 9688
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 19472,
+          "size": 6048
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 25528,
+          "size": 1284
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 26820,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 26860,
+          "size": 652
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 27520,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 28372,
+          "size": 3256
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 31636,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 32572,
+          "size": 356
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 32936,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 34832,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 36552,
+          "size": 8
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 36568,
+          "size": 4064
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 40640,
+          "size": 120076
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 160724,
+          "size": 88
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 160820,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 160832,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 160932,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 160952,
+          "size": 16
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 160976,
+          "size": 1636
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1785333064,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcs8300/acdbdata/acdb_cal.acdb",
+      "sha256": "b8290302552e14b37b38639107f08733505fae6cf71609ca97b4e791046e7554",
+      "size": 148986,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9068
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18758,
+          "size": 5736
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24502,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25746,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25786,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26422,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27274,
+          "size": 3352
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 436
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 32014,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33910,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35630,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35642,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39582,
+          "size": 109248
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 148838,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 148850,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 148862,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 148962,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 148982,
+          "size": 4
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779211140,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcs9075/acdbdata/acdb_cal.acdb",
+      "sha256": "9eedeba42db5dec3cee313339662e583d416f08a8e10f8dc408070290d5096c1",
+      "size": 458840,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 468
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 552,
+          "size": 1356
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1916,
+          "size": 1268
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 3192,
+          "size": 44
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 3244,
+          "size": 7188
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 10440,
+          "size": 10664
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 21112,
+          "size": 6544
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 27664,
+          "size": 1396
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 29068,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 29108,
+          "size": 724
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 29840,
+          "size": 904
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 30752,
+          "size": 3416
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 34176,
+          "size": 988
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 35172,
+          "size": 356
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 35536,
+          "size": 2032
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 37576,
+          "size": 1856
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 39440,
+          "size": 16
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 39464,
+          "size": 4440
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 43912,
+          "size": 412856
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 456776,
+          "size": 88
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 456872,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 456884,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 456984,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 457004,
+          "size": 16
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 457028,
+          "size": 1812
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1787769737,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/qcs9100/acdbdata/acdb_cal.acdb",
+      "sha256": "be74c1afd9413cd0e153b3a7abda5f0267974295c9bc69a26afc59b1e38afb63",
+      "size": 175338,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 468
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 546,
+          "size": 1360
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1914,
+          "size": 1428
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 3350,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 3386,
+          "size": 8968
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 12362,
+          "size": 11288
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 23658,
+          "size": 6204
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 29870,
+          "size": 1444
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 31322,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 31362,
+          "size": 732
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 32102,
+          "size": 1108
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 33218,
+          "size": 4432
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 37658,
+          "size": 1228
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 38894,
+          "size": 492
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 39394,
+          "size": 2572
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 41974,
+          "size": 2332
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 44314,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 44326,
+          "size": 4988
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 49322,
+          "size": 125860
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 175190,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 175202,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 175214,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 175314,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 175334,
+          "size": 4
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779211930,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/shikra_cqs/acdbdata/acdb_cal.acdb",
+      "sha256": "ea804e9dbc9e6a0ce1e4e6ae467bec722bfc678ff8d186d80144cb270deb3d1f",
+      "size": 182208,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 368
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 452,
+          "size": 1060
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1520,
+          "size": 1060
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2588,
+          "size": 36
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2632,
+          "size": 6268
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 8908,
+          "size": 8076
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 16992,
+          "size": 4140
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 21140,
+          "size": 1188
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 22336,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 22376,
+          "size": 596
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 22980,
+          "size": 892
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 23880,
+          "size": 3480
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 27368,
+          "size": 984
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 28360,
+          "size": 324
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 28692,
+          "size": 1864
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 30564,
+          "size": 1696
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 32268,
+          "size": 164
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 32440,
+          "size": 3856
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 36304,
+          "size": 143508
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 179820,
+          "size": 128
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 179956,
+          "size": 4
+        },
+        {
+          "id": 1145258838,
+          "name": "VCCD",
+          "offset": 179968,
+          "size": 12
+        },
+        {
+          "id": 1263354710,
+          "name": "VCMK",
+          "offset": 179988,
+          "size": 0
+        },
+        {
+          "id": 1414218582,
+          "name": "VCKT",
+          "offset": 179996,
+          "size": 0
+        },
+        {
+          "id": 1431061334,
+          "name": "VCLU",
+          "offset": 180004,
+          "size": 0
+        },
+        {
+          "id": 1162101590,
+          "name": "VCDE",
+          "offset": 180012,
+          "size": 0
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 180020,
+          "size": 268
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 180296,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 180316,
+          "size": 364
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 180688,
+          "size": 1420
+        },
+        {
+          "id": 1431061319,
+          "name": "GCLU",
+          "offset": 182116,
+          "size": 16
+        },
+        {
+          "id": 1414218567,
+          "name": "GCKT",
+          "offset": 182140,
+          "size": 4
+        },
+        {
+          "id": 1413759815,
+          "name": "GCDT",
+          "offset": 182152,
+          "size": 16
+        },
+        {
+          "id": 1329873735,
+          "name": "GCDO",
+          "offset": 182176,
+          "size": 12
+        },
+        {
+          "id": 1162101575,
+          "name": "GCDE",
+          "offset": 182196,
+          "size": 12
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1788794619,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/shikra_iqs/acdbdata/acdb_cal.acdb",
+      "sha256": "5b8604e5621daf8b14b5198f271746c0a025068ff1f0b614737a499256ead570",
+      "size": 205140,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 48
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 76,
+          "size": 368
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 452,
+          "size": 1060
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1520,
+          "size": 1060
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2588,
+          "size": 36
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2632,
+          "size": 6268
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 8908,
+          "size": 8076
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 16992,
+          "size": 4140
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 21140,
+          "size": 1188
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 22336,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 22376,
+          "size": 596
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 22980,
+          "size": 880
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 23868,
+          "size": 3520
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 27396,
+          "size": 972
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 28376,
+          "size": 308
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 28692,
+          "size": 1852
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 30552,
+          "size": 1684
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 32244,
+          "size": 164
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 32416,
+          "size": 3856
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 36280,
+          "size": 166464
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 202752,
+          "size": 128
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 202888,
+          "size": 4
+        },
+        {
+          "id": 1145258838,
+          "name": "VCCD",
+          "offset": 202900,
+          "size": 12
+        },
+        {
+          "id": 1263354710,
+          "name": "VCMK",
+          "offset": 202920,
+          "size": 0
+        },
+        {
+          "id": 1414218582,
+          "name": "VCKT",
+          "offset": 202928,
+          "size": 0
+        },
+        {
+          "id": 1431061334,
+          "name": "VCLU",
+          "offset": 202936,
+          "size": 0
+        },
+        {
+          "id": 1162101590,
+          "name": "VCDE",
+          "offset": 202944,
+          "size": 0
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 202952,
+          "size": 268
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 203228,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 203248,
+          "size": 364
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 203620,
+          "size": 1420
+        },
+        {
+          "id": 1431061319,
+          "name": "GCLU",
+          "offset": 205048,
+          "size": 16
+        },
+        {
+          "id": 1414218567,
+          "name": "GCKT",
+          "offset": 205072,
+          "size": 4
+        },
+        {
+          "id": 1413759815,
+          "name": "GCDT",
+          "offset": 205084,
+          "size": 16
+        },
+        {
+          "id": 1329873735,
+          "name": "GCDO",
+          "offset": 205108,
+          "size": 12
+        },
+        {
+          "id": 1162101575,
+          "name": "GCDE",
+          "offset": 205128,
+          "size": 12
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1788967082,
+        "oem_length": 10,
+        "remaining": 16,
+        "oem_hex": "434c49566572735f3100000000000000",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "path": "qcom/qli/sm8750/acdbdata/acdb_cal.acdb",
+      "sha256": "d0b0e8c0d953e8e243c15aa9d9cb0d7f833abb498d21ae5c66318da322cfeda6",
+      "size": 154406,
+      "chunks": [
+        {
+          "id": 1145128264,
+          "name": "HEAD",
+          "offset": 20,
+          "size": 42
+        },
+        {
+          "id": 1414941511,
+          "name": "GKVT",
+          "offset": 70,
+          "size": 444
+        },
+        {
+          "id": 1280723783,
+          "name": "GKVL",
+          "offset": 522,
+          "size": 1184
+        },
+        {
+          "id": 1431065411,
+          "name": "CSLU",
+          "offset": 1714,
+          "size": 1116
+        },
+        {
+          "id": 1414218051,
+          "name": "CAKT",
+          "offset": 2838,
+          "size": 28
+        },
+        {
+          "id": 1431061571,
+          "name": "CDLU",
+          "offset": 2874,
+          "size": 6800
+        },
+        {
+          "id": 1162101827,
+          "name": "CDDE",
+          "offset": 9682,
+          "size": 9084
+        },
+        {
+          "id": 1329873987,
+          "name": "CDDO",
+          "offset": 18774,
+          "size": 5744
+        },
+        {
+          "id": 1431061331,
+          "name": "SCLU",
+          "offset": 24526,
+          "size": 1236
+        },
+        {
+          "id": 1162101587,
+          "name": "SCDE",
+          "offset": 25770,
+          "size": 32
+        },
+        {
+          "id": 1329873747,
+          "name": "SCDO",
+          "offset": 25810,
+          "size": 628
+        },
+        {
+          "id": 1414222925,
+          "name": "MTKT",
+          "offset": 26446,
+          "size": 844
+        },
+        {
+          "id": 1431065677,
+          "name": "MTLU",
+          "offset": 27298,
+          "size": 3328
+        },
+        {
+          "id": 1162105933,
+          "name": "MTDE",
+          "offset": 30634,
+          "size": 928
+        },
+        {
+          "id": 1329878093,
+          "name": "MTDO",
+          "offset": 31570,
+          "size": 412
+        },
+        {
+          "id": 1431063892,
+          "name": "TMLU",
+          "offset": 31990,
+          "size": 1888
+        },
+        {
+          "id": 1162104148,
+          "name": "TMDE",
+          "offset": 33886,
+          "size": 1712
+        },
+        {
+          "id": 1129599056,
+          "name": "PPTC",
+          "offset": 35606,
+          "size": 4
+        },
+        {
+          "id": 1414088531,
+          "name": "SGIT",
+          "offset": 35618,
+          "size": 3932
+        },
+        {
+          "id": 1280266064,
+          "name": "POOL",
+          "offset": 39558,
+          "size": 113128
+        },
+        {
+          "id": 1296322381,
+          "name": "MODM",
+          "offset": 152694,
+          "size": 4
+        },
+        {
+          "id": 1347769410,
+          "name": "BTUP",
+          "offset": 152706,
+          "size": 4
+        },
+        {
+          "id": 1280005197,
+          "name": "MTKL",
+          "offset": 152718,
+          "size": 92
+        },
+        {
+          "id": 1330794567,
+          "name": "GPRO",
+          "offset": 152818,
+          "size": 12
+        },
+        {
+          "id": 1230192968,
+          "name": "HASI",
+          "offset": 152838,
+          "size": 4
+        },
+        {
+          "id": 1397506375,
+          "name": "GALS",
+          "offset": 152850,
+          "size": 1556
+        }
+      ],
+      "duplicates": [],
+      "head": {
+        "version": 1,
+        "file_version": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "codecs": 1,
+        "date": 1779212038,
+        "oem_length": 10,
+        "remaining": 10,
+        "oem_hex": "434c49566572735f3100",
+        "codec_entries": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    }
+  ]
+}

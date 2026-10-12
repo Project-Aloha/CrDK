@@ -24,10 +24,13 @@
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
 
 [LibraryClasses]
+  GpioPinLeaseLib
+  GpioSdLib
+  OskInterruptLib
   BaseLib
   CrDalLib
   DebugLib

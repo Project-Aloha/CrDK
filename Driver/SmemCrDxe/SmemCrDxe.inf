@@ -1,0 +1,34 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SmemCrDxe
+  FILE_GUID                      = 4B0C4AB8-2A5E-44C4-8E04-2A0C2D2AB7B7
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = SmemCrDxeEntryPoint
+
+[Sources]
+  SmemCrDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  IoLib
+  MemoryMapHelperLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  SmemLib
+  SynchronizationLib
+
+[Protocols]
+  gEfiSMEMProtocolGuid ## PRODUCES
+  gEfiSmemCrProtocolGuid ## PRODUCES
+
+[Depex]
+  TRUE

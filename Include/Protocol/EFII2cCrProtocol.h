@@ -1,14 +1,15 @@
 /** @file
- *  Crane adapter for a MU Qualcomm I2C protocol instance.
+ *  Crane-owned I2C protocol for native GENI FIFO/GPI transports.
  *
- *  I2CCrDxe forwards an existing PI master protocol when MU publishes one.
- *  On targets where MU only publishes gQcomI2CProtocolGuid, it translates PI
- *  requests to that private interface without taking ownership of GENI/QUP.
+ *  I2CCrDxe owns the SM8450 SE1 transport.  It never consumes a standard PI
+ *  master, the packaged Qualcomm MU I2C driver, or either private protocol.
  *
  *  SPDX-License-Identifier: MIT
  */
 #pragma once
 
+/* Reuse only the descriptor/configuration layouts; no private MU protocol is
+   located or linked by I2CCrDxe. */
 #include <Protocol/EFIMuBusProtocol.h>
 #include <Protocol/I2cMaster.h>
 
@@ -49,17 +50,13 @@ typedef EFI_STATUS (EFIAPI *EFI_I2C_CR_MU_TRANSFER)(
 
 typedef struct _EFI_I2C_CR_PROTOCOL {
   UINT64                         Revision;
-  /* Keep the original standard-protocol fields at their established offsets. */
-  EFI_HANDLE                     MasterHandle;
-  EFI_I2C_MASTER_PROTOCOL       *Master;
-  CONST EFI_I2C_CONTROLLER_CAPABILITIES *I2cControllerCapabilities;
   EFI_I2C_CR_SET_BUS_FREQUENCY   SetBusFrequency;
   EFI_I2C_CR_RESET                Reset;
   EFI_I2C_CR_START_REQUEST        StartRequest;
-  /* Private-MU backing is appended for binary compatibility. */
-  MU_I2C_PROTOCOL               *Qcom;
+  /* Native target identity and bus rate. */
   MU_I2C_INSTANCE                 Instance;
-  VOID                           *QcomHandle;
   UINT32                         BusFrequencyKHz;
   EFI_I2C_CR_MU_TRANSFER          MuTransfer;
+  /* Direct GENI FIFO backend used by the native target transport. */
+  EFI_I2C_CR_MU_TRANSFER          FifoTransfer;
 } EFI_I2C_CR_PROTOCOL;

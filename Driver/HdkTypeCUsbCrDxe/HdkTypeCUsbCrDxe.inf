@@ -1,0 +1,45 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = HdkTypeCUsbCrDxe
+  FILE_GUID = e87d8efc-1c10-4611-8c2c-049aa0686000
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = HdkUsbCrEntryPoint
+  UNLOAD_IMAGE = HdkUsbCrUnload
+[Sources]
+  HdkTypeCUsbCrDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  HdkUsbCrLib
+  HdkUsbTargetLib
+  IoLib
+  MemoryAllocationLib
+  NonDiscoverableDeviceRegistrationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiClockCrProtocolGuid
+  gEfiRpmhCrProtocolGuid
+  gEfiGpioCrProtocolGuid
+  gEfiInterconnectCrProtocolGuid
+  gEfiSmmuCrProtocolGuid
+  gEfiUsbTypeCCrProtocolGuid
+  gEdkiiIoMmuProtocolGuid
+  gEfiDmaIdentityCrProtocolGuid
+  gEdkiiNonDiscoverableDeviceProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEdkiiUsb2HcFreezeProtocolGuid
+  gEfiUsb2HcProtocolGuid
+[Guids]
+  gEfiEventExitBootServicesGuid
+[Depex]
+  gEfiClockCrProtocolGuid AND gEfiRpmhCrProtocolGuid AND gEfiGpioCrProtocolGuid AND
+  gEfiInterconnectCrProtocolGuid AND gEfiSmmuCrProtocolGuid AND gEdkiiIoMmuProtocolGuid AND
+  gEfiUsbTypeCCrProtocolGuid

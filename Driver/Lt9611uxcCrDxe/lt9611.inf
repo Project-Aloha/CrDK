@@ -20,11 +20,12 @@
 
 [Sources]
   lt9611.c
+  Lt9611PanelOwner.c
 
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
 
 [LibraryClasses]
@@ -32,11 +33,30 @@
   DebugLib
   CrDalLib
   BaseMemoryLib
+  MemoryAllocationLib
+  TimerLib
+  PcdLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
+  UefiLib
 
 [Protocols]
   gEfiGpioCrProtocolGuid   # CONSUMER
+  gEfiI2cCrProtocolGuid    # CONSUMER
+  gEfiGpiCrProtocolGuid    # CONSUMER
+  gEfiMdpDsiProtocolGuid   # CONSUMER
+  gEfiMdssHandoffProtocolGuid # CONSUMER (HDK PCD only)
+  gEfiLt9611CrProtocolGuid ## PRODUCES
+  gEfiLt9611PanelCrProtocolGuid ## SOMETIMES_PRODUCES
 
 [Depex]
-  gEfiGpioCrProtocolGuid
+  gEfiGpioCrProtocolGuid AND gEfiI2cCrProtocolGuid AND
+  gEfiMdpDsiProtocolGuid
+
+[Guids]
+  gEfiEventReadyToBootGuid
+
+[Pcd]
+  gCranePkgTokenSpaceGuid.PcdMdssPanelProfile
+  gCranePkgTokenSpaceGuid.PcdMdssHandoffEnable
+  gCranePkgTokenSpaceGuid.PcdMdssHdkExtendedProfileEnable

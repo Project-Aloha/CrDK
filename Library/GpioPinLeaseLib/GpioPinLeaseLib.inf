@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = GpioPinLeaseLib
+  FILE_GUID = F5E1D0D9-2D7F-4B65-901C-0A3B9AB273EC
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = GpioPinLeaseLib
+[Sources]
+  GpioPinLease.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  GpioLib
+  BaseMemoryLib
+  IoLib

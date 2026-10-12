@@ -1,0 +1,27 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UsbMscTest
+  FILE_GUID = 4027584c-35c8-49d1-8509-ff1d0d88a110
+  MODULE_TYPE = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT = UefiMain
+[Sources]
+  UsbMscTest.c
+  UsbMscBlock.c
+  UsbMscBlock.h
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  UsbMscCrLib
+[Protocols]
+  gEfiUsbFunctionIoProtocolGuid ## CONSUMES
+  gEfiBlockIoProtocolGuid ## CONSUMES
+  gEfiDevicePathProtocolGuid ## CONSUMES

@@ -1,0 +1,18 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssDualCrLib
+  FILE_GUID = E3036F08-0F74-4B3C-9A41-068733870DA9
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssDualCrLib
+[Sources]
+  MdssDual.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  MdssCrLib
+  MdssDscCrLib
+  MdssDsiCrLib
+  BaseMemoryLib
+  CompilerIntrinsicsLib

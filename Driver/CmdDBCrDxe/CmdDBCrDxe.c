@@ -28,8 +28,7 @@ ProtocolGetEntryAddressByName(
     return EFI_INVALID_PARAMETER;
   }
 
-  CR_STATUS Status = GetCmdDBEntryAddressByName(gCmdDbHeader, Name, Address);
-  return (Status == CR_SUCCESS) ? EFI_SUCCESS : EFI_NOT_FOUND;
+  return GetCmdDBEntryAddressByName(gCmdDbHeader, Name, Address);
 }
 
 EFI_STATUS
@@ -41,9 +40,7 @@ ProtocolGetEntryNameByAddress(
     return EFI_INVALID_PARAMETER;
   }
 
-  CR_STATUS Status =
-      GetCmdDBEntryNameByAddress(gCmdDbHeader, (UINT32)Address, (CHAR8 *)Name);
-  return (Status == CR_SUCCESS) ? EFI_SUCCESS : EFI_NOT_FOUND;
+  return GetCmdDBEntryNameByAddress(gCmdDbHeader, Address, (CHAR8 *)Name);
 }
 
 EFI_STATUS
@@ -96,8 +93,8 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 
   // Validate AOP CMD DB region
   gCmdDbHeader = (CmdDbHeader *)(UINTN)Config->BaseAddress;
-  if (!ValidateCmdDBHeader(gCmdDbHeader)) {
-    DEBUG((EFI_D_ERROR, "CmdDBEntryPoint: Invalid CmdDB Header\n"));
+  if (!ValidateCmdDBRegion(gCmdDbHeader, (UINTN)Config->Size)) {
+    DEBUG((EFI_D_ERROR, "CmdDBEntryPoint: Invalid CmdDB region\n"));
     gCmdDbHeader = NULL;
     return EFI_ABORTED;
   }
@@ -106,6 +103,7 @@ CmdDBEntryPoint(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   Status = gBS->InstallMultipleProtocolInterfaces(
       &ImageHandle, &gEfiCmdDBCrProtocolGuid, &gCmdDBProtocol, NULL, NULL);
   if (EFI_ERROR(Status)) {
+    gCmdDbHeader = NULL;
     DEBUG(
         (EFI_D_ERROR, "CmdDBEntryPoint: InstallProtocolInterface returned %r\n",
          Status));

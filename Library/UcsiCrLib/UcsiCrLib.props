@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <CRANE_UCSI_LIB_DIR>$(MSBuildThisFileDirectory)</CRANE_UCSI_LIB_DIR>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_PropertySheetDisplayName>UcsiCrLib</_PropertySheetDisplayName>
+    <IncludePath>$(CRANE_UCSI_LIB_DIR)..\..\Include;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)Ipcc.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)IpccReceive.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)Glink.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)PmicGlink.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)Qrtr.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)ChargerLog.c" />
+    <ClCompile Include="$(CRANE_UCSI_LIB_DIR)Ppm.c" />
+  </ItemGroup>
+</Project>

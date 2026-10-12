@@ -47,7 +47,8 @@ referenced child tables, and callback code remain valid until
 This service has no runtime API.
 
 Immutable entries describe PCIe, SMMU, ICB, QUP/GPI, TRNG, and optional
-PMIC GPIO/button data, the CMD DB memory region, and LT9611 board GPIOs.
+PMIC GPIO/button data, the CMD DB memory region, LT9611 board GPIOs and
+the SM8450 ADSP PIL carveout, firmware path and interprocessor resource IDs.
 The LT9611 descriptor is omitted on boards without a UINT16 power-pin array.
 The existing clock, debug clock, debug UART, GPIO,
 PDC, RPMh, and SPMI context ABIs can contain mutable initialization state. Such
@@ -57,15 +58,51 @@ same resource state. A descriptor cannot be both immutable and shared mutable.
 
 Clock platform callbacks are a separate, versioned `CR_DAL_CLOCK_SERVICES`
 payload. Revision 1.1 adds `ResolveResource()`, which maps a Crane
-`(Controller, Id, Kind)` tuple to the packaged driver's native ID and returns
+`(Controller, Id, Kind)` tuple to the target's native node name and returns
 resource flags. `NO_RATE` suppresses an unsupported exact-frequency request;
-`EXTERNAL_SOURCE` selects native source zero before the first enable vote. This
-also makes source/leaf aliases share one native reference. Waipio's
-`ClockCrDxe` uses this resolver with the packaged Clock protocol, but does not
-invoke the raw GCC initialization and reset callbacks intended for an
-environment where Crane owns GCC. The PCIe I/O payload is immutable and
+`EXTERNAL_SOURCE` selects source zero before the first enable vote for resources
+that declare that behavior. The SM8450 PCIe PHY AUX aliases use `NO_RATE` only,
+so ordinary enable preserves the bootloader-selected legal mux parent while an
+explicit source-configuration call can change it while disabled. This also
+makes source/leaf aliases share one native reference. On SM8450 `ClockCrDxe`
+uses this resolver with Crane's own `ClockLib`; it does not locate or call the
+Qualcomm `ClockDxe` protocol. The PCIe I/O payload is immutable and
 `CrDalGetPcieIo()` copies it to the host's local callback table before the host
 installs resource-owner callbacks.
+
+## ABL device-tree handoff
+
+`BootModeCaptureCrLib` preserves the raw ABL DTB and the bounded initrd tail
+needed for Android bootconfig. SEC performs address/length checks and a minimal
+`/chosen` initrd-bound lookup; UFS rail policy and Android mode parsing run in
+DXE. No changes to MU's FDT library are required.
+
+The copy arena is excluded from PHIT free memory before `HobConstructor` and
+published as a named `EfiBootServicesData` allocation before the general heap
+allocation HOB. `gCrBootDataGuid` describes the exact copied ranges and records
+FDT and initrd-tail capture status separately. Original physical addresses are
+source labels, not permission for a DXE consumer to reread ABL memory.
+
+Crane PrePi starts the HOB list at `PHIT.EfiMemoryBottom`. MU's DXE Core
+relocates the list into pool without changing its physical PHIT fields.
+DAL validates the historical bounds and computes the copied list length from
+them, then walks that length at the current `GetHobList()` address. It never
+reads the reclaimed original HOB storage. The arena must be disjoint from both
+list locations and the historical PEI free interval.
+
+`CrDALDxe` checks the HOB record, allocation ownership and system-memory coverage,
+then creates its own immutable snapshot. It uses MU `FdtLib`/libfdt for complete
+validation and exposes `EFI_CR_FDT_PROTOCOL` alongside the device-data protocol.
+Callers can obtain the blob, locate a path or compatible node, read a property,
+or copy the parsed Android boot information. Returned blob/property pointers
+belong to DAL and are valid until `ExitBootServices()`; there is no mutation or
+runtime interface.
+
+UFS policy is resolved from this snapshot before its target entry is published.
+Rejected FDT data omits the dependent UFS entry while preserving unrelated DAL
+entries. A bad initrd tail leaves a valid FDT available for UFS and reports an
+error through `GetBootInfo`. `ChargerBootCrLib` obtains charging mode through
+that method instead of consuming a SEC-parsed mode HOB.
 
 ## Adding a consumer or provider
 

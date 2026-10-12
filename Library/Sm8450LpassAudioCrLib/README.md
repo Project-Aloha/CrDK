@@ -1,0 +1,13 @@
+# HDK8450 LPASS setup and muted codec identification
+
+This GPL-2.0-only library connects the actual retained PRM owner to LPASS pad/macro setup and the actual SoundWire v1.7 engine. `Codecs.c` coordinates both WCD functions and both WSA slaves, reads live identification registers and verifies WSA PA-off by readback. `IdentifiedMuted` is an inventory state, not graph, PCM or playback admission.
+
+Source: [OnePlus audio-kernel](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8450/tree/877203a7cf9b79973d44a9db716490f95d820110/vendor/qcom/opensource/audio-kernel), its waipio HDK/parent/LPI DT, `lpass-cdc-registers.h`, RX/VA/WSA macro and frame-generator code, `pinctrl-lpi.c`, `wcd938x.c/.h` and `wsa883x.c`. The HDK overlay is also corroborated by Android commit252b88fe37d30b9dadc63a86392833c731867fbb and mainline's SM8450 HDK topology. LICENSE retains GPLv2.
+
+The resource adapter must obtain real exclusive translated windows and rail/reset owner references. This portable layer does not map hardcoded physical addresses. Its target inventory includes three macro windows, independent LPI/slew, three SoundWire masters and three read-only mux words. It requires the default TX-derived mux0 path; it does not switch native clocks. The frame generator is VA at0x033f0000, matching virtual register offsets0x3000/3004/3080. GPIO numbering for LPI is separate from TLMM reset pins43/1/89.
+
+All PRM grants must be current before register accesses. Every changed register field is journaled before writing and read back. A failed effect retains its lease and rollback journal. Inherited active macros and native mux1 are refused. Stop requires the real provider to verify all SoundWire owners/IRQs/deferred callbacks drained, restores fields in reverse order, then releases actual owned platform resources. Source loss does not authorize stale MMIO or discard the retained journal.
+
+WCD identification uses TX after both RX/TX enumerate; WCD9385 variant decoding is bits1..4. WSA8835 variants1/5 are accepted and PA_FSM_CTL bit0 is cleared and read back. FIFO-drained writes are not codec acknowledgements. Unexpected variant, changed enumerator generation or failed PA readback closes identification. Partial Starts stop all siblings; the consumer takes the exact retired SoundWire result before request storage is reused.
+
+Tests compile the real PRM and SoundWire cores with independently modeled hardware and original Android register headers: `run_sm8450_audio_codec_tests.py`, `run_sm8450_lpass_tests.py`. These do not qualify physical PEP/IRQ/rail providers or actual hardware. No speaker PA enable, WCD analog route, SoundWire stream ports, ACDB tuning, graph preparation or PCM operation is included yet.

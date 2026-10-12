@@ -42,8 +42,31 @@ enum {
   CrDalDeviceButtons           = 16,
   CrDalDeviceCmdDb             = 17,
   CrDalDeviceLt9611            = 18,
-  CrDalDeviceMax               = 19
+  CrDalDeviceRpmhRails         = 19,
+  CrDalDevicePil               = 20,
+  CrDalDeviceRpmhTopology      = 21,
+  CrDalDeviceSd                = 22,
+  CrDalDeviceUfs               = 23,
+  CrDalDeviceRpmhArcInventory  = 24,
+  CrDalDeviceMdss              = 25,
+  CrDalDeviceSocInfo           = 26,
+  CrDalDeviceMax               = 27
 };
+
+/** Declared SoC target identity, independent of the selected board.
+    QualcommSocId follows public dt-bindings/arm/qcom,ids.h. This identifies
+    the resource provider; it does not attest the running hardware. The
+    compatible is a terminated public SoC DT compatible, never a board name.
+    This optional immutable payload does not change the v1 descriptor stride.
+ */
+#define CR_DAL_SOC_INFO_REVISION  CR_DAL_REVISION (1, 0)
+#define CR_DAL_SOC_COMPATIBLE_MAX 32U
+typedef struct {
+  UINT32 Revision;
+  UINT32 Size;
+  UINT32 QualcommSocId;
+  CHAR8  Compatible[CR_DAL_SOC_COMPATIBLE_MAX];
+} CR_DAL_SOC_INFO;
 
 /** Data is backed by storage in the provider image. */
 #define CR_DAL_DEVICE_ATTRIBUTE_STATIC_STORAGE       0x00000001U
@@ -124,10 +147,56 @@ typedef struct {
   UINT64 Size;
 } CR_DAL_CMD_DB_CONFIG;
 
+/** Additional shared RPMh supplies beyond the legacy PCIe description.
+    CmdDB provides addresses; consumers supply voltage/mode and own votes. */
+typedef struct {
+  UINTN Count;
+  CONST CHAR8 *CONST *Names;
+} CR_DAL_RPMH_RAILS;
+
+/** Board input-supply dependencies. One parent lease per active child rail;
+    the parent voltage/mode must agree for all children sharing that input. */
+typedef struct {
+  CONST CHAR8 *Child;
+  CONST CHAR8 *Parent;
+  UINT32       VoltageMv;
+  UINT8        Mode;
+} CR_DAL_RPMH_PARENT;
+
+typedef struct {
+  UINTN Count;
+  CONST CR_DAL_RPMH_PARENT *Parents;
+} CR_DAL_RPMH_TOPOLOGY;
+
+/** Optional ARC boot inventory. Entries are ordered parent before child;
+    ParentIndex is an earlier index or CR_DAL_RPMH_ARC_NO_PARENT. MinLevel
+    qualifies the highest CmdDB corner; it is a virtual performance level,
+    never a voltage or a hardware corner index. Acknowledged maximum floors
+    remain permanent until reboot while native consumers are unsynchronized.
+    Omission preserves the historical six-resource provider/PHOF contract. */
+#define CR_DAL_RPMH_ARC_REVISION 1U
+#define CR_DAL_RPMH_ARC_POWER 1U
+#define CR_DAL_RPMH_ARC_XO 2U
+#define CR_DAL_RPMH_ARC_NO_PARENT MAX_UINT32
+typedef struct {
+  CHAR8 Name[9];
+  UINT32 Kind;
+  UINT32 MinLevel;
+  UINT32 ParentIndex;
+} CR_DAL_RPMH_ARC_ENTRY;
+typedef struct {
+  UINT32 Revision;
+  UINT32 Size;
+  UINT32 Count;
+  CONST CR_DAL_RPMH_ARC_ENTRY *Entries;
+} CR_DAL_RPMH_ARC_INVENTORY;
+
 typedef struct {
   UINT16        InterruptPin;
   UINTN         PowerPinCount;
   CONST UINT16 *PowerPins;
+  UINT32        I2cInstance;
+  UINT8         I2cAddress;
 } CR_DAL_LT9611_CONFIG;
 
 #endif

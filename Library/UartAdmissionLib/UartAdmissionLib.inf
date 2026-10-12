@@ -1,0 +1,22 @@
+## @file
+# Shared UART writer admission and bounded native GENI retirement.
+# SPDX-License-Identifier: MIT
+##
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = UartAdmissionLib
+  FILE_GUID = A01C2441-5D93-47D4-91FA-38468B8662A1
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = UartAdmissionLib
+
+[Sources]
+  UartAdmission.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+
+[LibraryClasses]
+  SynchronizationLib
+

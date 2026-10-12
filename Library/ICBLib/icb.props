@@ -14,5 +14,6 @@
       <Value>$(CRANE_CRDK_LIB_ICB_DIR)</Value>
     </BuildMacro>
     <ClCompile Include="$(CRANE_CRDK_LIB_ICB_DIR)/icb.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_ICB_DIR)/icb_votes.c" />
   </ItemGroup>
 </Project>

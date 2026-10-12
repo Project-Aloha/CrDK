@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Hdk8245TouchTargetLib
+  FILE_GUID = 39D5D752-B471-40AF-8478-5C9BD24D8BDE
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = CrTargetTouchLib
+[Sources]
+  CrTouchTarget.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

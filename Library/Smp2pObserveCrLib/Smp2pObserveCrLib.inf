@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = Smp2pObserveCrLib
+  FILE_GUID = 199F5F35-77CC-4E1D-9C8C-8298E47A1F15
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = Smp2pObserveCrLib
+[Sources]
+  Smp2p.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

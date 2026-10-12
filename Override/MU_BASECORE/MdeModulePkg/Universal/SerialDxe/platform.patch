@@ -1,0 +1,52 @@
+diff --git a/MdeModulePkg/Universal/SerialDxe/SerialIo.c b/MdeModulePkg/Universal/SerialDxe/SerialIo.c
+index 25be8634ab..bb25ff339e 100644
+--- a/MdeModulePkg/Universal/SerialDxe/SerialIo.c
++++ b/MdeModulePkg/Universal/SerialDxe/SerialIo.c
+@@ -483,14 +483,15 @@ SerialRead (
+   IN OUT UINTN               *BufferSize,
+   OUT VOID                   *Buffer
+   )
+-{
+-  UINTN  Count;
+-  UINTN  TimeOut;
+-
+-  Count = 0;
+-
+-  while (Count < *BufferSize) {
+-    TimeOut = 0;
++{
++  UINTN  Count;
++  UINTN  TimeOut;
++  UINTN  ReadCount;
++
++  Count = 0;
++
++  while (Count < *BufferSize) {
++    TimeOut = 0;
+     while (TimeOut < mSerialIoMode.Timeout) {
+       if (SerialPortPoll ()) {
+         break;
+@@ -504,10 +505,19 @@ SerialRead (
+       break;
+     }
+ 
+-    SerialPortRead (Buffer, 1);
+-    Count++;
+-    Buffer = (VOID *)((UINT8 *)Buffer + 1);
+-  }
++    /* SerialPortPoll is only a readiness hint.  A sticky interrupt or a
++       device-side FIFO race can still make the library return zero bytes;
++       never report a byte that was not copied into the caller's buffer. */
++    ReadCount = SerialPortRead (Buffer, 1);
++    if (ReadCount == 0) {
++      break;
++    }
++    if (ReadCount > (*BufferSize - Count)) {
++      ReadCount = *BufferSize - Count;
++    }
++    Count += ReadCount;
++    Buffer = (VOID *)((UINT8 *)Buffer + ReadCount);
++  }
+ 
+   if (Count != *BufferSize) {
+     *BufferSize = Count;

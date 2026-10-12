@@ -1,0 +1,12 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = SubsystemCrLib
+  FILE_GUID = E81A6FE2-2A6B-524A-91E6-EE5C5A02D120
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SubsystemCrLib
+[Sources]
+  Subsystem.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec

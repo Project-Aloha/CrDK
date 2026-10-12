@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ButtonsInputLib
+  FILE_GUID = B412F6AD-A5B7-4B42-8406-783F9A974782
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ButtonsInputLib
+[Sources]
+  ButtonsInput.c
+[Packages]
+  MdePkg/MdePkg.dec
+  Platforms/CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  SynchronizationLib

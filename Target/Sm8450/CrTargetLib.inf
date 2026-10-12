@@ -7,25 +7,34 @@
   LIBRARY_CLASS                  = CrTargetLib
 
 [Sources]
+  CrMdssTarget.c
+  CrRpmhRails.h
   CrTarget.c
   CrRpmhTarget.c
   CrClockTarget.c
+  ../../Library/Sm8450ClockLib/Sm8450Clock.c
   CrClockDebugTarget.c
   CrDebugUartTarget.c
   CrGpioTarget.c
   CrPdcTarget.c
   CrTrngTarget.c
   CrPcieTarget.c
+  CrPcieBackend.c
   CrInterconnectTarget.c
+  ../../Library/Sm8450InterconnectLib/Sm8450Interconnect.c
   CrSmmuTarget.c
   CrQupTarget.c
+  CrSdTarget.c
+  CrUfsTarget.c
 
 [Packages]
   MdePkg/MdePkg.dec
   CranePkg/CranePkg.dec
-  AndromedaPkg/AndromedaPkg.dec
+  MUCommonCrPkg/MUCommonCrPkg.dec
 
 [LibraryClasses]
+  ClockLib
+  SynchronizationLib
   BaseLib
   BaseMemoryLib
   IoLib
@@ -34,6 +43,6 @@
   PcdLib
 
 [Pcd]
-  gAndromedaPkgTokenSpaceGuid.PcdUartSerialBase
+  gMUCommonCrPkgTokenSpaceGuid.PcdUartSerialBase
   gCranePkgTokenSpaceGuid.PcdLt9611GpioHigh
   gCranePkgTokenSpaceGuid.PcdLt9611GpioInt

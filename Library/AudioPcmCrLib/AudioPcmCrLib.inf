@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = AudioPcmCrLib
+  FILE_GUID = 8D6C62B3-AC89-49D3-B5F0-E9D5C20A5678
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = AudioPcmCrLib
+[Sources]
+  AudioPcm.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  AudioGprCrLib

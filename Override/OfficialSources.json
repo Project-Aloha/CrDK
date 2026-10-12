@@ -1,0 +1,17 @@
+{
+  "description": "Only reviewed diagnostic changes are allowed in official source trees; platform functionality lives in explicit modules. Update after review when changing pinned upstream.",
+  "repositories": {
+    "MU_BASECORE": {
+      "revision": "562c0927ef7bfc65d26d9caf322e569ccb23b6a9",
+      "diagnostic_only": {
+        "MdeModulePkg/Core/Dxe/DxeMain/DxeMain.c": "f63b62e1527c88a815ef37623e7c7aaf0c3a3ad4328188e9b0bb92e9caac6f50",
+        "MdeModulePkg/Core/Dxe/Image/Image.c": "07fd137dc9b278faee5f01ebb4fee53fc9f47755bc12f45af329566aa80b5de9",
+        "MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystem.c": "d08573b993c5862eb77a65640eb466c2b079e8aa10ddc4682b8b46c98ac7bb14"
+      }
+    },
+    "Common/MU": {
+      "revision": "49625b8f6cabe7e4d9797d192c354b14af0490d1",
+      "diagnostic_only": {}
+    }
+  }
+}

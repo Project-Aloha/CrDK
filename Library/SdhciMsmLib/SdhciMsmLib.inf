@@ -1,0 +1,14 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = SdhciMsmLib
+  FILE_GUID = D64067D7-DAC1-4A1D-A3AC-AD8D5B17C4B9
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SdhciMsmLib
+[Sources]
+  SdhciMsm.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseMemoryLib

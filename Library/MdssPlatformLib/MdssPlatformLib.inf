@@ -1,0 +1,16 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = MdssPlatformLib
+  FILE_GUID = 07778AC4-E4F8-4223-B19D-EA47ABCC6D58
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = MdssPlatformLib
+[Sources]
+  Platform.c
+  DsiPhy.c
+  Lt9611.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  MdssCrLib

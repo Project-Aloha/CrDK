@@ -1,0 +1,168 @@
+diff --git a/EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOut.c b/EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOut.c
+index 9d6d103af8..3dcb02e0af 100644
+--- a/EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOut.c
++++ b/EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOut.c
+@@ -55,6 +55,7 @@
+ #include <Library/UefiLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/BaseLib.h>
++#include <Library/BaseMemoryLib.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/DebugLib.h>
+ #include <Library/SerialPortLib.h>
+@@ -68,6 +69,71 @@
+ #define MODE0_COLUMN_COUNT  80
+ #define MODE0_ROW_COUNT     25
+ 
++/*
++ * SerialPortRead() is deliberately non-blocking.  A terminal can therefore
++ * split an escape sequence across two timer ticks (or two UART FIFO fills).
++ * Keep at most one three-byte ESC/CSI prefix pending so ReadKeyStroke() never
++ * consumes a prefix and then reports EFI_NOT_READY with that input lost.
++ */
++#define CONIN_PENDING_BYTES  3
++STATIC CHAR8  mConInPending[CONIN_PENDING_BYTES];
++STATIC UINTN  mConInPendingCount;
++
++STATIC
++BOOLEAN
++ReadConInByte (
++  OUT CHAR8  *Byte
++  )
++{
++  if ((Byte == NULL) || (mConInPendingCount > CONIN_PENDING_BYTES)) {
++    return FALSE;
++  }
++
++  if (mConInPendingCount != 0) {
++    *Byte = mConInPending[0];
++    if (mConInPendingCount > 1) {
++      CopyMem (
++        mConInPending,
++        mConInPending + 1,
++        mConInPendingCount - 1
++        );
++    }
++    mConInPendingCount--;
++    return TRUE;
++  }
++
++  return SerialPortRead ((UINT8 *)Byte, 1) == 1;
++}
++
++STATIC
++VOID
++PushConInBytes (
++  IN CONST CHAR8  *Bytes,
++  IN UINTN         Count
++  )
++{
++  UINTN Index;
++
++  if ((Bytes == NULL) || (Count == 0) ||
++      (Count > CONIN_PENDING_BYTES) ||
++      (mConInPendingCount + Count > CONIN_PENDING_BYTES)) {
++    return;
++  }
++
++  /* Move the old suffix out of the way, then prepend the saved prefix. */
++  if (mConInPendingCount != 0) {
++    CopyMem (
++      mConInPending + Count,
++      mConInPending,
++      mConInPendingCount
++      );
++  }
++  for (Index = 0; Index < Count; Index++) {
++    mConInPending[Index] = Bytes[Index];
++  }
++  mConInPendingCount += Count;
++}
++
+ EFI_STATUS
+ EFIAPI
+ TextInReset (
+@@ -251,10 +317,13 @@ WaitForKeyEvent (
+   IN VOID       *Context
+   )
+ {
+-  if (SerialPortPoll ()) {
+-    gBS->SignalEvent (Event);
+-  }
+-}
++  /* A split ESC/CSI sequence is retained in software.  Signal the event
++     while that prefix is pending, otherwise ConIn can sleep forever after
++     the first byte of an arrow key was consumed. */
++  if ((mConInPendingCount != 0) || SerialPortPoll ()) {
++    gBS->SignalEvent (Event);
++  }
++}
+ 
+ EFI_STATUS
+ EFIAPI
+@@ -263,6 +332,8 @@ TextInReset (
+   IN BOOLEAN                         ExtendedVerification
+   )
+ {
++  mConInPendingCount = 0;
++  ZeroMem (mConInPending, sizeof (mConInPending));
+   return EFI_SUCCESS;
+ }
+ 
+@@ -274,12 +345,19 @@ ReadKeyStroke (
+   )
+ {
+   CHAR8  Char;
++  CHAR8  EscapePrefix[CONIN_PENDING_BYTES];
++  UINTN  EscapeLength;
+ 
+-  if (!SerialPortPoll ()) {
++  if ((mConInPendingCount == 0) && !SerialPortPoll ()) {
+     return EFI_NOT_READY;
+   }
+ 
+-  SerialPortRead ((UINT8 *)&Char, 1);
++  /* Polling can observe a stale GENI interrupt bit.  Never interpret an
++     unfilled byte as a key; doing so used to make ConIn consume garbage when
++     the UART FIFO was drained between Poll and Read. */
++  if (!ReadConInByte (&Char)) {
++    return EFI_NOT_READY;
++  }
+ 
+   //
+   // Check for ESC sequence. This code is not technically correct VT100 code.
+@@ -291,9 +369,19 @@ ReadKeyStroke (
+   Key->UnicodeChar = 0;
+   Key->ScanCode    = SCAN_NULL;
+   if (Char == 0x1b) {
+-    SerialPortRead ((UINT8 *)&Char, 1);
++    EscapePrefix[0] = Char;
++    EscapeLength = 1;
++    if (!ReadConInByte (&Char)) {
++      PushConInBytes (EscapePrefix, EscapeLength);
++      return EFI_NOT_READY;
++    }
++    EscapePrefix[EscapeLength++] = Char;
+     if (Char == '[') {
+-      SerialPortRead ((UINT8 *)&Char, 1);
++      if (!ReadConInByte (&Char)) {
++        PushConInBytes (EscapePrefix, EscapeLength);
++        return EFI_NOT_READY;
++      }
++      EscapePrefix[EscapeLength++] = Char;
+       switch (Char) {
+         case 'A':
+           Key->ScanCode = SCAN_UP;
+@@ -361,7 +449,11 @@ ReadKeyStroke (
+           break;
+       }
+     } else if (Char == '0') {
+-      SerialPortRead ((UINT8 *)&Char, 1);
++      if (!ReadConInByte (&Char)) {
++        PushConInBytes (EscapePrefix, EscapeLength);
++        return EFI_NOT_READY;
++      }
++      EscapePrefix[EscapeLength++] = Char;
+       switch (Char) {
+         case 'P':
+           Key->ScanCode = SCAN_F1;
