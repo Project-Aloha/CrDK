@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the six explicit storage/USB forks against their relocation provenance."""
+"""Verify storage/USB forks and recorded later changes against pinned MU sources."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -13,6 +13,7 @@ ROOT = CRANE.parents[1]
 MODULES = (
     'EmbeddedPkg/Universal/MmcDxe',
     'MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe',
+    'MdeModulePkg/Bus/Pci/NvmExpressDxe',
     'MdeModulePkg/Bus/Pci/XhciDxe',
     'MdeModulePkg/Bus/Scsi/ScsiDiskDxe',
     'MdeModulePkg/Bus/Ufs/UfsPassThruDxe',
@@ -77,28 +78,43 @@ def main():
                 path = directory / entry['file']
                 data = path.read_bytes()
                 assert digest(data) == entry['fork_sha256'], path
-                assert oct(path.stat().st_mode & 0o777) == entry['fork_mode'], path
+                # Git records executable bits, not group-write bits or umask.
+                assert path.stat().st_mode & 0o111 == int(entry['fork_mode'], 8) & 0o111, path
+                upstream_path = entry.get('upstream_path', module + '/' + entry['file'])
                 old = subprocess.check_output(['git', '-C', str(ROOT / 'MU_BASECORE'), 'show',
-                    provenance['upstream_commit'] + ':' + module + '/' + entry['file']])
+                    provenance['upstream_commit'] + ':' + upstream_path])
                 assert digest(old) == entry['upstream_sha256'], path
                 original = baseline / module / entry['file']
                 original.parent.mkdir(parents=True, exist_ok=True)
-                original.write_bytes(old)
-                original.chmod(int(entry['upstream_mode'], 8))
+                if entry.get('added_file'):
+                    # A new private header may derive from another upstream
+                    # file; the recorded patch must create it from scratch.
+                    assert entry.get('post_relocation_edit'), path
+                    assert upstream_path != module + '/' + entry['file'], path
+                    assert not subprocess.check_output(['git', '-C', str(ROOT / 'MU_BASECORE'),
+                        'ls-tree', provenance['upstream_commit'], '--', module + '/' + entry['file']]), path
+                else:
+                    original.write_bytes(old)
+                    original.chmod(int(entry['upstream_mode'], 8))
+                captured_hash = entry.get('source_sha256', entry.get('captured_sha256'))
                 if args.compare_source:
-                    assert digest((ROOT / entry['source_path']).read_bytes()) == entry['source_sha256'], entry['source_path']
+                    assert digest((ROOT / entry['source_path']).read_bytes()) == (captured_hash or entry['upstream_sha256']), entry['source_path']
                 if entry['file'] == 'XhciDxe.inf':
                     data = data.replace(b'  CranePkg/CranePkg.dec\r\n', b'').replace(b'  CranePkg/CranePkg.dec\n', b'')
                     assert 'CranePkg/CranePkg.dec' in text
                 else:
                     if path.suffix == '.inf':
                         assert 'CranePkg/CranePkg.dec' not in text
-                assert digest(data) == entry['source_sha256'], path
+                if not entry.get('post_relocation_edit'):
+                    assert digest(data) == captured_hash, path
             patch = directory / 'MU_BASECORE.patch'
             assert digest(patch.read_bytes()) == provenance['patch_sha256']
             subprocess.run(['git', 'apply', '--whitespace=nowarn', str(patch)], cwd=baseline, check=True)
             for entry in provenance['files']:
-                assert digest((baseline / module / entry['file']).read_bytes()) == entry['source_sha256'], entry['file']
+                expected_data = (directory / entry['file']).read_bytes()
+                if entry['file'] == 'XhciDxe.inf':
+                    expected_data = expected_data.replace(b'  CranePkg/CranePkg.dec\r\n', b'').replace(b'  CranePkg/CranePkg.dec\n', b'')
+                assert (baseline / module / entry['file']).read_bytes() == expected_data, entry['file']
             records.append({'module':module, 'files':len(files), 'provenance_sha256':digest((directory / 'PROVENANCE.json').read_bytes()),
                             'patch_sha256':provenance['patch_sha256'], 'file_guid':provenance['file_guid']})
     header = CRANE / 'Include/Protocol/Usb2HcFreeze.h'
@@ -106,12 +122,13 @@ def main():
     assert expected in header.read_text()
     if args.compare_source:
         assert header.read_bytes() == (ROOT / 'MU_BASECORE/MdeModulePkg/Include/Protocol/Usb2HcFreeze.h').read_bytes()
-    result = {'passed':True, 'scope':'Exact minimal INF closure, byte-preserving relocation, identities, baseline+patch reconstruction',
+    result = {'passed':True, 'scope':'Exact minimal INF closure, identities, captured hashes and current baseline+patch reconstruction',
               'official_source_compared':args.compare_source, 'modules':records, 'freeze_header_sha256':digest(header.read_bytes())}
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2)+'\n')
-    print('PASS: six storage/USB modules, 54 closure files, baseline+patch reconstruction, original identities and exact C/header/UNI bytes')
+    print('PASS:', len(records), 'storage/USB modules,', sum(r['files'] for r in records),
+          'closure files, baseline+patch reconstruction, original identities and exact current C/header/UNI bytes')
 
 if __name__ == '__main__':
     main()

@@ -11,105 +11,153 @@
       "upstream_sha256": "c2514eac302c6b17a82c9f468dcf56cd64e93045f735cdbd5f8301bf6a0f9e9d",
       "captured_sha256": "c2514eac302c6b17a82c9f468dcf56cd64e93045f735cdbd5f8301bf6a0f9e9d",
       "fork_sha256": "c2514eac302c6b17a82c9f468dcf56cd64e93045f735cdbd5f8301bf6a0f9e9d",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/ComponentName.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpress.c",
       "upstream_sha256": "83d20dfa1b2e89874ed76a27a9eeb269865a4f817e712cb21a3bc3c83d1d4959",
       "captured_sha256": "92d612ce7123416908750ced70e2ef0c03e6651737427b0d00919c5f82860d6a",
       "fork_sha256": "92d612ce7123416908750ced70e2ef0c03e6651737427b0d00919c5f82860d6a",
-      "local_behavior_delta": true
+      "local_behavior_delta": true,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpress.h",
       "upstream_sha256": "b7a56c2bca28f48435b52e56c03ab33d26cf49211b0d3590f208fc1b0ee13aae",
       "captured_sha256": "cee07348c0bacc674cd4472c13d52a122bf129b9485516e4906cdf710578bb5f",
       "fork_sha256": "cee07348c0bacc674cd4472c13d52a122bf129b9485516e4906cdf710578bb5f",
-      "local_behavior_delta": true
+      "local_behavior_delta": true,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpress.h",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressBlockIo.c",
       "upstream_sha256": "fab59be023910ab09091a7acddc475dce5036c0d653e45fc01a6f773326ba8f9",
       "captured_sha256": "79c9a290032c476072429c08379f2fa28efb8a676f746cc239e0422bf2a7e66a",
       "fork_sha256": "79c9a290032c476072429c08379f2fa28efb8a676f746cc239e0422bf2a7e66a",
-      "local_behavior_delta": true
+      "local_behavior_delta": true,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressBlockIo.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressBlockIo.h",
       "upstream_sha256": "1a363686b461d8e47e4ff695f6d3f87e764336891c0583a5328193cdd3c905ce",
       "captured_sha256": "1a363686b461d8e47e4ff695f6d3f87e764336891c0583a5328193cdd3c905ce",
       "fork_sha256": "1a363686b461d8e47e4ff695f6d3f87e764336891c0583a5328193cdd3c905ce",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressBlockIo.h",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressDiskInfo.c",
       "upstream_sha256": "0abd345ddb2c2bf9ab49abf7b73ebe205c7d55dc0117f795934800d557fb2cda",
       "captured_sha256": "0abd345ddb2c2bf9ab49abf7b73ebe205c7d55dc0117f795934800d557fb2cda",
       "fork_sha256": "0abd345ddb2c2bf9ab49abf7b73ebe205c7d55dc0117f795934800d557fb2cda",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDiskInfo.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressDiskInfo.h",
       "upstream_sha256": "0a47abd4f8533bfcc3ae8da67a2c35f1bf540cf3d97cb17e97bb1cfec1a74dfc",
       "captured_sha256": "0a47abd4f8533bfcc3ae8da67a2c35f1bf540cf3d97cb17e97bb1cfec1a74dfc",
       "fork_sha256": "0a47abd4f8533bfcc3ae8da67a2c35f1bf540cf3d97cb17e97bb1cfec1a74dfc",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDiskInfo.h",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressDxe.inf",
       "upstream_sha256": "67541153a6646ac514cfd33d0efabd78010ccc9d1dab659cd6fd3e4ef68a58d8",
       "captured_sha256": "67541153a6646ac514cfd33d0efabd78010ccc9d1dab659cd6fd3e4ef68a58d8",
       "fork_sha256": "67541153a6646ac514cfd33d0efabd78010ccc9d1dab659cd6fd3e4ef68a58d8",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressDxe.uni",
       "upstream_sha256": "f3efb0ba7e2e06ac1f748e433d5d59bcc3754254c26070fa922859c6ab64f941",
       "captured_sha256": "f3efb0ba7e2e06ac1f748e433d5d59bcc3754254c26070fa922859c6ab64f941",
       "fork_sha256": "f3efb0ba7e2e06ac1f748e433d5d59bcc3754254c26070fa922859c6ab64f941",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.uni",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressDxeExtra.uni",
       "upstream_sha256": "5a9878df9ff6337d17228c2e91b946676573393078a2f397b9b94ffd3571c69f",
       "captured_sha256": "5a9878df9ff6337d17228c2e91b946676573393078a2f397b9b94ffd3571c69f",
       "fork_sha256": "5a9878df9ff6337d17228c2e91b946676573393078a2f397b9b94ffd3571c69f",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxeExtra.uni",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressHci.c",
       "upstream_sha256": "f40f49e376fa1720cf9489ad2147677efe44ddbe3a9da96e46e4363993bc21b4",
       "captured_sha256": "c92327a05500b45e154eae6443ea2c28f75882a28d2b0495020aaa81fa7e0d0f",
       "fork_sha256": "c92327a05500b45e154eae6443ea2c28f75882a28d2b0495020aaa81fa7e0d0f",
-      "local_behavior_delta": true
+      "local_behavior_delta": true,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressHci.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressHci.h",
       "upstream_sha256": "05fe737c6be4b5a4be905d41a41018a18818c2091825a360a8fa39a550ab0699",
       "captured_sha256": "05fe737c6be4b5a4be905d41a41018a18818c2091825a360a8fa39a550ab0699",
       "fork_sha256": "05fe737c6be4b5a4be905d41a41018a18818c2091825a360a8fa39a550ab0699",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressHci.h",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressMediaSanitize.c",
       "upstream_sha256": "204d14fe8c514bd287a9b4993b98c38295783eda692514df43ccc189e54612e0",
       "captured_sha256": "204d14fe8c514bd287a9b4993b98c38295783eda692514df43ccc189e54612e0",
       "fork_sha256": "204d14fe8c514bd287a9b4993b98c38295783eda692514df43ccc189e54612e0",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressMediaSanitize.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressMediaSanitize.h",
       "upstream_sha256": "669586e184f461545580963b5940095970ac6e459add5efdbbbf6c11e6ffa0d1",
       "captured_sha256": "669586e184f461545580963b5940095970ac6e459add5efdbbbf6c11e6ffa0d1",
       "fork_sha256": "669586e184f461545580963b5940095970ac6e459add5efdbbbf6c11e6ffa0d1",
-      "local_behavior_delta": false
+      "local_behavior_delta": false,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressMediaSanitize.h",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     },
     {
       "file": "NvmExpressPassthru.c",
       "upstream_sha256": "2b04e21cd0dd5ab4731f8ec635cfe68403494e530c39ad934bf51832a8bbdf66",
       "captured_sha256": "6d17e102a1d69b30f6264c1e54c4db24d3627cda260ff4304abedeaeaf6e4f00",
       "fork_sha256": "6d17e102a1d69b30f6264c1e54c4db24d3627cda260ff4304abedeaeaf6e4f00",
-      "local_behavior_delta": true
+      "local_behavior_delta": true,
+      "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressPassthru.c",
+      "fork_mode": "0o644",
+      "upstream_mode": "0o644"
     }
-  ]
+  ],
+  "file_guid": "5BE3BDF4-53CF-46a3-A6A9-73C34A6E5EE3",
+  "base_name": "NvmExpressDxe",
+  "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf"
 }

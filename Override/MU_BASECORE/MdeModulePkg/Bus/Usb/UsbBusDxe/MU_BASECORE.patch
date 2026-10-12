@@ -1,5 +1,5 @@
 diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
-index 39668123c4..9f191e7627 100644
+index 3966812..9f191e7 100644
 --- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
 +++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
 @@ -55,6 +55,7 @@ typedef struct _USB_HUB_API    USB_HUB_API;
@@ -22,7 +22,7 @@ index 39668123c4..9f191e7627 100644
    //
    // Data used only by root hub to hand over device to
 diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
-index ff9d303685..cc5eb2e03e 100644
+index ff9d303..dcebbc8 100644
 --- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
 +++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
 @@ -571,6 +571,10 @@ UsbRemoveDevice (
@@ -49,7 +49,7 @@ index ff9d303685..cc5eb2e03e 100644
    DEBUG ((DEBUG_INFO, "UsbRemoveDevice: ParentIf %p port %d Disonnected\n", Device->ParentIf, Device->ParentPort));
    // MU_CHANGE [END]
    Status = UsbRemoveConfig (Device);
-@@ -844,6 +848,12 @@ UsbEnumerateNewDev (
+@@ -844,6 +848,18 @@ UsbEnumerateNewDev (
    }
  
    DEBUG ((DEBUG_INFO, "UsbEnumerateNewDev: device %d is now in CONFIGED state\n", Address));
@@ -59,10 +59,16 @@ index ff9d303685..cc5eb2e03e 100644
 +          Child->DevDesc->Desc.DeviceClass, Child->DevDesc->Desc.DeviceProtocol,
 +          Child->DevDesc->Configs[0]->Desc.NumInterfaces,
 +          Child->Translator.TranslatorHubAddress, Child->Translator.TranslatorPortNumber));
++  if (Parent->Address != 0 && HubIf->IfSetting != NULL) {
++    DEBUG ((DEBUG_WARN, "UsbEnumerateNewDev: parent hub bus=%u if=%u alt=%u protocol=%02x child=%u port=%u\n",
++            Parent->Address, HubIf->IfSetting->Desc.InterfaceNumber,
++            HubIf->IfSetting->Desc.AlternateSetting, HubIf->IfSetting->Desc.InterfaceProtocol,
++            Child->Address, Port + 1));
++  }
  
    //
    // Host assigns and loads a device driver.
-@@ -918,7 +928,11 @@ UsbEnumeratePort (
+@@ -918,7 +934,11 @@ UsbEnumeratePort (
    //
    Status = HubApi->GetPortStatus (HubIf, Port, &PortState);
  
@@ -75,7 +81,7 @@ index ff9d303685..cc5eb2e03e 100644
      DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: failed to get state of port %d\n", Port));
      return Status;
    }
-@@ -927,7 +941,9 @@ UsbEnumeratePort (
+@@ -927,7 +947,9 @@ UsbEnumeratePort (
    // Only handle connection/enable/overcurrent/reset change.
    // Usb super speed hub may report other changes, such as warm reset change. Ignore them.
    //
@@ -86,7 +92,7 @@ index ff9d303685..cc5eb2e03e 100644
      return EFI_SUCCESS;
    }
  
-@@ -978,6 +994,9 @@ UsbEnumeratePort (
+@@ -978,6 +1000,9 @@ UsbEnumeratePort (
    }
  
    if (USB_BIT_IS_SET (PortState.PortChangeStatus, USB_PORT_STAT_C_CONNECTION)) {
@@ -96,7 +102,7 @@ index ff9d303685..cc5eb2e03e 100644
      //
      // Case4:
      //   Device connected or disconnected normally.
-@@ -992,7 +1011,30 @@ UsbEnumeratePort (
+@@ -992,7 +1017,30 @@ UsbEnumeratePort (
  
    if (Child != NULL) {
      DEBUG ((DEBUG_INFO, "UsbEnumeratePort: device at port %d removed from root hub %p\n", Port, HubIf));
@@ -128,7 +134,7 @@ index ff9d303685..cc5eb2e03e 100644
    }
  
    if (USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_CONNECTION)) {
-@@ -1011,6 +1053,22 @@ UsbEnumeratePort (
+@@ -1011,6 +1059,22 @@ UsbEnumeratePort (
      DEBUG ((DEBUG_INFO, "UsbEnumeratePort: device disconnected event on port %d\n", Port));
    }
  
@@ -151,7 +157,7 @@ index ff9d303685..cc5eb2e03e 100644
    HubApi->ClearPortChange (HubIf, Port);
    return Status;
  }
-@@ -1033,42 +1091,53 @@ UsbHubEnumeration (
+@@ -1033,42 +1097,53 @@ UsbHubEnumeration (
    UINT8          Byte;
    UINT8          Bit;
    UINT8          Index;
@@ -225,7 +231,7 @@ index ff9d303685..cc5eb2e03e 100644
    return;
  }
  
-@@ -1104,7 +1173,9 @@ UsbRootHubEnumeration (
+@@ -1104,7 +1179,9 @@ UsbRootHubEnumeration (
      Child = UsbFindChild (RootHub, Index);
      if ((Child != NULL) && (Child->DisconnectFail == TRUE)) {
        DEBUG ((DEBUG_INFO, "UsbEnumeratePort: The device disconnect fails at port %d from root hub %p, try again\n", Index, RootHub));
@@ -237,7 +243,7 @@ index ff9d303685..cc5eb2e03e 100644
  
      UsbEnumeratePort (RootHub, Index);
 diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
-index a9f0293a81..a1c472bbc2 100644
+index a9f0293..dd4e073 100644
 --- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
 +++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
 @@ -474,6 +474,8 @@ UsbOnHubInterrupt (
@@ -284,7 +290,20 @@ index a9f0293a81..a1c472bbc2 100644
    UINT8                   Index;
    UINT8                   NumEndpoints;
    UINT16                  Depth;
-@@ -658,7 +669,7 @@ UsbHubInit (
+@@ -614,6 +625,12 @@ UsbHubInit (
+   }
+ 
+   HubIf->NumOfPort = HubDesc->NumPorts;
++  DEBUG ((DEBUG_WARN, "UsbHub mode: bus=%u parent=%u port=%u speed=%u device-protocol=%02x if=%u alt=%u interface-protocol=%02x ports=%u character=%04x TTT=%u\n",
++          HubDev->Address, HubDev->ParentAddr, HubDev->ParentPort + 1, HubDev->Speed,
++          HubDev->DevDesc->Desc.DeviceProtocol, Setting->Desc.InterfaceNumber,
++          Setting->Desc.AlternateSetting, Setting->Desc.InterfaceProtocol,
++          HubDesc->NumPorts, HubDesc->HubCharacter,
++          (HubDesc->HubCharacter >> 5) & 3));
+ 
+   DEBUG ((DEBUG_INFO, "UsbHubInit: hub %d has %d ports\n", HubDev->Address, HubIf->NumOfPort));
+ 
+@@ -658,7 +675,7 @@ UsbHubInit (
    // Create an event to enumerate the hub's port. On
    //
    Status = gBS->CreateEvent (
@@ -293,7 +312,7 @@ index a9f0293a81..a1c472bbc2 100644
                    TPL_CALLBACK,
                    UsbHubEnumeration,
                    HubIf,
-@@ -702,7 +713,16 @@ UsbHubInit (
+@@ -702,7 +719,16 @@ UsbHubInit (
        Status
        ));
  
@@ -311,7 +330,7 @@ index a9f0293a81..a1c472bbc2 100644
      HubIf->HubNotify = NULL;
  
      return Status;
-@@ -914,11 +934,24 @@ UsbHubRelease (
+@@ -914,11 +940,24 @@ UsbHubRelease (
                      0
                      );
  

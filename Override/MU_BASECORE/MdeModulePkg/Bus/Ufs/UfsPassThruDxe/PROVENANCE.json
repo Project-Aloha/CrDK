@@ -41,6 +41,7 @@
       "fork_sha256": "e18edbcd73ef5f95659c41c601669e5b17dad88f78b980ba349f7d1f5acd290c",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
+      "post_relocation_edit": "UFS100-UFS103 functional UFS changes recorded in the module-level post_relocation_changes",
       "source_mode": "0o664",
       "fork_mode": "0o664",
       "upstream_mode": "0o644"
@@ -53,6 +54,7 @@
       "fork_sha256": "2ab7a1003af081a5884e6a7440eff88968a394f3ba6245a38577085cf16fca90",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
+      "post_relocation_edit": "UFS100-UFS103 functional UFS changes recorded in the module-level post_relocation_changes",
       "source_mode": "0o664",
       "fork_mode": "0o664",
       "upstream_mode": "0o644"
@@ -101,6 +103,7 @@
       "fork_sha256": "ea170f5a772a5339b11f062978d568ed26e72234d8838c968435d2c3d64d5609",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
+      "post_relocation_edit": "UFS100-UFS103 functional UFS changes recorded in the module-level post_relocation_changes",
       "source_mode": "0o664",
       "fork_mode": "0o664",
       "upstream_mode": "0o644"

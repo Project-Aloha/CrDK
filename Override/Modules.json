@@ -21,6 +21,7 @@
     "MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf": "CranePkg/Override/MU_PLUS/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf",
     "MsCorePkg/AcpiRGRT/AcpiRgrt.inf": "CranePkg/Override/MU_PLUS/MsCorePkg/AcpiRGRT/AcpiRgrt.inf",
     "MsWheaPkg/HwErrBert/HwErrBert.inf": "CranePkg/Override/MU_PLUS/MsWheaPkg/HwErrBert/HwErrBert.inf",
-    "MdeModulePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf": "CranePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf"
+    "MdeModulePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf": "CranePkg/Library/VariablePersistenceLibNull/VariablePersistenceLibNull.inf",
+    "MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf": "CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf"
   }
 }

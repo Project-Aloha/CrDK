@@ -7,7 +7,7 @@
   "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf",
   "file_guid": "B7F50E91-A759-412c-ADE4-DCD03E7F7C28",
   "base_name": "XhciDxe",
-  "patch_sha256": "297ad940b596890277dd6757155810dbde1444e3b32ec2f7b92eb5f8978eb4e5",
+  "patch_sha256": "52975c99260f5aea18454f0cfeea635859a0559ba8d2fd34e244dbf57db90061",
   "files": [
     {
       "file": "ComponentName.c",
@@ -62,12 +62,13 @@
       "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c",
       "source_sha256": "e02a7f4aac9626aa746ac90fde76c58f5c9d1f3c818328ccd9fbfd26fa07e9ae",
       "upstream_sha256": "fe324763a008855d4cf9917609e1627f74157f3c6aaa9150937728b40a5749c3",
-      "fork_sha256": "e02a7f4aac9626aa746ac90fde76c58f5c9d1f3c818328ccd9fbfd26fa07e9ae",
+      "fork_sha256": "e10a6e65a516c733b722e11d91cb53c853dfcff2e9f0d3dc5172f9e40a6ce8eb",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
       "source_mode": "0o664",
       "fork_mode": "0o664",
-      "upstream_mode": "0o644"
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Read-only controller, endpoint or hub diagnostics added after relocation"
     },
     {
       "file": "Xhci.h",
@@ -146,12 +147,13 @@
       "source_path": "MU_BASECORE/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c",
       "source_sha256": "fec74cc890adfa6216b32a0cc59e776cf7eb57b7adc0099ff28e0645cdfe014b",
       "upstream_sha256": "3300e0eadc13be586ada9d5958f2c299947b4011fb2b7a72a95f5737638d334e",
-      "fork_sha256": "fec74cc890adfa6216b32a0cc59e776cf7eb57b7adc0099ff28e0645cdfe014b",
+      "fork_sha256": "15f3a4371eb53d3b8fe9b13b788d2408168e6f2a0fd947b1be7739652ec842fb",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
       "source_mode": "0o664",
       "fork_mode": "0o664",
-      "upstream_mode": "0o644"
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Read-only controller, endpoint or hub diagnostics added after relocation"
     },
     {
       "file": "XhciSched.h",
@@ -165,5 +167,8 @@
       "fork_mode": "0o664",
       "upstream_mode": "0o644"
     }
+  ],
+  "post_relocation_changes": [
+    "Preserve the captured source hashes; current fork and patch include existing read-only bring-up diagnostics."
   ]
 }

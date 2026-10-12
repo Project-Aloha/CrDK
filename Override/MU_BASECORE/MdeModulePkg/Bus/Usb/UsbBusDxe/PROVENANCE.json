@@ -7,7 +7,7 @@
   "platform_module": "Platforms/CranePkg/Override/MU_BASECORE/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf",
   "file_guid": "240612B7-A063-11d4-9A3A-0090273FC14D",
   "base_name": "UsbBusDxe",
-  "patch_sha256": "db5f19a065dd10187c76c3e998447d282217161d36afdc013be4ba250448fa47",
+  "patch_sha256": "44ecefc8dd36e34435344c9805cf7e6e608a2425300ee04893322a0d90c34497",
   "files": [
     {
       "file": "ComponentName.c",
@@ -110,12 +110,13 @@
       "source_path": "MU_BASECORE/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c",
       "source_sha256": "bfc418840e274e012119d6b897d02e593cd83a121fdb992b5640e1482bbe5df8",
       "upstream_sha256": "b0139a65f9aa129c6af26c838a53bc4dc002bc97684c4285d1d4b122dd1452fe",
-      "fork_sha256": "bfc418840e274e012119d6b897d02e593cd83a121fdb992b5640e1482bbe5df8",
+      "fork_sha256": "9eb2edc04b95b1c667c72bb4501a08d384841417514a00678fed26c793ac2173",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
       "source_mode": "0o664",
       "fork_mode": "0o664",
-      "upstream_mode": "0o644"
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Read-only controller, endpoint or hub diagnostics added after relocation"
     },
     {
       "file": "UsbEnumer.h",
@@ -134,12 +135,13 @@
       "source_path": "MU_BASECORE/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c",
       "source_sha256": "8181c87b0fb87a7ffc039383f359f5c21ecc465ecb014b2f87a72afec3d2d181",
       "upstream_sha256": "e21fe37851567ce423e25b23c59ce7d283ed4312f168046cf2fe5504024c79e4",
-      "fork_sha256": "8181c87b0fb87a7ffc039383f359f5c21ecc465ecb014b2f87a72afec3d2d181",
+      "fork_sha256": "07d0927a3f4c350933cd83fa25306728fcb845ad0f7e3e8b31d6eda02a6ac948",
       "local_behavior_delta": true,
       "relocation_only_edit": null,
       "source_mode": "0o664",
       "fork_mode": "0o664",
-      "upstream_mode": "0o644"
+      "upstream_mode": "0o644",
+      "post_relocation_edit": "Read-only controller, endpoint or hub diagnostics added after relocation"
     },
     {
       "file": "UsbHub.h",
@@ -177,5 +179,8 @@
       "fork_mode": "0o664",
       "upstream_mode": "0o644"
     }
+  ],
+  "post_relocation_changes": [
+    "Preserve the captured source hashes; current fork and patch include existing read-only bring-up diagnostics."
   ]
 }

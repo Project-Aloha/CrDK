@@ -90,7 +90,10 @@
       "upstream_sha256": "41f5c4badb10a0571297d5c8807d2933a6109e9eab4e7a50ba0c97dd498791ae",
       "fork_sha256": "095de849acce3737bc8d75b5035f475ca28b32299eab92132e7c35f820a7f64c",
       "local_behavior_delta": true,
-      "post_relocation_edit": "Private corrected Block Limits declaration derived from the existing MU header"
+      "post_relocation_edit": "Private corrected Block Limits declaration derived from the existing MU header",
+      "upstream_path": "MdePkg/Include/IndustryStandard/Scsi.h",
+      "added_file": true,
+      "fork_mode": "0o644"
     }
   ],
   "post_relocation_changes": [
