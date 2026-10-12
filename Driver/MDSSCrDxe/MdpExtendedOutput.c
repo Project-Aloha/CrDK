@@ -14,13 +14,18 @@ STATIC EFI_STATUS Exact(EFI_STATUS S){return S==EFI_SUCCESS?S:EFI_ERROR(S)?S:EFI
 STATIC MDP_EXTENDED_OUTPUT *Output(EFI_GRAPHICS_OUTPUT_PROTOCOL *G){
   return BASE_CR(G,MDP_EXTENDED_OUTPUT,Gop);
 }
-STATIC EFI_STATUS Enter(MDP_EXTENDED_OUTPUT *O){
+STATIC EFI_STATUS EnterAtLevel(MDP_EXTENDED_OUTPUT *O,EFI_TPL Limit){
   if(!O||!O->Initialized)return EFI_INVALID_PARAMETER;
-  if(EfiGetCurrentTpl()>TPL_CALLBACK)return EFI_ACCESS_DENIED;
+  if(EfiGetCurrentTpl()>Limit)return EFI_ACCESS_DENIED;
   EFI_TPL T=gBS->RaiseTPL(TPL_NOTIFY);
   EFI_STATUS S=O->Exiting?EFI_ACCESS_DENIED:O->Busy?EFI_NOT_READY:EFI_SUCCESS;
   if(S==EFI_SUCCESS)O->Busy=TRUE;gBS->RestoreTPL(T);return S;
 }
+/* Power, construction and teardown remain callback-level operations.
+ * GOP mode metadata and framebuffer BLTs also serve GraphicsConsole/SRE at
+ * TPL_NOTIFY. Their existing owner/mapping checks and cache publication are
+ * notify-safe; this does not admit clock, panel or allocation lifecycle RPCs. */
+STATIC EFI_STATUS Enter(MDP_EXTENDED_OUTPUT *O){return EnterAtLevel(O,TPL_CALLBACK);}
 STATIC EFI_STATUS Leave(MDP_EXTENDED_OUTPUT *O,EFI_STATUS S){
   EFI_TPL T=gBS->RaiseTPL(TPL_NOTIFY);O->Busy=FALSE;gBS->RestoreTPL(T);return S;
 }
@@ -73,7 +78,7 @@ STATIC EFI_STATUS EFIAPI Query(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,UINT32 Mode,UINTN
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION **Info){
   if(!G||!Size||!Info)return EFI_INVALID_PARAMETER;
   MDP_EXTENDED_OUTPUT *O=Output(G);if(G!=&O->Gop)return EFI_INVALID_PARAMETER;
-  if(Mode)return EFI_UNSUPPORTED;EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
+  if(Mode)return EFI_UNSUPPORTED;EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *V=AllocateCopyPool(sizeof(O->Info),&O->Info);
   if(O->Exiting){if(V)FreePool(V);return Leave(O,EFI_ACCESS_DENIED);}
   if(!V)return Leave(O,EFI_OUT_OF_RESOURCES);*Info=V;*Size=sizeof(O->Info);return Leave(O,EFI_SUCCESS);
@@ -81,12 +86,12 @@ STATIC EFI_STATUS EFIAPI Query(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,UINT32 Mode,UINTN
 STATIC EFI_STATUS EFIAPI Blt(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,EFI_GRAPHICS_OUTPUT_BLT_PIXEL *B,
   EFI_GRAPHICS_OUTPUT_BLT_OPERATION Op,UINTN Sx,UINTN Sy,UINTN Dx,UINTN Dy,UINTN W,UINTN H,UINTN Delta){
   if(!G)return EFI_INVALID_PARAMETER;MDP_EXTENDED_OUTPUT *O=Output(G);
-  EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
+  EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
   return Leave(O,BltLocked(O,B,Op,Sx,Sy,Dx,Dy,W,H,Delta));
 }
 STATIC EFI_STATUS EFIAPI SetMode(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,UINT32 Mode){
   if(!G)return EFI_INVALID_PARAMETER;if(Mode)return EFI_UNSUPPORTED;
-  MDP_EXTENDED_OUTPUT *O=Output(G);EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
+  MDP_EXTENDED_OUTPUT *O=Output(G);EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL Black={0};
   return Leave(O,BltLocked(O,&Black,EfiBltVideoFill,0,0,0,0,
     O->Info.HorizontalResolution,O->Info.VerticalResolution,0));

@@ -68,6 +68,9 @@ int main(void){
  assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,4,2,0)==EFI_SUCCESS);
  assert(PipelinePublishes==1&&PublishedOffset==3*7680+8&&PublishedBytes==7680+16);
  assert(((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)Frame)[3*1920+2].Red==9);
+ CheckNotifyGop();
+ /* Restore the witness pixel cleared by the notify-level SetMode test. */
+ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,4,2,0)==EFI_SUCCESS);
  PipelineStatus=EFI_DEVICE_ERROR;
  assert(O.Gop.SetMode(&O.Gop,0)==EFI_DEVICE_ERROR&&((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)Frame)[3*1920+2].Red==9);
  PipelineStatus=EFI_SUCCESS;EFI_TPL Old=Raise(TPL_NOTIFY);FreezeResult=EFI_TIMEOUT;

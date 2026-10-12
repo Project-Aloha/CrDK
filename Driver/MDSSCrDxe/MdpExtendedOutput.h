@@ -43,7 +43,9 @@ typedef struct {
    retained owner. Publish is permanent: no unloading or reusing this storage
    after successful or uncertain GOP publication. Existing HDK LT9611 remains
    selected unless the platform explicitly calls this owner instead.
-   All calls <=TPL_CALLBACK; Freeze/Snapshot are the handoff callbacks.
+   Control/lifetime calls <=TPL_CALLBACK; GOP QueryMode/SetMode/Blt also
+   support TPL_NOTIFY without starting/stopping a pipeline. Freeze/Snapshot
+   are the handoff callbacks.
    The current wire cannot describe bonded/CPHY/DSC takeover completely, so
    its snapshot is explicitly nontransferable diagnostics until that wire is
    extended. EBS nevertheless closes callbacks and stops actual transient DMA. */

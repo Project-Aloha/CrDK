@@ -92,6 +92,31 @@ static VOID RebootFixture(VOID){
  assert(MdpExtendedOutputClose(&O)==EFI_SUCCESS&&!O.Initialized&&!OwnerContext&&!ExitCallback&&!PoolCount);
  assert(Maps==Unmaps&&!CommandAllocation);NativeClockFixtureFinish();
 }
+/* GraphicsConsole clear/cursor and MU SRE call the real GOP at TPL_NOTIFY. */
+static VOID CheckNotifyGop(VOID){
+ EFI_TPL Old=Raise(TPL_NOTIFY);
+ UINTN Size=0;EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info=NULL;
+ assert(O.Gop.QueryMode(&O.Gop,0,&Size,&Info)==EFI_SUCCESS&&Size==sizeof(*Info));
+ assert(Info!=&O.Info&&Info->HorizontalResolution==1920);FreePool(Info);
+ EFI_GRAPHICS_OUTPUT_BLT_PIXEL Color={.Blue=3,.Green=5,.Red=7},Pixels[4];
+ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,2,2,0)==EFI_SUCCESS);
+ assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltVideoToBltBuffer,2,3,0,0,2,2,0)==EFI_SUCCESS);
+ for(UINT32 I=0;I<4;++I)assert(!memcmp(Pixels+I,&Color,4));
+ assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltBufferToVideo,0,0,4,5,2,2,0)==EFI_SUCCESS);
+ assert(O.Gop.Blt(&O.Gop,NULL,EfiBltVideoToVideo,4,5,6,7,2,2,0)==EFI_SUCCESS);
+ assert(O.Gop.SetMode(&O.Gop,0)==EFI_SUCCESS&&CurrentTpl==TPL_NOTIFY);
+ assert(O.Gop.QueryMode(&O.Gop,1,&Size,&Info)==EFI_UNSUPPORTED);
+ assert(O.Gop.SetMode(&O.Gop,1)==EFI_UNSUPPORTED);
+ /* Supporting GOP drawing must not admit power/lifetime mutations here. */
+ assert(O.Power.SetDisplayPowerState(&O.Power,EfiDisplayPowerStateOn)==EFI_ACCESS_DENIED);
+ O.Busy=TRUE;assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,0,0,1,1,0)==EFI_NOT_READY);O.Busy=FALSE;
+ EFI_TPL High=Raise(TPL_HIGH_LEVEL);UINT32 Calls=OutputCalls,Flushes=CacheFlushes;
+ assert(O.Gop.QueryMode(&O.Gop,0,&Size,&Info)==EFI_ACCESS_DENIED);
+ assert(O.Gop.SetMode(&O.Gop,0)==EFI_ACCESS_DENIED);
+ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,0,0,1,1,0)==EFI_ACCESS_DENIED);
+ assert(OutputCalls==Calls&&CacheFlushes==Flushes&&CurrentTpl==TPL_HIGH_LEVEL);
+ Restore(High);Restore(Old);
+}
 static VOID ValidateSnapshot(CONST CR_MDSS_HANDOFF_PARTICIPANT *Snapshot){
  for(UINT32 First=0;First<2;++First)for(UINT32 Revoked=0;Revoked<2;++Revoked){
   CR_MDSS_NATIVE_HANDOFF Record={0};CR_MDSS_HANDOFF_PARTICIPANT Mapping={.Owner=CR_MDSS_NATIVE_SMMU};
@@ -136,6 +161,7 @@ int main(VOID){
   assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltBufferToVideo,MAX_UINTN,0,0,0,1,1,4)==EFI_INVALID_PARAMETER);
   UINTN Bytes=0;EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info=NULL;
   assert(O.Gop.QueryMode(&O.Gop,0,&Bytes,&Info)==EFI_SUCCESS&&Info!=&O.Info&&Bytes==sizeof(*Info));FreePool(Info);
+  CheckNotifyGop();
   EFI_DISPLAY_POWER_STATE State;
   assert(O.Power.SetDisplayPowerState(&O.Power,EfiDisplayPowerStateOff)==EFI_SUCCESS&&!PanelHardware.Held&&!O.Native.Display.Active&&O.Native.FrameMap);
   assert(O.Power.GetDisplayPowerState(&O.Power,&State)==EFI_SUCCESS&&State==EfiDisplayPowerStateOff);

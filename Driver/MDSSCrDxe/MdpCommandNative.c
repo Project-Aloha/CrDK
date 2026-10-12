@@ -9,11 +9,11 @@
 #define TRY(X) do{EFI_STATUS S_ = Exact(X);if(S_!=EFI_SUCCESS)return S_;}while(0)
 STATIC EFI_STATUS Exact(EFI_STATUS S){return S==EFI_SUCCESS||EFI_ERROR(S)?S:EFI_NOT_READY;}
 STATIC BOOLEAN Valid(CONST MDP_COMMAND_NATIVE *N){return N&&N->Self==N&&N->Initialized;}
-STATIC EFI_STATUS Enter(MDP_COMMAND_NATIVE *N,BOOLEAN Freeze,EFI_TPL *Old){
+STATIC EFI_STATUS Enter(MDP_COMMAND_NATIVE *N,BOOLEAN NotifySafe,EFI_TPL *Old){
   if(!Valid(N)||!Old||!gBS||!gBS->RaiseTPL||!gBS->RestoreTPL)return EFI_INVALID_PARAMETER;
   EFI_TPL T=EfiGetCurrentTpl();
-  if(T>(Freeze?TPL_NOTIFY:TPL_CALLBACK))return EFI_ACCESS_DENIED;
-  *Old=gBS->RaiseTPL(Freeze?TPL_NOTIFY:TPL_CALLBACK);
+  if(T>(NotifySafe?TPL_NOTIFY:TPL_CALLBACK))return EFI_ACCESS_DENIED;
+  *Old=gBS->RaiseTPL(NotifySafe?TPL_NOTIFY:TPL_CALLBACK);
   EFI_TPL Guard=gBS->RaiseTPL(TPL_NOTIFY);
   EFI_STATUS S=N->Busy?EFI_NOT_READY:EFI_SUCCESS;if(S==EFI_SUCCESS)N->Busy=TRUE;
   gBS->RestoreTPL(Guard);if(S!=EFI_SUCCESS)gBS->RestoreTPL(*Old);return S;
@@ -180,7 +180,10 @@ EFI_STATUS MdpCommandNativeStart(MDP_COMMAND_NATIVE *N){
   S=Leave(N,Old,S);if(!Pending&&(S==EFI_SUCCESS||N->Core.CleanupPending))Notify(N,S);return S;
 }
 EFI_STATUS MdpCommandNativePublish(MDP_COMMAND_NATIVE *N,UINTN Offset,UINTN Bytes){
-  EFI_TPL Old;TRY(Enter(N,FALSE,&Old));EFI_STATUS S=MdpCommandNativeReady(N);
+  /* Auto-refresh already owns scanout. Publish only validates the retained
+   * mapping and cleans framebuffer cache; it must work for notify-level GOP
+   * callers without admitting Start, brightness commands or teardown there. */
+  EFI_TPL Old;TRY(Enter(N,TRUE,&Old));EFI_STATUS S=MdpCommandNativeReady(N);
   if(S==EFI_SUCCESS)S=Exact(CrMdssCmdPublish(&N->Core,Offset,Bytes));return Leave(N,Old,S);
 }
 EFI_STATUS MdpCommandNativeBrightness(MDP_COMMAND_NATIVE *N,UINT32 Level){

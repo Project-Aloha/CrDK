@@ -114,6 +114,16 @@ int main(void){
  assert(MdpCommandNativeStart(&N)==EFI_NOT_READY&&!Notifications&&!N.Core.Active);NativeFirstFrame();
  assert(MdpCommandNativePublish(&N,100,64)==EFI_SUCCESS&&Publishes>=2);
  assert(MdpCommandNativeBrightness(&N,256)==EFI_SUCCESS);
+ EventTpl=TPL_NOTIFY;UINT32 NotifyPublishes=Publishes;
+ assert(MdpCommandNativeReady(&N)==EFI_SUCCESS);
+ assert(MdpCommandNativePublish(&N,128,64)==EFI_SUCCESS&&Publishes==NotifyPublishes+1&&EventTpl==TPL_NOTIFY);
+ assert(MdpCommandNativeBrightness(&N,256)==EFI_ACCESS_DENIED);
+ assert(MdpCommandNativeStart(&N)==EFI_ACCESS_DENIED&&MdpCommandNativeClose(&N)==EFI_ACCESS_DENIED);
+ N.Busy=TRUE;assert(MdpCommandNativePublish(&N,128,64)==EFI_NOT_READY);N.Busy=FALSE;
+ MappingLost=TRUE;NotifyPublishes=Publishes;
+ assert(MdpCommandNativePublish(&N,128,64)==EFI_DEVICE_ERROR&&Publishes==NotifyPublishes);MappingLost=FALSE;
+ EventTpl=TPL_HIGH_LEVEL;assert(MdpCommandNativePublish(&N,128,64)==EFI_ACCESS_DENIED&&Publishes==NotifyPublishes);
+ EventTpl=TPL_APPLICATION;
  MDP_COMMAND_NATIVE Copy=N;assert(MdpCommandNativeStart(&Copy)==EFI_INVALID_PARAMETER);
  MappingLost=TRUE;UINT32 Before=Publishes;
  assert(MdpCommandNativePublish(&N,0,4)==EFI_DEVICE_ERROR&&Publishes==Before);MappingLost=FALSE;

@@ -360,7 +360,9 @@ EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *R){
   TRY(Query(R,&R->FrameLease,FALSE));return Query(R,&R->CommandLease,TRUE);
 }
 EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *R){
-  TRY(Level());TRY(Access(R));
+  /* Read-only lease proof, also used by a live command GOP at TPL_NOTIFY.
+   * Access retains its level/owner checks. Open/Close still require Level(). */
+  TRY(Access(R));
   return R->Closing||!R->Qualified||!R->ExternalReady?EFI_NOT_READY:EFI_SUCCESS;
 }
 EFI_STATUS MdpNativeResourcesCheck(MDP_NATIVE_RESOURCES *R){

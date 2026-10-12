@@ -261,6 +261,15 @@ int main(VOID){
     assert(MdpNativeResourcesPublishCommand(&Resources,Resources.CommandCpu,256)==EFI_SUCCESS);
     assert(ProviderWrites==ResetWrites&&Hardware[HW_CB(Soc==0x8250?4:3)/4]==0);
     for(UINT32 I=0;I<4;++I){CR_SMMU_DOMAIN *D=FindDomainBySid(DisplayTarget.Streams[I]);assert(D&&D->Domain.Stream!=(Soc==0x8250?4:3)&&D->Domain.Bank!=(Soc==0x8250?4:3));}
+    /* Actual typed SMMU query/check, not a cached READY stub, at console TPL. */
+    CurrentTpl=TPL_NOTIFY;UINTN NotifyWrites=ProviderWrites;
+    assert(MdpNativeResourcesSuppliersReady(&Resources)==EFI_SUCCESS);
+    assert(MdpNativeResourcesCheck(&Resources)==EFI_SUCCESS);
+    assert(MdpNativeResourcesPublishFrame(&Resources,Resources.FrameCpu,6000)==EFI_SUCCESS);
+    assert(ProviderWrites==NotifyWrites&&CurrentTpl==TPL_NOTIFY);
+    assert(OpenResources()==EFI_ACCESS_DENIED&&MdpNativeResourcesClose(&Resources)==EFI_ACCESS_DENIED);
+    CurrentTpl=TPL_HIGH_LEVEL;assert(MdpNativeResourcesSuppliersReady(&Resources)==EFI_ACCESS_DENIED);
+    CurrentTpl=TPL_APPLICATION;
     UINTN OldWrites=ProviderWrites;PllLost=TRUE;
     assert(MdpNativeResourcesReady(&Resources)==EFI_NOT_READY);
     assert(MdpNativeResourcesWrite(&Resources,CrMdssRetireDsi0,0,1)==EFI_NOT_READY&&ProviderWrites==OldWrites);

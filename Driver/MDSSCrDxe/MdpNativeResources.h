@@ -56,7 +56,8 @@ EFI_STATUS MdpNativeResourcesOpen(MDP_NATIVE_RESOURCES *,CONST MDP_NATIVE_PROVID
   CONST MDP_NATIVE_RESOURCE_CONFIG *,UINT32 ControllerMask,EFI_PHYSICAL_ADDRESS,UINTN);
 EFI_STATUS MdpNativeResourcesClose(MDP_NATIVE_RESOURCES *);
 /* GPIO/bridge operations need the retained suppliers, but must precede
- * functional-clock rebuild and DMA admission. Does not grant MDSS MMIO. */
+ * functional-clock rebuild and DMA admission. Read-only, <=TPL_NOTIFY;
+ * does not grant MDSS MMIO or permission to change a supplier vote. */
 EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *);
 /* Lightweight exact producer journal admission; no page-table walk. */
 EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *);
