@@ -1,0 +1,214 @@
+diff --git a/Driver/MDSSCrDxe/MdpCommandNative.c b/Driver/MDSSCrDxe/MdpCommandNative.c
+--- a/Driver/MDSSCrDxe/MdpCommandNative.c
++++ b/Driver/MDSSCrDxe/MdpCommandNative.c
+@@ -9,11 +9,11 @@
+ #define TRY(X) do{EFI_STATUS S_ = Exact(X);if(S_!=EFI_SUCCESS)return S_;}while(0)
+ STATIC EFI_STATUS Exact(EFI_STATUS S){return S==EFI_SUCCESS||EFI_ERROR(S)?S:EFI_NOT_READY;}
+ STATIC BOOLEAN Valid(CONST MDP_COMMAND_NATIVE *N){return N&&N->Self==N&&N->Initialized;}
+-STATIC EFI_STATUS Enter(MDP_COMMAND_NATIVE *N,BOOLEAN Freeze,EFI_TPL *Old){
++STATIC EFI_STATUS Enter(MDP_COMMAND_NATIVE *N,BOOLEAN NotifySafe,EFI_TPL *Old){
+   if(!Valid(N)||!Old||!gBS||!gBS->RaiseTPL||!gBS->RestoreTPL)return EFI_INVALID_PARAMETER;
+   EFI_TPL T=EfiGetCurrentTpl();
+-  if(T>(Freeze?TPL_NOTIFY:TPL_CALLBACK))return EFI_ACCESS_DENIED;
+-  *Old=gBS->RaiseTPL(Freeze?TPL_NOTIFY:TPL_CALLBACK);
++  if(T>(NotifySafe?TPL_NOTIFY:TPL_CALLBACK))return EFI_ACCESS_DENIED;
++  *Old=gBS->RaiseTPL(NotifySafe?TPL_NOTIFY:TPL_CALLBACK);
+   EFI_TPL Guard=gBS->RaiseTPL(TPL_NOTIFY);
+   EFI_STATUS S=N->Busy?EFI_NOT_READY:EFI_SUCCESS;if(S==EFI_SUCCESS)N->Busy=TRUE;
+   gBS->RestoreTPL(Guard);if(S!=EFI_SUCCESS)gBS->RestoreTPL(*Old);return S;
+@@ -180,7 +180,10 @@
+   S=Leave(N,Old,S);if(!Pending&&(S==EFI_SUCCESS||N->Core.CleanupPending))Notify(N,S);return S;
+ }
+ EFI_STATUS MdpCommandNativePublish(MDP_COMMAND_NATIVE *N,UINTN Offset,UINTN Bytes){
+-  EFI_TPL Old;TRY(Enter(N,FALSE,&Old));EFI_STATUS S=MdpCommandNativeReady(N);
++  /* Auto-refresh already owns scanout. Publish only validates the retained
++   * mapping and cleans framebuffer cache; it must work for notify-level GOP
++   * callers without admitting Start, brightness commands or teardown there. */
++  EFI_TPL Old;TRY(Enter(N,TRUE,&Old));EFI_STATUS S=MdpCommandNativeReady(N);
+   if(S==EFI_SUCCESS)S=Exact(CrMdssCmdPublish(&N->Core,Offset,Bytes));return Leave(N,Old,S);
+ }
+ EFI_STATUS MdpCommandNativeBrightness(MDP_COMMAND_NATIVE *N,UINT32 Level){
+diff --git a/Driver/MDSSCrDxe/MdpExtendedOutput.c b/Driver/MDSSCrDxe/MdpExtendedOutput.c
+--- a/Driver/MDSSCrDxe/MdpExtendedOutput.c
++++ b/Driver/MDSSCrDxe/MdpExtendedOutput.c
+@@ -14,13 +14,18 @@
+ STATIC MDP_EXTENDED_OUTPUT *Output(EFI_GRAPHICS_OUTPUT_PROTOCOL *G){
+   return BASE_CR(G,MDP_EXTENDED_OUTPUT,Gop);
+ }
+-STATIC EFI_STATUS Enter(MDP_EXTENDED_OUTPUT *O){
++STATIC EFI_STATUS EnterAtLevel(MDP_EXTENDED_OUTPUT *O,EFI_TPL Limit){
+   if(!O||!O->Initialized)return EFI_INVALID_PARAMETER;
+-  if(EfiGetCurrentTpl()>TPL_CALLBACK)return EFI_ACCESS_DENIED;
++  if(EfiGetCurrentTpl()>Limit)return EFI_ACCESS_DENIED;
+   EFI_TPL T=gBS->RaiseTPL(TPL_NOTIFY);
+   EFI_STATUS S=O->Exiting?EFI_ACCESS_DENIED:O->Busy?EFI_NOT_READY:EFI_SUCCESS;
+   if(S==EFI_SUCCESS)O->Busy=TRUE;gBS->RestoreTPL(T);return S;
+ }
++/* Power, construction and teardown remain callback-level operations.
++ * GOP mode metadata and framebuffer BLTs also serve GraphicsConsole/SRE at
++ * TPL_NOTIFY. Their existing owner/mapping checks and cache publication are
++ * notify-safe; this does not admit clock, panel or allocation lifecycle RPCs. */
++STATIC EFI_STATUS Enter(MDP_EXTENDED_OUTPUT *O){return EnterAtLevel(O,TPL_CALLBACK);}
+ STATIC EFI_STATUS Leave(MDP_EXTENDED_OUTPUT *O,EFI_STATUS S){
+   EFI_TPL T=gBS->RaiseTPL(TPL_NOTIFY);O->Busy=FALSE;gBS->RestoreTPL(T);return S;
+ }
+@@ -73,7 +78,7 @@
+   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION **Info){
+   if(!G||!Size||!Info)return EFI_INVALID_PARAMETER;
+   MDP_EXTENDED_OUTPUT *O=Output(G);if(G!=&O->Gop)return EFI_INVALID_PARAMETER;
+-  if(Mode)return EFI_UNSUPPORTED;EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
++  if(Mode)return EFI_UNSUPPORTED;EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
+   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *V=AllocateCopyPool(sizeof(O->Info),&O->Info);
+   if(O->Exiting){if(V)FreePool(V);return Leave(O,EFI_ACCESS_DENIED);}
+   if(!V)return Leave(O,EFI_OUT_OF_RESOURCES);*Info=V;*Size=sizeof(O->Info);return Leave(O,EFI_SUCCESS);
+@@ -81,12 +86,12 @@
+ STATIC EFI_STATUS EFIAPI Blt(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,EFI_GRAPHICS_OUTPUT_BLT_PIXEL *B,
+   EFI_GRAPHICS_OUTPUT_BLT_OPERATION Op,UINTN Sx,UINTN Sy,UINTN Dx,UINTN Dy,UINTN W,UINTN H,UINTN Delta){
+   if(!G)return EFI_INVALID_PARAMETER;MDP_EXTENDED_OUTPUT *O=Output(G);
+-  EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
++  EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
+   return Leave(O,BltLocked(O,B,Op,Sx,Sy,Dx,Dy,W,H,Delta));
+ }
+ STATIC EFI_STATUS EFIAPI SetMode(EFI_GRAPHICS_OUTPUT_PROTOCOL *G,UINT32 Mode){
+   if(!G)return EFI_INVALID_PARAMETER;if(Mode)return EFI_UNSUPPORTED;
+-  MDP_EXTENDED_OUTPUT *O=Output(G);EFI_STATUS S=Enter(O);if(S!=EFI_SUCCESS)return S;
++  MDP_EXTENDED_OUTPUT *O=Output(G);EFI_STATUS S=EnterAtLevel(O,TPL_NOTIFY);if(S!=EFI_SUCCESS)return S;
+   EFI_GRAPHICS_OUTPUT_BLT_PIXEL Black={0};
+   return Leave(O,BltLocked(O,&Black,EfiBltVideoFill,0,0,0,0,
+     O->Info.HorizontalResolution,O->Info.VerticalResolution,0));
+diff --git a/Driver/MDSSCrDxe/MdpExtendedOutput.h b/Driver/MDSSCrDxe/MdpExtendedOutput.h
+--- a/Driver/MDSSCrDxe/MdpExtendedOutput.h
++++ b/Driver/MDSSCrDxe/MdpExtendedOutput.h
+@@ -43,7 +43,9 @@
+    retained owner. Publish is permanent: no unloading or reusing this storage
+    after successful or uncertain GOP publication. Existing HDK LT9611 remains
+    selected unless the platform explicitly calls this owner instead.
+-   All calls <=TPL_CALLBACK; Freeze/Snapshot are the handoff callbacks.
++   Control/lifetime calls <=TPL_CALLBACK; GOP QueryMode/SetMode/Blt also
++   support TPL_NOTIFY without starting/stopping a pipeline. Freeze/Snapshot
++   are the handoff callbacks.
+    The current wire cannot describe bonded/CPHY/DSC takeover completely, so
+    its snapshot is explicitly nontransferable diagnostics until that wire is
+    extended. EBS nevertheless closes callbacks and stops actual transient DMA. */
+diff --git a/Driver/MDSSCrDxe/MdpNativeResources.c b/Driver/MDSSCrDxe/MdpNativeResources.c
+--- a/Driver/MDSSCrDxe/MdpNativeResources.c
++++ b/Driver/MDSSCrDxe/MdpNativeResources.c
+@@ -360,7 +360,9 @@
+   TRY(Query(R,&R->FrameLease,FALSE));return Query(R,&R->CommandLease,TRUE);
+ }
+ EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *R){
+-  TRY(Level());TRY(Access(R));
++  /* Read-only lease proof, also used by a live command GOP at TPL_NOTIFY.
++   * Access retains its level/owner checks. Open/Close still require Level(). */
++  TRY(Access(R));
+   return R->Closing||!R->Qualified||!R->ExternalReady?EFI_NOT_READY:EFI_SUCCESS;
+ }
+ EFI_STATUS MdpNativeResourcesCheck(MDP_NATIVE_RESOURCES *R){
+diff --git a/Driver/MDSSCrDxe/MdpNativeResources.h b/Driver/MDSSCrDxe/MdpNativeResources.h
+--- a/Driver/MDSSCrDxe/MdpNativeResources.h
++++ b/Driver/MDSSCrDxe/MdpNativeResources.h
+@@ -56,7 +56,8 @@
+   CONST MDP_NATIVE_RESOURCE_CONFIG *,UINT32 ControllerMask,EFI_PHYSICAL_ADDRESS,UINTN);
+ EFI_STATUS MdpNativeResourcesClose(MDP_NATIVE_RESOURCES *);
+ /* GPIO/bridge operations need the retained suppliers, but must precede
+- * functional-clock rebuild and DMA admission. Does not grant MDSS MMIO. */
++ * functional-clock rebuild and DMA admission. Read-only, <=TPL_NOTIFY;
++ * does not grant MDSS MMIO or permission to change a supplier vote. */
+ EFI_STATUS MdpNativeResourcesSuppliersReady(MDP_NATIVE_RESOURCES *);
+ /* Lightweight exact producer journal admission; no page-table walk. */
+ EFI_STATUS MdpNativeResourcesReady(MDP_NATIVE_RESOURCES *);
+diff --git a/Tests/MdpCommandNativeTest.c b/Tests/MdpCommandNativeTest.c
+--- a/Tests/MdpCommandNativeTest.c
++++ b/Tests/MdpCommandNativeTest.c
+@@ -114,6 +114,16 @@
+  assert(MdpCommandNativeStart(&N)==EFI_NOT_READY&&!Notifications&&!N.Core.Active);NativeFirstFrame();
+  assert(MdpCommandNativePublish(&N,100,64)==EFI_SUCCESS&&Publishes>=2);
+  assert(MdpCommandNativeBrightness(&N,256)==EFI_SUCCESS);
++ EventTpl=TPL_NOTIFY;UINT32 NotifyPublishes=Publishes;
++ assert(MdpCommandNativeReady(&N)==EFI_SUCCESS);
++ assert(MdpCommandNativePublish(&N,128,64)==EFI_SUCCESS&&Publishes==NotifyPublishes+1&&EventTpl==TPL_NOTIFY);
++ assert(MdpCommandNativeBrightness(&N,256)==EFI_ACCESS_DENIED);
++ assert(MdpCommandNativeStart(&N)==EFI_ACCESS_DENIED&&MdpCommandNativeClose(&N)==EFI_ACCESS_DENIED);
++ N.Busy=TRUE;assert(MdpCommandNativePublish(&N,128,64)==EFI_NOT_READY);N.Busy=FALSE;
++ MappingLost=TRUE;NotifyPublishes=Publishes;
++ assert(MdpCommandNativePublish(&N,128,64)==EFI_DEVICE_ERROR&&Publishes==NotifyPublishes);MappingLost=FALSE;
++ EventTpl=TPL_HIGH_LEVEL;assert(MdpCommandNativePublish(&N,128,64)==EFI_ACCESS_DENIED&&Publishes==NotifyPublishes);
++ EventTpl=TPL_APPLICATION;
+  MDP_COMMAND_NATIVE Copy=N;assert(MdpCommandNativeStart(&Copy)==EFI_INVALID_PARAMETER);
+  MappingLost=TRUE;UINT32 Before=Publishes;
+  assert(MdpCommandNativePublish(&N,0,4)==EFI_DEVICE_ERROR&&Publishes==Before);MappingLost=FALSE;
+diff --git a/Tests/MdpExtendedOutputTest.c b/Tests/MdpExtendedOutputTest.c
+--- a/Tests/MdpExtendedOutputTest.c
++++ b/Tests/MdpExtendedOutputTest.c
+@@ -92,6 +92,31 @@
+  assert(MdpExtendedOutputClose(&O)==EFI_SUCCESS&&!O.Initialized&&!OwnerContext&&!ExitCallback&&!PoolCount);
+  assert(Maps==Unmaps&&!CommandAllocation);NativeClockFixtureFinish();
+ }
++/* GraphicsConsole clear/cursor and MU SRE call the real GOP at TPL_NOTIFY. */
++static VOID CheckNotifyGop(VOID){
++ EFI_TPL Old=Raise(TPL_NOTIFY);
++ UINTN Size=0;EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info=NULL;
++ assert(O.Gop.QueryMode(&O.Gop,0,&Size,&Info)==EFI_SUCCESS&&Size==sizeof(*Info));
++ assert(Info!=&O.Info&&Info->HorizontalResolution==1920);FreePool(Info);
++ EFI_GRAPHICS_OUTPUT_BLT_PIXEL Color={.Blue=3,.Green=5,.Red=7},Pixels[4];
++ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,2,2,0)==EFI_SUCCESS);
++ assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltVideoToBltBuffer,2,3,0,0,2,2,0)==EFI_SUCCESS);
++ for(UINT32 I=0;I<4;++I)assert(!memcmp(Pixels+I,&Color,4));
++ assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltBufferToVideo,0,0,4,5,2,2,0)==EFI_SUCCESS);
++ assert(O.Gop.Blt(&O.Gop,NULL,EfiBltVideoToVideo,4,5,6,7,2,2,0)==EFI_SUCCESS);
++ assert(O.Gop.SetMode(&O.Gop,0)==EFI_SUCCESS&&CurrentTpl==TPL_NOTIFY);
++ assert(O.Gop.QueryMode(&O.Gop,1,&Size,&Info)==EFI_UNSUPPORTED);
++ assert(O.Gop.SetMode(&O.Gop,1)==EFI_UNSUPPORTED);
++ /* Supporting GOP drawing must not admit power/lifetime mutations here. */
++ assert(O.Power.SetDisplayPowerState(&O.Power,EfiDisplayPowerStateOn)==EFI_ACCESS_DENIED);
++ O.Busy=TRUE;assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,0,0,1,1,0)==EFI_NOT_READY);O.Busy=FALSE;
++ EFI_TPL High=Raise(TPL_HIGH_LEVEL);UINT32 Calls=OutputCalls,Flushes=CacheFlushes;
++ assert(O.Gop.QueryMode(&O.Gop,0,&Size,&Info)==EFI_ACCESS_DENIED);
++ assert(O.Gop.SetMode(&O.Gop,0)==EFI_ACCESS_DENIED);
++ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,0,0,1,1,0)==EFI_ACCESS_DENIED);
++ assert(OutputCalls==Calls&&CacheFlushes==Flushes&&CurrentTpl==TPL_HIGH_LEVEL);
++ Restore(High);Restore(Old);
++}
+ static VOID ValidateSnapshot(CONST CR_MDSS_HANDOFF_PARTICIPANT *Snapshot){
+  for(UINT32 First=0;First<2;++First)for(UINT32 Revoked=0;Revoked<2;++Revoked){
+   CR_MDSS_NATIVE_HANDOFF Record={0};CR_MDSS_HANDOFF_PARTICIPANT Mapping={.Owner=CR_MDSS_NATIVE_SMMU};
+@@ -136,6 +161,7 @@
+   assert(O.Gop.Blt(&O.Gop,Pixels,EfiBltBufferToVideo,MAX_UINTN,0,0,0,1,1,4)==EFI_INVALID_PARAMETER);
+   UINTN Bytes=0;EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info=NULL;
+   assert(O.Gop.QueryMode(&O.Gop,0,&Bytes,&Info)==EFI_SUCCESS&&Info!=&O.Info&&Bytes==sizeof(*Info));FreePool(Info);
++  CheckNotifyGop();
+   EFI_DISPLAY_POWER_STATE State;
+   assert(O.Power.SetDisplayPowerState(&O.Power,EfiDisplayPowerStateOff)==EFI_SUCCESS&&!PanelHardware.Held&&!O.Native.Display.Active&&O.Native.FrameMap);
+   assert(O.Power.GetDisplayPowerState(&O.Power,&State)==EFI_SUCCESS&&State==EfiDisplayPowerStateOff);
+diff --git a/Tests/MdpNativeResourcesTest.c b/Tests/MdpNativeResourcesTest.c
+--- a/Tests/MdpNativeResourcesTest.c
++++ b/Tests/MdpNativeResourcesTest.c
+@@ -261,6 +261,15 @@
+     assert(MdpNativeResourcesPublishCommand(&Resources,Resources.CommandCpu,256)==EFI_SUCCESS);
+     assert(ProviderWrites==ResetWrites&&Hardware[HW_CB(Soc==0x8250?4:3)/4]==0);
+     for(UINT32 I=0;I<4;++I){CR_SMMU_DOMAIN *D=FindDomainBySid(DisplayTarget.Streams[I]);assert(D&&D->Domain.Stream!=(Soc==0x8250?4:3)&&D->Domain.Bank!=(Soc==0x8250?4:3));}
++    /* Actual typed SMMU query/check, not a cached READY stub, at console TPL. */
++    CurrentTpl=TPL_NOTIFY;UINTN NotifyWrites=ProviderWrites;
++    assert(MdpNativeResourcesSuppliersReady(&Resources)==EFI_SUCCESS);
++    assert(MdpNativeResourcesCheck(&Resources)==EFI_SUCCESS);
++    assert(MdpNativeResourcesPublishFrame(&Resources,Resources.FrameCpu,6000)==EFI_SUCCESS);
++    assert(ProviderWrites==NotifyWrites&&CurrentTpl==TPL_NOTIFY);
++    assert(OpenResources()==EFI_ACCESS_DENIED&&MdpNativeResourcesClose(&Resources)==EFI_ACCESS_DENIED);
++    CurrentTpl=TPL_HIGH_LEVEL;assert(MdpNativeResourcesSuppliersReady(&Resources)==EFI_ACCESS_DENIED);
++    CurrentTpl=TPL_APPLICATION;
+     UINTN OldWrites=ProviderWrites;PllLost=TRUE;
+     assert(MdpNativeResourcesReady(&Resources)==EFI_NOT_READY);
+     assert(MdpNativeResourcesWrite(&Resources,CrMdssRetireDsi0,0,1)==EFI_NOT_READY&&ProviderWrites==OldWrites);
+diff --git a/Tests/MdpOutputPipelineTest.c b/Tests/MdpOutputPipelineTest.c
+--- a/Tests/MdpOutputPipelineTest.c
++++ b/Tests/MdpOutputPipelineTest.c
+@@ -68,6 +68,9 @@
+  assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,4,2,0)==EFI_SUCCESS);
+  assert(PipelinePublishes==1&&PublishedOffset==3*7680+8&&PublishedBytes==7680+16);
+  assert(((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)Frame)[3*1920+2].Red==9);
++ CheckNotifyGop();
++ /* Restore the witness pixel cleared by the notify-level SetMode test. */
++ assert(O.Gop.Blt(&O.Gop,&Color,EfiBltVideoFill,0,0,2,3,4,2,0)==EFI_SUCCESS);
+  PipelineStatus=EFI_DEVICE_ERROR;
+  assert(O.Gop.SetMode(&O.Gop,0)==EFI_DEVICE_ERROR&&((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)Frame)[3*1920+2].Red==9);
+  PipelineStatus=EFI_SUCCESS;EFI_TPL Old=Raise(TPL_NOTIFY);FreezeResult=EFI_TIMEOUT;
