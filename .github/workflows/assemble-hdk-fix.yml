@@ -21,6 +21,13 @@ jobs:
           import base64, hashlib, json, os, pathlib, subprocess, zlib
           out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hdk-evidence'
           encoded = (out / 'input.b64').read_text().strip()
+          # Correct only verified transport transcription; the reviewed data
+          # and every resulting blob still must match their original hashes.
+          assert hashlib.sha256(encoded.encode()).hexdigest() == 'cec66b38f66b83e481e261ee975f216ecff6efb44d589da647a1520b84b3f424'
+          corrections = [[5772,5773,'K',''],[6042,6043,'s',''],[6261,6262,'a',''],[6303,6305,'cp','Cm'],[7044,7047,'piV',''],[8925,8927,'e3',''],[17831,17833,'cp','']]
+          for start, end, old, new in reversed(corrections):
+              assert encoded[start:end] == old
+              encoded = encoded[:start] + new + encoded[end:]
           data = zlib.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(data).hexdigest() == '0aec1737434fe638004a423a9a41cc23c0a349e7d134f899a1cc87564488c777', 'payload digest mismatch'
           payload = json.loads(data)
