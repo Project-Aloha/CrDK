@@ -13,8 +13,8 @@ successful initialization; early NOT_READY messages are not permanent failures.
   generation, serialization and ExitBootServices checks remain mandatory.
   Startup, shutdown, power and brightness retain their CALLBACK ceiling.
 * The platform must package GraphicsConsoleDxe and wait for the exact native
-  override protocol before dispatching MsEarlyGraphics. Each early-graphics
-  caller receives an owned mode snapshot; repeat calls refresh it in place.
+  override protocol before dispatching MsEarlyGraphics. The platform-owned early-graphics
+  snapshot is borrowed by its caller; repeat calls refresh it in place.
   Failure does not leak allocations, return an unset output or change timing.
 * Native HDK console policy preserves fixed panel timing and chooses a real
   negotiated text mode rather than requiring VGA or a guessed native text grid.
@@ -45,3 +45,8 @@ PCIe no-signal timeout alone cannot distinguish an absent endpoint from a board
 problem. The two HDK8350 FatDiskIo errors have no controller/LBA attribution;
 passing NVMe host tests does not resolve them. Missing EFI boot files and absent
 network drivers are not fixed by ignoring authentication or claiming I/O success.
+
+The concurrent platform repair f5a6b65 owns early-framebuffer storage and its
+24-case suite. Keep that implementation and run Tests/run_early_graphics_tests.py
+from the platform repository. The Crane boot-contract runner covers the separate
+14 console-policy and 12 early-storage cases; it does not replace that suite.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual HDK console/early-graphics/early-storage code, with modeled EFI services.
+"""Actual HDK console/early-storage code, with modeled EFI services.
 
 Runs full production translation units under Clang ASan/UBSan. These tests
 verify software contracts, not physical display, firmware loading or media.
@@ -43,8 +43,6 @@ def main():
                      '-D_PCD_GET_MODE_8_PcdMsWheaEarlyStorageDefaultValue=LibPcdGet8(2)']
     common = root / 'Platforms/MUCommonCrPkg/Library'
     cases = [
-        ('early-graphics', 12, [], crane / 'Tests/EarlyGraphicsInfoTest.c',
-         common / 'MsPlatformEarlyGraphicsLib/MsEarlyGraphicsLib.c'),
         ('native-console', 14, console_flags, crane / 'Tests/NativeGraphicsConsoleTest.c',
          crane / 'Library/NativeGraphicsConsoleHelperLib/NativeGraphicsConsoleHelper.c'),
         ('early-storage', 12, storage_flags, crane / 'Tests/WheaStorageRangeTest.c',
