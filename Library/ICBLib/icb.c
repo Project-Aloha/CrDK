@@ -683,7 +683,8 @@ CR_STATUS InterconnectValidatePath(InterconnectDeviceContext *Context,
   if (!Context->Initialized || Context->DeinitPending || Context->RollbackPending) {
     Status = CR_NOT_READY;
   } else {
-    UINT16 ProviderIndex, Source, Destination;
+    UINT16 ProviderIndex = INTERCONNECT_INVALID_NODE;
+    UINT16 Source = INTERCONNECT_INVALID_NODE, Destination = INTERCONNECT_INVALID_NODE;
     UINT64 Mask[INTERCONNECT_MAX_NODES / 64] = {0};
     Status = FindProvider(Context, Provider, &ProviderIndex);
     if (!CR_ERROR(Status)) Status = FindEndpointNode(Context, ProviderIndex, SourceId, &Source);

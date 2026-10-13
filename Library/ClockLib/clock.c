@@ -5,6 +5,10 @@
  */
 
 #include "clock_internal.h"
+#if defined(_KERNEL_MODE) && !defined(CR_OSK_LOG_WITHOUT_WPP)
+#include <trace.h>
+#include "clock.tmh"
+#endif
 #ifndef _KERNEL_MODE
 #include <oskal/cr_memmap.h>
 #endif

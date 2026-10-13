@@ -651,7 +651,7 @@ STATIC CR_STATUS ReceivePacket(CR_GLINK *Link, GLINK_HEADER *Header,
       Channel->Logs = Length == sizeof("PMIC_LOGS_ADSP_APPS") &&
         cr_memcmp(Payload, "PMIC_LOGS_ADSP_APPS", Length) == 0;
       log_info("UCSICr: GLink channel " CR_LOG_CHAR8_STR_FMT " remote=%u local=%u\n",
-              Payload, Header->Param1, Local);
+              (CONST CHAR8 *)Payload, Header->Param1, Local);
       Status = Queue(Link, GLINK_OPEN_ACK, Header->Param1, 0, NULL, 0);
       if (CR_ERROR(Status)) return Status;
       Status = Queue(Link, GLINK_OPEN, Local, (UINT32)Length, Payload, Length);

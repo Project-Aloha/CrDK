@@ -1,5 +1,9 @@
 // #define CR_OSKAL_TRACE_MMIO 1
 #include "clock_internal.h"
+#if defined(_KERNEL_MODE) && !defined(CR_OSK_LOG_WITHOUT_WPP)
+#include <trace.h>
+#include "debugcc.tmh"
+#endif
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_EN_MSK BIT(20)
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_CLR_MSK BIT(21)
 #define CLOCK_DEBUGCC_CTL_REG_XO_DIV4_TERM_COUNT_MSK GEN_MSK(19, 0)
@@ -117,7 +121,7 @@ DebugccMeasureClockRate(
     *FrequencyHz /= CrMmioRead32(
         ClockContext->ClockControllers[ControllerType].Address +
         (*TargetController)->PeriodOffset);
-    log_info("Measured clock '" CR_LOG_CHAR8_STR_FMT "' frequency: %llu Hz", ClockName, *FrequencyHz);
+    log_info("Measured clock '" CR_LOG_CHAR8_STR_FMT "' frequency: " CR_LOG_UINT64_FMT " Hz", ClockName, *FrequencyHz);
     return CR_SUCCESS;
   }
   else {

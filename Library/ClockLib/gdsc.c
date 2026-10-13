@@ -1,4 +1,8 @@
 #include "clock_internal.h"
+#if defined(_KERNEL_MODE) && !defined(CR_OSK_LOG_WITHOUT_WPP)
+#include <trace.h>
+#include "gdsc.tmh"
+#endif
 
 #define CLOCK_GDSC_REG_PWR_ON_MSK BIT(31)
 #define CLOCK_GDSC_REG_EN_REST_WAIT_MSK GEN_MSK(23, 20)
