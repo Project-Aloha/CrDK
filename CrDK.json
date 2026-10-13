@@ -1,0 +1,1068 @@
+{
+  "schema": 1,
+  "description": "Portable CRDK cores and Windows OSKAL backend; firmware adapters remain in CranePkg.",
+  "libraries": {
+    "OskMemoryLib": {
+      "property_sheet": "Library/OskMemoryLib/oskmemory.props",
+      "sources": [
+        "Library/OskMemoryLib/OskMemoryLib.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "OskInterruptLib": {
+      "property_sheet": "Library/OskInterruptLib/oskinterrupt.props",
+      "sources": [
+        "Library/OskInterruptLib/oskinterrupt_wdf.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": [
+        "Library/OskInterruptLib/oskinterrupt.c"
+      ]
+    },
+    "CmdDBLib": {
+      "property_sheet": "Library/CmdDBLib/cmddb.props",
+      "sources": [
+        "Library/CmdDBLib/cmddb.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "RpmhLib": {
+      "property_sheet": "Library/RpmhLib/rpmh.props",
+      "sources": [
+        "Library/RpmhLib/rpmh.c",
+        "Library/RpmhLib/rpmh_rail.c",
+        "Library/RpmhLib/rpmh_rail_votes.c",
+        "Library/RpmhLib/rpmh_rail_observe.c"
+      ],
+      "dependencies": [
+        "CmdDBLib",
+        "OskMemoryLib",
+        "OskInterruptLib"
+      ],
+      "native_only_sources": []
+    },
+    "ClockLib": {
+      "property_sheet": "Library/ClockLib/clock.props",
+      "sources": [
+        "Library/ClockLib/clock.c",
+        "Library/ClockLib/clock_votes.c",
+        "Library/ClockLib/gdsc.c",
+        "Library/ClockLib/debugcc.c",
+        "Library/ClockLib/clock_config.c",
+        "Library/ClockLib/fixed_pll.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": []
+    },
+    "PdcLib": {
+      "property_sheet": "Library/PdcLib/pdc.props",
+      "sources": [
+        "Library/PdcLib/pdc.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": [
+        "Library/PdcLib/pdc_irq.c"
+      ]
+    },
+    "GpioLib": {
+      "property_sheet": "Library/GpioLib/gpio.props",
+      "sources": [
+        "Library/GpioLib/gpio.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": [
+        "Library/GpioLib/gpio_irq.c"
+      ]
+    },
+    "DebugUartLib": {
+      "property_sheet": "Library/DebugUartLib/debug_uart.props",
+      "sources": [
+        "Library/DebugUartLib/debug_uart.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib",
+        "OskInterruptLib"
+      ],
+      "native_only_sources": []
+    },
+    "ICBLib": {
+      "property_sheet": "Library/ICBLib/icb.props",
+      "sources": [
+        "Library/ICBLib/icb.c",
+        "Library/ICBLib/icb_votes.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": []
+    },
+    "PcieLib": {
+      "property_sheet": "Library/PcieLib/pcie.props",
+      "sources": [
+        "Library/PcieLib/pcie.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": []
+    },
+    "PmicGpioLib": {
+      "property_sheet": "Library/PmicGpioLib/pmic_gpio.props",
+      "sources": [
+        "Library/PmicGpioLib/pmic_gpio.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "SmemLib": {
+      "property_sheet": "Library/SmemLib/smem.props",
+      "sources": [
+        "Library/SmemLib/smem.c",
+        "Library/SmemLib/smem_mutex.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib"
+      ],
+      "native_only_sources": []
+    },
+    "SmmuLib": {
+      "property_sheet": "Library/SmmuLib/smmu.props",
+      "sources": [
+        "Library/SmmuLib/smmu.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "SpmiLib": {
+      "property_sheet": "Library/SpmiLib/spmi.props",
+      "sources": [
+        "Library/SpmiLib/spmi.c",
+        "Library/SpmiLib/spmi_irq.c",
+        "Library/SpmiLib/pmic_arb_common.c",
+        "Library/SpmiLib/pmic_arb_v1.c",
+        "Library/SpmiLib/pmic_arb_v2.c",
+        "Library/SpmiLib/pmic_arb_v3.c",
+        "Library/SpmiLib/pmic_arb_v5.c",
+        "Library/SpmiLib/pmic_arb_v7.c",
+        "Library/SpmiLib/pmic_arb_v8.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib",
+        "OskInterruptLib"
+      ],
+      "native_only_sources": []
+    },
+    "UcsiCrLib": {
+      "property_sheet": "Library/UcsiCrLib/UcsiCrLib.props",
+      "sources": [
+        "Library/UcsiCrLib/Ipcc.c",
+        "Library/UcsiCrLib/IpccReceive.c",
+        "Library/UcsiCrLib/Glink.c",
+        "Library/UcsiCrLib/PmicGlink.c",
+        "Library/UcsiCrLib/Qrtr.c",
+        "Library/UcsiCrLib/ChargerLog.c",
+        "Library/UcsiCrLib/Ppm.c"
+      ],
+      "dependencies": [
+        "OskMemoryLib",
+        "OskInterruptLib"
+      ],
+      "native_only_sources": []
+    },
+    "BatteryChargerCrLib": {
+      "property_sheet": "Library/BatteryChargerCrLib/BatteryChargerCrLib.props",
+      "sources": [
+        "Library/BatteryChargerCrLib/BatteryCharger.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "ButtonsCrLib": {
+      "property_sheet": "Library/ButtonsCrLib/ButtonsCrLib.props",
+      "sources": [
+        "Library/ButtonsCrLib/Buttons.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "ButtonsInputLib": {
+      "property_sheet": "Library/ButtonsInputLib/ButtonsInputLib.props",
+      "sources": [
+        "Library/ButtonsInputLib/ButtonsInput.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "PepCrLib": {
+      "property_sheet": "Library/PepCrLib/PepCrLib.props",
+      "sources": [
+        "Library/PepCrLib/Pep.c",
+        "Library/PepCrLib/PepAcpi.c",
+        "Library/PepCrLib/PepJournal.c",
+        "Library/PepCrLib/PepClock.c",
+        "Library/PepCrLib/PepBandwidth.c",
+        "Library/PepCrLib/PepRail.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "GpioConfigLib": {
+      "property_sheet": "Library/GpioConfigLib/GpioConfigLib.props",
+      "sources": [
+        "Library/GpioConfigLib/GpioConfig.c"
+      ],
+      "dependencies": [
+        "GpioLib",
+        "PdcLib",
+        "PepCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "Sm8450ClockLib": {
+      "property_sheet": "Library/Sm8450ClockLib/Sm8450ClockLib.props",
+      "sources": [
+        "Library/Sm8450ClockLib/Sm8450Clock.c"
+      ],
+      "dependencies": [
+        "ClockLib"
+      ],
+      "native_only_sources": []
+    },
+    "Sm8450InterconnectLib": {
+      "property_sheet": "Library/Sm8450InterconnectLib/Sm8450InterconnectLib.props",
+      "sources": [
+        "Library/Sm8450InterconnectLib/Sm8450Interconnect.c"
+      ],
+      "dependencies": [
+        "ICBLib"
+      ],
+      "native_only_sources": []
+    },
+    "PILCrLib": {
+      "property_sheet": "Library/PILCrLib/PILCrLib.props",
+      "sources": [
+        "Library/PILCrLib/Pil.c",
+        "Library/PILCrLib/PilClients.c",
+        "Library/PILCrLib/PilElf.c",
+        "Library/PILCrLib/PilSmccc.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": [
+        "Library/PILCrLib/PilUefi.c",
+        "Library/PILCrLib/PilHandoffUefi.c"
+      ],
+      "assembly_sources": {
+        "clang": "Library/PILCrLib/PilSmcccArm64.S",
+        "msvc": "Library/PILCrLib/PilSmcccArm64.asm"
+      }
+    },
+    "MdssCrLib": {
+      "property_sheet": "Library/MdssCrLib/MdssCrLib.props",
+      "sources": [
+        "Library/MdssCrLib/Mdss.c",
+        "Library/MdssCrLib/MdssPresent.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "MdssDscCrLib": {
+      "property_sheet": "Library/MdssDscCrLib/MdssDscCrLib.props",
+      "sources": [
+        "Library/MdssDscCrLib/MdssDsc.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "MdssDsiCrLib": {
+      "property_sheet": "Library/MdssDsiCrLib/MdssDsiCrLib.props",
+      "sources": [
+        "Library/MdssDsiCrLib/MdssDsi.c",
+        "Library/MdssDsiCrLib/MdssDsiCommands.c",
+        "Library/MdssDsiCrLib/MdssDsiClock.c",
+        "Library/MdssDsiCrLib/DsiPhyExtended.c",
+        "Library/MdssDsiCrLib/MdssDsiPanel.c"
+      ],
+      "dependencies": [
+        "MdssCrLib",
+        "MdssDscCrLib",
+        "ClockExternalLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssDualCrLib": {
+      "property_sheet": "Library/MdssDualCrLib/MdssDualCrLib.props",
+      "sources": [
+        "Library/MdssDualCrLib/MdssDual.c"
+      ],
+      "dependencies": [
+        "MdssCrLib",
+        "MdssDscCrLib",
+        "MdssDsiCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "Sm8450RailLib": {
+      "property_sheet": "Library/Sm8450RailLib/Sm8450RailLib.props",
+      "sources": [
+        "Library/Sm8450RailLib/Sm8450Rail.c"
+      ],
+      "dependencies": [
+        "RpmhLib"
+      ],
+      "native_only_sources": []
+    },
+    "RpmhArcVoteLib": {
+      "property_sheet": "Library/RpmhArcVoteLib/RpmhArcVoteLib.props",
+      "sources": [
+        "Library/RpmhArcVoteLib/RpmhArcVote.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "PepNpaLib": {
+      "property_sheet": "Library/PepCrLib/PepNpa.props",
+      "sources": [
+        "Library/PepCrLib/PepNpa.c"
+      ],
+      "dependencies": [
+        "PepCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssPlatformLib": {
+      "property_sheet": "Library/MdssPlatformLib/MdssPlatformLib.props",
+      "sources": [
+        "Library/MdssPlatformLib/Platform.c",
+        "Library/MdssPlatformLib/DsiPhy.c",
+        "Library/MdssPlatformLib/Lt9611.c"
+      ],
+      "dependencies": [
+        "MdssCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "ClockExternalLib": {
+      "property_sheet": "Library/ClockExternalLib/ClockExternalLib.props",
+      "sources": [
+        "Library/ClockExternalLib/ClockExternal.c",
+        "Library/ClockExternalLib/ClockExternalPlan.c",
+        "Library/ClockExternalLib/ClockExternalLease.c"
+      ],
+      "dependencies": [
+        "ClockLib",
+        "MdssHandoffCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "GpioOwnerLib": {
+      "property_sheet": "Library/GpioOwnerLib/GpioOwnerLib.props",
+      "sources": [
+        "Library/GpioOwnerLib/GpioOwner.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "PepGpioLib": {
+      "property_sheet": "Library/PepCrLib/PepGpio.props",
+      "sources": [
+        "Library/PepCrLib/PepGpio.c"
+      ],
+      "dependencies": [
+        "GpioOwnerLib",
+        "PepCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssHandoffCrLib": {
+      "property_sheet": "Library/MdssHandoffCrLib/MdssHandoffCrLib.props",
+      "sources": [
+        "Library/MdssHandoffCrLib/Handoff.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "TsensCrLib": {
+      "property_sheet": "Library/TsensCrLib/TsensCrLib.props",
+      "sources": [
+        "Library/TsensCrLib/Tsens.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "GpioSdLib": {
+      "property_sheet": "Library/GpioSdLib/GpioSdLib.props",
+      "sources": [
+        "Library/GpioSdLib/GpioSd.c"
+      ],
+      "dependencies": [
+        "GpioLib",
+        "OskMemoryLib"
+      ],
+      "native_only_sources": []
+    },
+    "SdhciMsmLib": {
+      "property_sheet": "Library/SdhciMsmLib/SdhciMsmLib.props",
+      "sources": [
+        "Library/SdhciMsmLib/SdhciMsm.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "EpssCrLib": {
+      "property_sheet": "Library/EpssCrLib/EpssCrLib.props",
+      "sources": [
+        "Library/EpssCrLib/Epss.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "SerialResourceLib": {
+      "property_sheet": "Library/SerialResourceLib/SerialResourceLib.props",
+      "sources": [
+        "Library/SerialResourceLib/SerialResources.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "RamPartitionCrLib": {
+      "property_sheet": "Library/RamPartitionCrLib/RamPartitionCrLib.props",
+      "sources": [
+        "Library/RamPartitionCrLib/RamPartition.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "UartHandoffLib": {
+      "property_sheet": "Library/UartHandoffLib/UartHandoffLib.props",
+      "sources": [
+        "Library/UartHandoffLib/UartHandoff.c",
+        "Library/UartHandoffLib/Fv.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "Dwc3CrLib": {
+      "property_sheet": "Library/Dwc3CrLib/Dwc3CrLib.props",
+      "sources": [
+        "Library/Dwc3CrLib/Dwc3.c",
+        "Library/Dwc3CrLib/Dwc3Power.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "UsbDpPhyCrLib": {
+      "property_sheet": "Library/UsbDpPhyCrLib/UsbDpPhyCrLib.props",
+      "sources": [
+        "Library/UsbDpPhyCrLib/UsbDpPhy.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "UsbHandoffCrLib": {
+      "property_sheet": "Library/UsbHandoffCrLib/UsbHandoffCrLib.props",
+      "sources": [
+        "Library/UsbHandoffCrLib/UsbHandoff.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "PmicTypeCCrLib": {
+      "property_sheet": "Library/PmicTypeCCrLib/PmicTypeCCrLib.props",
+      "sources": [
+        "Library/PmicTypeCCrLib/PmicTypeC.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "UsbDpPhyHandoffCrLib": {
+      "property_sheet": "Library/UsbDpPhyHandoffCrLib/UsbDpPhyHandoffCrLib.props",
+      "sources": [
+        "Library/UsbDpPhyHandoffCrLib/UsbDpPhyHandoff.c"
+      ],
+      "dependencies": [
+        "UsbHandoffCrLib",
+        "MdssHandoffCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssDpuInterruptCrLib": {
+      "property_sheet": "Library/MdssDpuInterruptCrLib/MdssDpuInterruptCrLib.props",
+      "sources": [
+        "Library/MdssDpuInterruptCrLib/MdssDpuInterrupt.c",
+        "Library/MdssDpuInterruptCrLib/MdssDpInterrupt.c",
+        "Library/MdssDpuInterruptCrLib/MdssDpLinkInterrupt.c",
+        "Library/MdssDpuInterruptCrLib/MdssIrqSources.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "MdssDpuWritebackCrLib": {
+      "property_sheet": "Library/MdssDpuWritebackCrLib/MdssDpuWritebackCrLib.props",
+      "sources": [
+        "Library/MdssDpuWritebackCrLib/MdssDpuWriteback.c"
+      ],
+      "dependencies": [
+        "MdssDpuInterruptCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssDpu2dCrLib": {
+      "property_sheet": "Library/MdssDpu2dCrLib/MdssDpu2dCrLib.props",
+      "sources": [
+        "Library/MdssDpu2dCrLib/MdssDpuFetch.c",
+        "Library/MdssDpu2dCrLib/MdssDpuCursor.c"
+      ],
+      "dependencies": [
+        "MdssCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "AdrenoFirmwareCrLib": {
+      "property_sheet": "Library/AdrenoFirmwareCrLib/AdrenoFirmwareCrLib.props",
+      "sources": [
+        "Library/AdrenoFirmwareCrLib/AdrenoFirmware.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "Sm8450GpuResourcesCrLib": {
+      "property_sheet": "Library/Sm8450GpuResourcesCrLib/Sm8450GpuResourcesCrLib.props",
+      "sources": [
+        "Library/Sm8450GpuResourcesCrLib/Sm8450GpuResources.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AcdbCrLib": {
+      "property_sheet": "Library/AcdbCrLib/AcdbCrLib.props",
+      "sources": [
+        "Library/AcdbCrLib/Acdb.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AudioCalCrLib": {
+      "property_sheet": "Library/AudioCalCrLib/AudioCalCrLib.props",
+      "sources": [
+        "Library/AudioCalCrLib/AudioCal.c"
+      ],
+      "dependencies": [
+        "AcdbCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "AudioGprCrLib": {
+      "property_sheet": "Library/AudioGprCrLib/AudioGprCrLib.props",
+      "sources": [
+        "Library/AudioGprCrLib/AudioGpr.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AudioGraphCrLib": {
+      "property_sheet": "Library/AudioGraphCrLib/AudioGraphCrLib.props",
+      "sources": [
+        "Library/AudioGraphCrLib/AudioGraph.c"
+      ],
+      "dependencies": [
+        "AudioCalCrLib",
+        "AudioGprCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "UsbMscCrLib": {
+      "property_sheet": "Library/UsbMscCrLib/UsbMscCrLib.props",
+      "sources": [
+        "Library/UsbMscCrLib/UsbMsc.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AdrenoPowerCrLib": {
+      "property_sheet": "Library/AdrenoPowerCrLib/AdrenoPowerCrLib.props",
+      "sources": [
+        "Library/AdrenoPowerCrLib/AdrenoPower.c",
+        "Library/AdrenoPowerCrLib/Sm8450Power.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AdrenoHfiCrLib": {
+      "property_sheet": "Library/AdrenoHfiCrLib/AdrenoHfiCrLib.props",
+      "sources": [
+        "Library/AdrenoHfiCrLib/AdrenoHfi.c",
+        "Library/AdrenoHfiCrLib/Sm8450Hfi.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AudioPcmCrLib": {
+      "property_sheet": "Library/AudioPcmCrLib/AudioPcmCrLib.props",
+      "sources": [
+        "Library/AudioPcmCrLib/AudioPcm.c"
+      ],
+      "dependencies": [
+        "AudioGprCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "MdssDpCrLib": {
+      "property_sheet": "Library/MdssDpCrLib/MdssDpCrLib.props",
+      "sources": [
+        "Library/MdssDpCrLib/DpAux.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AdrenoStopCrLib": {
+      "property_sheet": "Library/AdrenoStopCrLib/AdrenoStopCrLib.props",
+      "sources": [
+        "Library/AdrenoStopCrLib/AdrenoStop.c",
+        "Library/AdrenoStopCrLib/Sm8450Stop.c"
+      ],
+      "dependencies": [
+        "Sm8450GpuResourcesCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "ScmCrLib": {
+      "property_sheet": "Library/ScmCrLib/ScmCrLib.props",
+      "sources": [
+        "Library/ScmCrLib/Scm.c",
+        "Library/ScmCrLib/ScmPas.c"
+      ],
+      "dependencies": [
+        "PILCrLib"
+      ],
+      "native_only_sources": [
+        "Library/ScmCrLib/ScmUefi.c"
+      ]
+    },
+    "SubsystemCrLib": {
+      "property_sheet": "Library/SubsystemCrLib/SubsystemCrLib.props",
+      "sources": [
+        "Library/SubsystemCrLib/Subsystem.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "QteeDiscoveryCrLib": {
+      "property_sheet": "Library/QteeDiscoveryCrLib/QteeDiscoveryCrLib.props",
+      "sources": [
+        "Library/QteeDiscoveryCrLib/QteeDiscovery.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AudioPrmCrLib": {
+      "property_sheet": "Library/AudioPrmCrLib/AudioPrmCrLib.props",
+      "sources": [
+        "Library/AudioPrmCrLib/AudioPrm.c"
+      ],
+      "dependencies": [
+        "AudioGprCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "Sm8450LpassAudioCrLib": {
+      "property_sheet": "Library/Sm8450LpassAudioCrLib/Sm8450LpassAudioCrLib.props",
+      "sources": [
+        "Library/Sm8450LpassAudioCrLib/Codecs.c",
+        "Library/Sm8450LpassAudioCrLib/Lpass.c"
+      ],
+      "dependencies": [
+        "AudioPrmCrLib",
+        "SoundWireCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "SoundWireCrLib": {
+      "property_sheet": "Library/SoundWireCrLib/SoundWireCrLib.props",
+      "sources": [
+        "Library/SoundWireCrLib/SoundWire.c",
+        "Library/SoundWireCrLib/Sm8450.c"
+      ],
+      "dependencies": [
+        "OskInterruptLib"
+      ],
+      "native_only_sources": []
+    },
+    "SpmiSharedCrLib": {
+      "property_sheet": "Library/SpmiSharedCrLib/SpmiSharedCrLib.props",
+      "sources": [
+        "Library/SpmiSharedCrLib/SpmiShared.c"
+      ],
+      "dependencies": [
+        "SpmiLib"
+      ],
+      "native_only_sources": []
+    },
+    "PmicCcCrLib": {
+      "property_sheet": "Library/PmicCcCrLib/PmicCcCrLib.props",
+      "sources": [
+        "Library/PmicCcCrLib/PmicCc.c"
+      ],
+      "dependencies": [
+        "SpmiSharedCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "Sm8450PcieTargetLib": {
+      "property_sheet": "Target/Sm8450/CrPcieTarget.props",
+      "sources": [
+        "Target/Sm8450/CrPcieTarget.c",
+        "Target/Sm8450/CrPcieBackend.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AdrenoCpCrLib": {
+      "property_sheet": "Library/AdrenoCpCrLib/AdrenoCpCrLib.props",
+      "sources": [
+        "Library/AdrenoCpCrLib/AdrenoCp.c",
+        "Library/AdrenoCpCrLib/Sm8450Cp.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AudioPullCrLib": {
+      "property_sheet": "Library/AudioPullCrLib/AudioPullCrLib.props",
+      "sources": [
+        "Library/AudioPullCrLib/Pull.c"
+      ],
+      "dependencies": [
+        "AudioGraphCrLib",
+        "AudioPcmCrLib",
+        "AudioGprCrLib"
+      ],
+      "native_only_sources": []
+    },
+    "Smp2pObserveCrLib": {
+      "property_sheet": "Library/Smp2pObserveCrLib/Smp2pObserveCrLib.props",
+      "sources": [
+        "Library/Smp2pObserveCrLib/Smp2p.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
+    },
+    "AdrenoRouteCrLib": {
+      "property_sheet": "Library/AdrenoRouteCrLib/AdrenoRouteCrLib.props",
+      "sources": [
+        "Library/AdrenoRouteCrLib/Route.c",
+        "Library/AdrenoRouteCrLib/Handoff.c",
+        "Library/AdrenoRouteCrLib/Boot.c"
+      ],
+      "dependencies": [
+        "AdrenoStopCrLib"
+      ],
+      "native_only_sources": []
+    }
+  },
+  "header_roots": [
+    "Include/Library/clock.h",
+    "Include/Library/ClockVoteLib.h",
+    "Include/Library/InterconnectVoteLib.h",
+    "Include/Library/cmddb.h",
+    "Include/Library/rpmh.h",
+    "Include/Library/RpmhRailLib.h",
+    "Include/Library/RpmhRailVoteLib.h",
+    "Include/Library/RpmhRailObserveLib.h",
+    "Include/Library/pdc.h",
+    "Include/Library/gpio.h",
+    "Include/Library/debug_uart.h",
+    "Include/Library/interconnect.h",
+    "Include/Library/pcie.h",
+    "Include/Library/pmic_gpio.h",
+    "Include/Library/smem.h",
+    "Include/Library/smmu.h",
+    "Include/Library/spmi.h",
+    "Include/Library/UcsiCrLib.h",
+    "Include/Library/ButtonsCrLib.h",
+    "Include/Library/ButtonsInputLib.h",
+    "Include/Library/CrTargetInterconnectLib.h",
+    "Include/Library/CrTargetPcieLib.h",
+    "Include/Library/CrTargetGpioLib.h",
+    "Include/Library/CrTargetPdcLib.h",
+    "Include/Library/CrTargetRpmhLib.h",
+    "Include/Library/CrTargetDebugUartLib.h",
+    "Include/Library/CrTargetPmicGpioLib.h",
+    "Include/Library/CrTargetButtonsLib.h",
+    "Include/Library/CrTargetSmmuLib.h",
+    "Include/Library/PepCrLib.h",
+    "Include/Library/PepJournalLib.h",
+    "Include/Library/PepClockLib.h",
+    "Include/Library/PepBandwidthLib.h",
+    "Include/Library/PepRailLib.h",
+    "Include/Library/GpioConfigLib.h",
+    "Include/Library/CrSm8450ClockLib.h",
+    "Include/Library/Sm8450Interconnect.h",
+    "Include/oskal/cr_mutex.h",
+    "Include/Library/PILCrLib.h",
+    "Include/Library/PILCrClients.h",
+    "Include/Library/MdssCrLib.h",
+    "Include/Library/Sm8450RailLib.h",
+    "Include/Library/PilSmcccLib.h",
+    "Include/Library/RpmhArcVoteLib.h",
+    "Include/Interface/WdfRpmhArcOwnerPublic.h",
+    "Include/Library/PepNpaLib.h",
+    "Include/Library/MdssPlatformLib.h",
+    "Include/Library/MdssHandoffCrLib.h",
+    "Include/Library/ClockExternalLib.h",
+    "Include/Interface/WdfClockExternalPublic.h",
+    "Include/Library/GpioOwnerLib.h",
+    "Include/Library/PepGpioLib.h",
+    "Include/Interface/WdfGpioOwnerPublic.h",
+    "Include/Interface/WdfBusPublic.h",
+    "Include/Interface/CrPilHandoff.h",
+    "Include/Library/TsensCrLib.h",
+    "Include/Interface/WdfTsensPublic.h",
+    "Include/Library/GpioSdLib.h",
+    "Include/Interface/WdfGpioSdPublic.h",
+    "Include/Interface/WdfPmicTransportPublic.h",
+    "Include/Library/FixedPllVoteLib.h",
+    "Include/Library/SdhciMsmLib.h",
+    "Include/Interface/WdfTsensCpuPublic.h",
+    "Include/Interface/WdfPepHardwarePublic.h",
+    "Include/Library/EpssCrLib.h",
+    "Include/Library/SerialResourceLib.h",
+    "Include/Library/RamPartitionCrLib.h",
+    "Include/Interface/CrUartHandoff.h",
+    "Include/Library/UartHandoffLib.h",
+    "Include/Library/UartAdmissionLib.h",
+    "Include/Library/Dwc3CrLib.h",
+    "Include/Library/Dwc3PowerCrLib.h",
+    "Include/Library/UsbDpPhyCrLib.h",
+    "Include/Library/UsbHandoffCrLib.h",
+    "Include/Library/PmicTypeCCrLib.h",
+    "Include/Interface/WdfTypeCPolicyPublic.h",
+    "Include/Library/UsbDpPhyHandoffCrLib.h",
+    "Include/Library/MdssDpu2dCrLib.h",
+    "Include/Library/MdssDpuInterruptCrLib.h",
+    "Include/Library/MdssIrqSourcesCrLib.h",
+    "Include/Library/MdssDpuWritebackCrLib.h",
+    "Include/Library/AdrenoFirmwareCrLib.h",
+    "Include/Library/Sm8450GpuResourcesCrLib.h",
+    "Include/Library/AcdbCrLib.h",
+    "Include/Library/AudioCalCrLib.h",
+    "Include/Library/AudioGprCrLib.h",
+    "Include/Library/AudioGraphCrLib.h",
+    "Include/Library/UsbMscCrLib.h",
+    "Include/Library/AdrenoPowerCrLib.h",
+    "Include/Library/AdrenoHfiCrLib.h",
+    "Include/Library/AudioPcmCrLib.h",
+    "Include/Library/MdssDpCrLib.h",
+    "Include/Library/AdrenoStopCrLib.h",
+    "Include/Library/ScmCrLib.h",
+    "Library/ScmCrLib/ScmPas.h",
+    "Include/Library/SubsystemCrLib.h",
+    "Include/Interface/WdfSubsystemCrPublic.h",
+    "Include/Interface/CrPilLoaderPublic.h",
+    "Include/Interface/CrPilOriginPublic.h",
+    "Include/Library/MdssDpInterruptCrLib.h",
+    "Include/Library/QteeDiscoveryCrLib.h",
+    "Include/Library/AudioPrmCrLib.h",
+    "Include/Library/Sm8450LpassAudioCrLib.h",
+    "Include/Library/SoundWireCrLib.h",
+    "Include/Library/PmicCcCrLib.h",
+    "Include/Library/SpmiSharedCrLib.h",
+    "Include/Library/AdrenoCpCrLib.h",
+    "Include/Library/AudioPullCrLib.h",
+    "Include/Interface/WdfAudioGraphPublic.h",
+    "Include/Library/IpccReceiveCrLib.h",
+    "Include/Library/Smp2pObserveCrLib.h",
+    "Include/Interface/WdfIpccReceivePublic.h",
+    "Include/Library/AdrenoRouteCrLib.h",
+    "Include/Library/AdrenoBootCrLib.h",
+    "Include/Interface/CrAdrenoHandoff.h"
+  ],
+  "header_directories": [
+    "Include/oskal",
+    "Include/ucsi",
+    "Include/Interface"
+  ],
+  "export_files": [
+    "CrDK.props",
+    "CrDK.json",
+    "Documentation/CrDK.md",
+    "Documentation/MdssInterruptSources.md",
+    "Library/MdssDpuInterruptCrLib/README.md",
+    "Library/MdssDpuWritebackCrLib/README.md",
+    "Library/AdrenoFirmwareCrLib/README.md",
+    "Library/AdrenoFirmwareCrLib/LICENSE",
+    "Library/Sm8450GpuResourcesCrLib/README.md",
+    "Library/Sm8450ClockLib/README.md",
+    "Library/AcdbCrLib/README.md",
+    "Library/AcdbCrLib/LICENSE",
+    "Library/AudioCalCrLib/README.md",
+    "Library/AudioCalCrLib/LICENSE",
+    "Library/AudioGprCrLib/README.md",
+    "Library/AudioGprCrLib/LICENSE",
+    "Library/AudioGraphCrLib/README.md",
+    "Library/AudioGraphCrLib/LICENSE",
+    "Library/UsbMscCrLib/README.md",
+    "Library/UsbMscCrLib/LICENSE",
+    "Library/AdrenoPowerCrLib/README.md",
+    "Library/AdrenoPowerCrLib/LICENSE",
+    "Library/AdrenoHfiCrLib/README.md",
+    "Library/AdrenoHfiCrLib/LICENSE",
+    "Library/AudioPcmCrLib/README.md",
+    "Library/AudioPcmCrLib/LICENSE",
+    "Library/MdssDpCrLib/README.md",
+    "Library/AdrenoStopCrLib/README.md",
+    "Library/AdrenoStopCrLib/LICENSE",
+    "Library/ScmCrLib/README.md",
+    "Library/SubsystemCrLib/LICENSE",
+    "Library/QteeDiscoveryCrLib/README.md",
+    "Library/AudioPrmCrLib/README.md",
+    "Library/AudioPrmCrLib/LICENSE",
+    "Library/Sm8450LpassAudioCrLib/README.md",
+    "Library/Sm8450LpassAudioCrLib/LICENSE",
+    "Library/SoundWireCrLib/README.md",
+    "Library/SoundWireCrLib/LICENSE",
+    "Library/SpmiSharedCrLib/README.md",
+    "Library/PmicCcCrLib/README.md",
+    "Library/PmicCcCrLib/COPYING",
+    "Library/AdrenoCpCrLib/README.md",
+    "Library/AdrenoCpCrLib/LICENSE",
+    "Library/AudioPullCrLib/README.md",
+    "Library/AudioPullCrLib/LICENSE",
+    "Library/Smp2pObserveCrLib/README.md",
+    "Library/Smp2pObserveCrLib/LICENSE",
+    "Library/AdrenoRouteCrLib/LICENSE",
+    "Library/AdrenoRouteCrLib/README.md"
+  ],
+  "native_libraries": [
+    "CrDalLib",
+    "CrDalRegistryLib",
+    "OskMemmapLib",
+    "PciHostBridgeLib",
+    "PciSegmentLib",
+    "QcomTrngLib"
+  ],
+  "windows_driver_requirements": {
+    "CmdDBCr": [
+      "CmdDBLib"
+    ],
+    "RpmhCr": [
+      "RpmhLib",
+      "PepCrLib",
+      "ICBLib",
+      "Sm8450InterconnectLib",
+      "Sm8450RailLib",
+      "RpmhArcVoteLib"
+    ],
+    "GpioCr": [
+      "GpioLib",
+      "PdcLib",
+      "GpioConfigLib",
+      "GpioSdLib"
+    ],
+    "ClockCr": [
+      "Sm8450ClockLib",
+      "PepCrLib"
+    ],
+    "InterconnectCr": [
+      "ICBLib",
+      "Sm8450InterconnectLib",
+      "PepCrLib"
+    ],
+    "SpmiCr": [
+      "SpmiLib",
+      "PepCrLib"
+    ],
+    "SmemCr": [
+      "SmemLib",
+      "PepCrLib"
+    ],
+    "SmmuCr": [
+      "SmmuLib"
+    ],
+    "ButtonsCr": [
+      "ButtonsInputLib"
+    ],
+    "UcsiCr": [
+      "UcsiCrLib"
+    ],
+    "BatteryCr": [
+      "BatteryChargerCrLib",
+      "PepCrLib"
+    ],
+    "PcieCr": [
+      "PcieLib"
+    ],
+    "PepCr": [
+      "PepCrLib",
+      "PepNpaLib",
+      "PepGpioLib",
+      "CmdDBLib",
+      "RpmhLib",
+      "ICBLib",
+      "Sm8450InterconnectLib",
+      "Sm8450RailLib",
+      "RpmhArcVoteLib",
+      "ClockLib",
+      "Sm8450ClockLib",
+      "ClockExternalLib",
+      "OskMemoryLib",
+      "PILCrLib",
+      "MdssCrLib",
+      "MdssPlatformLib",
+      "TsensCrLib",
+      "UcsiCrLib",
+      "EpssCrLib",
+      "PmicTypeCCrLib",
+      "UsbHandoffCrLib",
+      "UsbDpPhyHandoffCrLib",
+      "MdssDpu2dCrLib",
+      "UsbDpPhyCrLib",
+      "ScmCrLib",
+      "QteeDiscoveryCrLib",
+      "AudioPrmCrLib",
+      "AcdbCrLib",
+      "AudioCalCrLib",
+      "AudioGraphCrLib",
+      "AudioPullCrLib",
+      "AudioPcmCrLib",
+      "AudioGprCrLib"
+    ],
+    "PilCr": [
+      "PILCrLib",
+      "SmemLib"
+    ],
+    "MdssCr": [
+      "MdssCrLib",
+      "MdssPlatformLib",
+      "MdssDpu2dCrLib"
+    ],
+    "PmicGpioCr": [
+      "PmicGpioLib",
+      "GpioOwnerLib",
+      "OskMemoryLib",
+      "PepCrLib"
+    ],
+    "SdCr": [
+      "SdhciMsmLib"
+    ],
+    "SubsystemCr": [
+      "SubsystemCrLib",
+      "Smp2pObserveCrLib"
+    ],
+    "AudioCr": [
+      "AudioCalCrLib",
+      "AudioGraphCrLib",
+      "AudioGprCrLib",
+      "AudioPcmCrLib",
+      "AudioPrmCrLib",
+      "Sm8450LpassAudioCrLib",
+      "SoundWireCrLib"
+    ]
+  }
+}

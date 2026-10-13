@@ -39,7 +39,7 @@ typedef struct {
   UINTN InputBufferCapacity;
 } CrDebugUartContext;
 
-CR_STATUS CrDebugUartLibInit(CrDebugUartContext **DebugUartContext);
+CR_STATUS CrDebugUartLibInit(IN OUT CrDebugUartContext *DebugUartContext);
 
 VOID MsmGeniWriteTxFifo(
     CrDebugUartContext *DebugUartContext, VOID *Buffer, UINTN Length);

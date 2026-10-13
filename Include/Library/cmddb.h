@@ -66,6 +66,12 @@ enum RSC_SLAVE_ID_TYPE {
 
 BOOLEAN ValidateCmdDBHeader(IN CmdDbHeader *cmd_db_header);
 
+/* Validate the complete immutable mapped/copied region before using legacy
+ * lookup APIs. All resource tables and auxiliary spans must fit RegionSize.
+ * Validation is a memory-bounds check; it does not authenticate firmware.
+ */
+BOOLEAN ValidateCmdDBRegion(CONST CmdDbHeader *Header, UINTN RegionSize);
+
 VOID DumpCmdDBInfo(IN CmdDbHeader *cmd_db_header);
 
 CR_STATUS
@@ -80,12 +86,12 @@ GetCmdDBEntryNameByAddress(
 CR_STATUS
 GetCmdDBAuxDataByName(
     IN CmdDbHeader *cmd_db_header, IN CONST CHAR8 *name, OUT UINT8 *aux_data,
-    OUT UINT32 *length);
+    IN OUT UINT32 *length);
 
 CR_STATUS
 GetCmdDBAuxDataByAddress(
     IN CmdDbHeader *cmd_db_header, IN UINT32 address, OUT UINT8 *aux_data,
-    OUT UINT32 *length);
+    IN OUT UINT32 *length);
 
 STATIC inline BOOLEAN CmdDBIsAddrEqual(IN UINT32 Addr1, IN UINT32 Addr2)
 {

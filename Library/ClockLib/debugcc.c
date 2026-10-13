@@ -1,5 +1,5 @@
 // #define CR_OSKAL_TRACE_MMIO 1
-#include <clock_internal.h>
+#include "clock_internal.h"
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_EN_MSK BIT(20)
 #define CLOCK_DEBUGCC_CTL_REG_COUNT_CLR_MSK BIT(21)
 #define CLOCK_DEBUGCC_CTL_REG_XO_DIV4_TERM_COUNT_MSK GEN_MSK(19, 0)
@@ -18,6 +18,7 @@ DebugccMeasureClockInternal(
     IN DebugccInfo *Clock, IN UINT64 SampleTicks)
 {
   UINT32 MeasurementResult = 0;
+  UNREFERENCED_PARAMETER(Clock);
 
   // Ensure measurement is disabled
   CrMmioUpdateBits32(
@@ -68,21 +69,23 @@ DebugccMeasureClockInternal(
 }
 
 CR_STATUS
-DebugccMeasureClockRate(IN CONST CHAR8 *ClockName, OUT UINT64 *FrequencyHz)
+DebugccMeasureClockRate(
+    IN ClockDriverContext *ClockContext,
+    IN DebugccDriverContext *Context,
+    IN CONST CHAR8 *ClockName,
+    OUT UINT64 *FrequencyHz)
 {
-  // Get contexts
-  DebugccDriverContext *Context          = CrTargetGetDebugccContext();
-  ClockDriverContext   *ClockContext     = CrTargetGetClockContext();
-  DebugccController   **TargetController = Context->ClockControllers;
+  DebugccController   **TargetController;
   DebugccInfo          *TargetClock      = NULL;
   ClockControllerType   ControllerType   = 0;
 
   /* Input validation */
   if (ClockName == NULL || FrequencyHz == NULL || Context == NULL ||
-      ClockContext == NULL) {
+      Context->ClockControllers == NULL || ClockContext == NULL) {
     log_err("Invalid parameters to DebugccMeasureClockRate");
     return CR_INVALID_PARAMETER;
   }
+  TargetController = Context->ClockControllers;
 
   // Find clock info by name
   while ((*TargetController) != NULL) {
@@ -202,16 +205,20 @@ DebugccMeasureClockRate(IN CONST CHAR8 *ClockName, OUT UINT64 *FrequencyHz)
   return CR_SUCCESS;
 }
 
-VOID DebugccDumpAllClocksFreq(VOID)
+VOID
+DebugccDumpAllClocksFreq(
+    IN ClockDriverContext *ClockContext,
+    IN DebugccDriverContext *Context)
 {
-  DebugccDriverContext *Context          = CrTargetGetDebugccContext();
-  DebugccController   **TargetController = Context->ClockControllers;
+  DebugccController **TargetController;
   UINT64                Frequency;
 
-  if (Context == NULL || Context->ClockControllers == NULL) {
+  if (ClockContext == NULL || Context == NULL ||
+      Context->ClockControllers == NULL) {
     log_err("Invalid DebugccContext");
     return;
   }
+  TargetController = Context->ClockControllers;
 
   log_info("=================================================================");
   log_info("Clock Frequency Measurement Results:");
@@ -221,7 +228,8 @@ VOID DebugccDumpAllClocksFreq(VOID)
   while (*TargetController != NULL) {
     DebugccInfo **DebugClks = (*TargetController)->DebugClks;
     while (*DebugClks != NULL) {
-      if (DebugccMeasureClockRate((*DebugClks)->Name, &Frequency) ==
+      if (DebugccMeasureClockRate(
+              ClockContext, Context, (*DebugClks)->Name, &Frequency) ==
           CR_SUCCESS) {
         if (Frequency == 0) {
           log_info("%-50a: OFF", (*DebugClks)->Name);

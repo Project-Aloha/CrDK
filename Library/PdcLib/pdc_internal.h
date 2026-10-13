@@ -22,3 +22,12 @@ enum PdcIrqConfig {
   PDC_IRQ_EDGE_RISING = 0b110,
   PDC_IRQ_EDGE_DUAL = 0b111,
 };
+
+typedef struct {
+  UINTN ConfigAddress,EnableAddress,SpiAddress;
+  UINT32 PdcType,EnableMask,SpiMask;
+  CR_INTERRUPT_TRIGGER_TYPE GicType;
+} PDC_INTERRUPT_REGISTERS;
+CR_STATUS PdcValidateInterrupt(PdcDeviceContext *Ctx,UINT16 Pin,
+                               CR_INTERRUPT_TRIGGER_TYPE Type,
+                               PDC_INTERRUPT_REGISTERS *Registers);

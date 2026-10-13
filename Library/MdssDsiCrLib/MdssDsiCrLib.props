@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)MdssDsi.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)MdssDsiCommands.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)MdssDsiClock.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)MdssDsiPanel.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)DsiPhyExtended.c" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\MdssCrLib\MdssCrLib.props" />
+  <Import Project="$(MSBuildThisFileDirectory)..\MdssDscCrLib\MdssDscCrLib.props" />
+  <Import Project="$(MSBuildThisFileDirectory)..\ClockExternalLib\ClockExternalLib.props" />
+</Project>

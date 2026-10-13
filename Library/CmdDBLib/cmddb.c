@@ -14,10 +14,32 @@
 BOOLEAN
 ValidateCmdDBHeader(IN CmdDbHeader *cmd_db_header)
 {
+  if (cmd_db_header == NULL) return FALSE;
   if (cmd_db_header->magic == CMD_DB_MAGIC)
     return TRUE;
   log_err("Invalid cmd-db magic 0x%08X", cmd_db_header->magic);
   return FALSE;
+}
+
+BOOLEAN ValidateCmdDBRegion(CONST CmdDbHeader *Header, UINTN RegionSize) {
+  // The NT flexible-array compatibility byte is not part of the wire header.
+  CONST UINTN HeaderSize = sizeof(CmdDbHeader) - CR_FLEXIBLE_ARRAY_SIZE(UINT8);
+  if (Header == NULL || RegionSize < HeaderSize || Header->magic != CMD_DB_MAGIC) return FALSE;
+  UINTN DataSize = RegionSize - HeaderSize;
+  for (UINTN I=0; I<CMD_DB_MAX_SLAVES; ++I) {
+    CONST ResourceHeader *Resource = &Header->rscHeaders[I];
+    if (Resource->slaveId == RSC_SLAVE_HW_INVALID) continue;
+    UINTN EntriesSize = (UINTN)Resource->count * sizeof(EntryHeader);
+    if (Resource->headerOffset > DataSize || EntriesSize > DataSize - Resource->headerOffset ||
+        Resource->dataOffset > DataSize) return FALSE;
+    for (UINTN J=0; J<Resource->count; ++J) {
+      CONST EntryHeader *Entry = (CONST EntryHeader *)
+        &Header->data[Resource->headerOffset + J * sizeof(EntryHeader)];
+      UINTN Offset = (UINTN)Resource->dataOffset + Entry->offset;
+      if (Offset > DataSize || Entry->length > DataSize - Offset) return FALSE;
+    }
+  }
+  return TRUE;
 }
 
 // Seach cmd db region for request entry
@@ -168,13 +190,35 @@ GetCmdDBEntryNameByAddress(
   return CR_SUCCESS;
 }
 
-// Get aux data
+STATIC CR_STATUS
+CopyCmdDBAuxData(
+    IN CONST cmd_db_entry *entry, OUT UINT8 *aux_data, IN OUT UINT32 *length)
+{
+  UINT32 capacity;
+
+  if (!entry || !length)
+    return CR_INVALID_PARAMETER;
+
+  capacity = *length;
+  *length  = entry->DataLength;
+  if (capacity < entry->DataLength)
+    return CR_BUFFER_TOO_SMALL;
+  if (entry->DataLength == 0)
+    return CR_SUCCESS;
+  if (!aux_data)
+    return CR_INVALID_PARAMETER;
+
+  cr_memcpy(aux_data, entry->Data, entry->DataLength);
+  return CR_SUCCESS;
+}
+
+// Get aux data. Length is the input capacity and output required size.
 CR_STATUS
 GetCmdDBAuxDataByName(
     IN CmdDbHeader *cmd_db_header, IN CONST CHAR8 *name, OUT UINT8 *aux_data,
-    OUT UINT32 *length)
+    IN OUT UINT32 *length)
 {
-  if (!cmd_db_header || !aux_data)
+  if (!cmd_db_header || !name || !length)
     return CR_INVALID_PARAMETER;
 
   cmd_db_entry entry  = {0};
@@ -182,17 +226,15 @@ GetCmdDBAuxDataByName(
   if (status != CR_SUCCESS)
     return status;
 
-  *length = entry.DataLength;
-  cr_memcpy(aux_data, entry.Data, entry.DataLength);
-  return CR_SUCCESS;
+  return CopyCmdDBAuxData(&entry, aux_data, length);
 }
 
 CR_STATUS
 GetCmdDBAuxDataByAddress(
     IN CmdDbHeader *cmd_db_header, IN UINT32 address, OUT UINT8 *aux_data,
-    OUT UINT32 *length)
+    IN OUT UINT32 *length)
 {
-  if (!cmd_db_header || !aux_data || address == 0)
+  if (!cmd_db_header || !length || address == 0)
     return CR_INVALID_PARAMETER;
 
   cmd_db_entry entry  = {0};
@@ -200,7 +242,5 @@ GetCmdDBAuxDataByAddress(
   if (status != CR_SUCCESS)
     return status;
 
-  *length = entry.DataLength;
-  cr_memcpy(aux_data, entry.Data, entry.DataLength);
-  return CR_SUCCESS;
+  return CopyCmdDBAuxData(&entry, aux_data, length);
 }

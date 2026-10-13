@@ -13,9 +13,9 @@
 // 7e735ed4-d6b6-44a7-9c55-075e4e0c9a4e
 DEFINE_GUID(GUID_DEVINTERFACE_RPMH_CR, 0x7e735ed4, 0xd6b6, 0x44a7, 0x9c, 0x55,
             0x07, 0x5e, 0x4e, 0x0c, 0x9a, 0x4e);
-// 6279008e-9a20-4ac7-87b9-0ef233f661a8
-DEFINE_GUID(GUID_RPMH_CR_INTERFACE, 0x6279008e, 0x9a20, 0x4ac7, 0x87, 0xb9, 0x0e,
-            0xf2, 0x33, 0xf6, 0x61, 0xa8);
+// 8fcbb757-66b2-4d58-9676-ae2a4beff2aa
+DEFINE_GUID(GUID_RPMH_CR_INTERFACE, 0x8fcbb757, 0x66b2, 0x4d58, 0x96, 0x76, 0xae,
+            0x2a, 0x4b, 0xef, 0xf2, 0xaa);
 
 /* Note: All tcs cmds are sending to active onlt tcs currently */
 typedef NTSTATUS(*RPMH_CR_WRITE)(IN VOID *Context, IN RpmhTcsCmd *TcsCmd,

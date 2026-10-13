@@ -5,7 +5,6 @@
  */
 
 #include "debug_uart_internal.h"
-#include <Library/CrTargetDebugUartLib.h>
 
 VOID MsmGeniSerialIsr(VOID *Params)
 {
@@ -228,17 +227,13 @@ typedef enum {
 #define DEBUG_UART_GENI_FW_REVISION_RO 0x68
 
 CR_STATUS
-CrDebugUartLibInit(OUT CrDebugUartContext **OutDebugUartContext)
+CrDebugUartLibInit(IN OUT CrDebugUartContext *DebugUartContext)
 {
-  CR_STATUS           Status           = CR_SUCCESS;
-  CrDebugUartContext *DebugUartContext = CrTargetGetDebugUartContext();
+  CR_STATUS Status = CR_SUCCESS;
   if (DebugUartContext == NULL) {
     log_err("No Debug Uart Context provided!");
     return CR_DEVICE_ERROR;
   }
-
-  if (OutDebugUartContext != NULL)
-    *OutDebugUartContext = DebugUartContext;
 
   // Verify se proto
   if (GET_FIELD(
@@ -261,6 +256,12 @@ CrDebugUartLibInit(OUT CrDebugUartContext **OutDebugUartContext)
       0xffffffff);
   CrMmioWrite32(
       DebugUartContext->BaseAddress + DEBUG_UART_GENI_SE_IRQ_EN, 0xffffffff);
+
+  // Enable RX
+  CrMmioUpdateBits32(
+        DebugUartContext->BaseAddress + DEBUG_UART_GENI_S_CMD0,
+        DEBUG_UART_GENI_S_CMD0_S_OPCODE_MSK,
+        (OPCODE_SE_S_UART_START_RX) << DEBUG_UART_GENI_S_CMD0_S_OPCODE_SFT);
 
   // Read RX FIFO depth
   DebugUartContext->RxFifoDepth = DebugUartGetRxFifoDepth(DebugUartContext);
