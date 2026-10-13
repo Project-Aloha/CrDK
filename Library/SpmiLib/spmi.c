@@ -10,7 +10,9 @@
 #include "spmi_internal.h"
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "spmi.tmh"
+#endif
 #endif
 
 #define SPMI_ARB_VERSION_REGVAL_MIN_V2 0x20010000U

@@ -9,7 +9,9 @@
 #include <oskal/cr_status.h>
 #include <oskal/cr_types.h>
 #include <wdm.h>
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "oskinterrupt_wdf.tmh"
+#endif
 
 typedef struct {
   CR_INTERRUPT_CONFIG Config;

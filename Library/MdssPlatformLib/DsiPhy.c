@@ -115,7 +115,7 @@ CrMdssPlatformEnablePhy (CR_MDSS_PLATFORM *P)
   UINT32 Lanes = P->Config.Mode.Lanes;
   UINT64 BitRate, Vco, Divider;
   UINT32 OutDivider, PixelDivider, PixelMux, Inverter, Index, Timings[14];
-  UINTN Lane;
+  UINT32 Lane;
   CR_STATUS Status;
   STATIC CONST UINT8 LaneDrive[] = { 0x40, 0x40, 0x40, 0x46, 0x41 };
 

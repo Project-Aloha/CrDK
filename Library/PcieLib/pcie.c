@@ -15,7 +15,9 @@
 #include <oskal/cr_string.h>
 
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "pcie.tmh"
+#endif
 #endif
 
 #define PCIE_PARF_SYS_CTRL                    0x000

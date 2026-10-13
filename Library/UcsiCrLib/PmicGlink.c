@@ -9,7 +9,9 @@
 #include <oskal/cr_string.h>
 #include <oskal/cr_debug.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "PmicGlink.tmh"
+#endif
 #endif
 
 #define OWNER_USBC 32779U

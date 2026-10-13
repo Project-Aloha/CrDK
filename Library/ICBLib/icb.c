@@ -14,7 +14,9 @@
 #include <oskal/cr_string.h>
 
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "icb.tmh"
+#endif
 #endif
 
 #define INTERCONNECT_BCM_AUX_SIZE       8

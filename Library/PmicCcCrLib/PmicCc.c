@@ -8,7 +8,9 @@
 #include <Library/PmicCcCrLib.h>
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "PmicCc.tmh"
+#endif
 #endif
 STATIC VOID Changed(VOID *X) {
  CR_PMIC_CC *C=X;if(!C->Stopping){C->Dirty=TRUE;C->Valid=FALSE;C->LastStatus=CR_NOT_READY;C->Wake(C->WakeContext);}

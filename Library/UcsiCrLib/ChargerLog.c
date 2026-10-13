@@ -8,7 +8,9 @@
 #include <oskal/cr_string.h>
 #include <oskal/cr_debug.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "ChargerLog.tmh"
+#endif
 #endif
 
 #define OWNER_CHARGER 32778U

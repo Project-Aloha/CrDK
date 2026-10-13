@@ -7,7 +7,9 @@
 #include "spmi_internal.h"
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "spmi_irq.tmh"
+#endif
 #endif
 
 /* Caller holds the same raw IRQ lock used by enable/register/dispatch. */

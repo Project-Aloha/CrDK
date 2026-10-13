@@ -4,6 +4,9 @@
  */
 #include <Library/smem.h>
 #include <oskal/cr_debug.h>
+#if defined(_KERNEL_MODE) && !defined(CR_OSK_LOG_WITHOUT_WPP)
+#include "smem.tmh"
+#endif
 
 #define HEADER_SIZE 8400U
 #define TABLE_SIZE 4096U

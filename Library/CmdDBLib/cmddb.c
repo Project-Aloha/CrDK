@@ -7,7 +7,9 @@
 #include "cmddb_internal.h"
 // For WPP tracing
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "cmddb.tmh"
+#endif
 #endif
 
 // Validate CmdDB magic

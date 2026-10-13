@@ -5,7 +5,9 @@
 #include <Library/ButtonsCrLib.h>
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "Buttons.tmh"
+#endif
 #endif
 
 STATIC CR_STATUS ReadBus(CR_BUTTON_CONTEXT *C,UINT8 S,UINT16 A,UINT8 *B,UINTN N) {

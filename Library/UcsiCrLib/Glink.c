@@ -12,7 +12,9 @@
 #include <oskal/cr_string.h>
 #include <oskal/cr_debug.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "Glink.tmh"
+#endif
 #endif
 
 #define GLINK_HOST_ADSP 2U

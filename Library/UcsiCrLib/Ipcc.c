@@ -7,7 +7,9 @@
 #include <oskal/cr_memory.h>
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "Ipcc.tmh"
+#endif
 #endif
 
 #define IPCC_CONFIG 0x08U

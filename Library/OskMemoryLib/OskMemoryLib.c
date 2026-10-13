@@ -9,7 +9,9 @@
 #ifdef _KERNEL_MODE
 #include <ntddk.h>
 #include <oskal/cr_debug.h>
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "OskMemoryLib.tmh"
+#endif
 
 UINT32 CrMmioRead32(UINTN Address) {
 #ifdef CR_OSKAL_TRACE_MMIO

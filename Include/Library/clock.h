@@ -136,6 +136,10 @@ typedef struct _ClockController {
   ClockNode **Gdscs;
 } ClockController;
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4201) /* Clock node variants intentionally share storage. */
+#endif
 typedef struct _ClockNode {
   ClockNodeType    Type;
   CONST CHAR8     *Name;
@@ -239,6 +243,9 @@ typedef struct _ClockNode {
     };
   };
 } ClockNode;
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 typedef struct _ClockDriverContext {
   UINTN            ClockControllerCount;

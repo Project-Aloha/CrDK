@@ -5,7 +5,9 @@
 #include <Library/SpmiSharedCrLib.h>
 #include <oskal/cr_string.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "SpmiShared.tmh"
+#endif
 #endif
 STATIC BOOLEAN Overlap(CONST VOID *A,UINTN An,CONST VOID *B,UINTN Bn) {
   UINTN a=(UINTN)A,b=(UINTN)B;

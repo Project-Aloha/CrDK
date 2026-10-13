@@ -6,7 +6,9 @@
 #include "gpio_internal.h"
 #include <oskal/cr_memory.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "gpio.tmh"
+#endif
 #endif
 
 STATIC BOOLEAN GpioPinValid(GpioDeviceContext *Context, UINT16 Pin) {

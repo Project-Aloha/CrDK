@@ -10,6 +10,10 @@
 #include <ntddk.h>
 #include <trace.h>
 
+/* A resident consumer explicitly selects CR_OSK_LOG_WITHOUT_WPP=1 in its
+ * project. Its trace.h supplies DbgPrint macros; WPP consumers instead require
+ * the real generated per-translation-unit TMH and do not select this flag. */
+
 /* COPY THEY FOLLOWING BLOCK TO TRACE.h */
 // In WPP_CONTROL_GUIDS:
 //   WPP_DEFINE_BIT(TRACE_OSKAL) \
@@ -81,10 +85,16 @@
 
 /* Shared hardware libraries must not assume UEFI PrintLib formats. */
 #ifdef _KERNEL_MODE
+#if defined(CR_OSK_LOG_WITHOUT_WPP)
 #ifndef CR_LOG_CHAR8_STR_FMT
 #define CR_LOG_CHAR8_STR_FMT "%s"
 #endif
+#define CR_LOG_STATUS_FMT "%08lx"
+#else
+/* tracewpp /D supplies CR_LOG_CHAR8_STR_FMT in the generated TMH. Defining
+ * it before that include would conflict with tracewpp's emitted macro. */
 #define CR_LOG_STATUS_FMT "%!STATUS!"
+#endif
 #define CR_LOG_HEX64_FMT "%I64x"
 #define CR_LOG_UINT64_FMT "%I64u"
 #else

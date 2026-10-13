@@ -5,7 +5,9 @@
  */
 #include "spmi_internal.h"
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "pmic_arb_v5.tmh"
+#endif
 #endif
 
 CR_STATUS

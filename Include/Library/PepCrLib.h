@@ -7,6 +7,10 @@
 typedef struct { CONST CHAR8 *Data; UINTN Length; } CR_PEP_TEXT;
 typedef enum { CrPepInteger, CrPepString, CrPepPackage, CrPepBuffer } CR_PEP_VALUE_TYPE;
 typedef struct _CR_PEP_VALUE CR_PEP_VALUE;
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4201) /* Intentional anonymous union in the value ABI. */
+#endif
 struct _CR_PEP_VALUE {
   CR_PEP_VALUE_TYPE Type;
   union {
@@ -16,6 +20,9 @@ struct _CR_PEP_VALUE {
     struct { CONST CR_PEP_VALUE *Values; UINTN Count; } Package;
   };
 };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 typedef enum {
   CrPepClock, CrPepFootswitch, CrPepVreg, CrPepNpa, CrPepBusArb,
   CrPepTlmmGpio, CrPepTlmmGpioV2, CrPepPmicGpio, CrPepDelay

@@ -8,7 +8,9 @@
 #include <oskal/cr_mutex.h>
 #ifdef _KERNEL_MODE
 #include "trace.h"
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "rpmh.tmh"
+#endif
 #endif
 
 /** Reference

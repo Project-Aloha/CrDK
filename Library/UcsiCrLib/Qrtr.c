@@ -11,7 +11,9 @@
 #include <oskal/cr_string.h>
 #include <oskal/cr_debug.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "Qrtr.tmh"
+#endif
 #endif
 
 #define LOCAL_NODE 1U

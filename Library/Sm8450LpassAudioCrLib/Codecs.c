@@ -62,7 +62,7 @@ static CR_STATUS Identify(CR_SM8450_AUDIO_CODECS *C) {
     if (Status == CR_NOT_READY) { return Status; }
     if (Status != CR_SUCCESS) { return Fail(C, Status); }
     C->Pending = FALSE;
-    if (R.Status != CR_SUCCESS || R.Kind != (C->Write ? CrSwWriteDrained : CrSwReadValue)) {
+    if (R.Status != CR_SUCCESS || R.Kind != (UINT32)(C->Write ? CrSwWriteDrained : CrSwReadValue)) {
       return Fail(C, R.Status == CR_SUCCESS ? CR_DEVICE_ERROR : R.Status);
     }
     C->Request = (CR_SW_REQUEST){0};

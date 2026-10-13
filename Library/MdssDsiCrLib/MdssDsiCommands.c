@@ -34,7 +34,7 @@ CR_STATUS CrMdssDsiWritePacket(CR_MDSS_DSI *D,UINT32 C,UINT8 Type,
  if(L>64){S=XExact(M->Ready(M->Context,C));if(S!=CR_SUCCESS)return S;}
  cr_memset(Packet,0xff,L);Packet[0]=Long?(UINT8)Bytes:Payload[0];
  Packet[1]=Long?(UINT8)(Bytes>>8):Bytes==2?Payload[1]:0;
- Packet[2]=Type|(D->Plan.Link[I].VirtualChannel<<6);Packet[3]=Long?0xc0:0x80;
+ Packet[2]=(UINT8)(Type|(D->Plan.Link[I].VirtualChannel<<6));Packet[3]=Long?0xc0:0x80;
  if(Long)cr_memcpy(Packet+4,Payload,Bytes);
  if(L>64){cr_memcpy(M->Cpu,Packet,L);S=XExact(M->Publish(M->Context,M->Cpu,L));if(S!=CR_SUCCESS)return S;}
  S=XRead(D,W,4,&Ctrl);if(S!=CR_SUCCESS)return S;

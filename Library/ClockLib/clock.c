@@ -757,8 +757,8 @@ ClockEnableInternal(
     UINT8 HaltCheck;
     UINT32 LastHaltRegVal;
 
-    HaltCheck = TargetClockNode->HaltCheckFlag &
-                (UINT8)~CLOCK_NODE_BRANCH_VOTED;
+    HaltCheck = (UINT8)(TargetClockNode->HaltCheckFlag &
+                        ~CLOCK_NODE_BRANCH_VOTED);
     LastHaltRegVal = 0;
     if (!Enable && TargetClockNode->RestoreControlEnabled) {
       /* Withdrawing the last native reference restores the firmware's

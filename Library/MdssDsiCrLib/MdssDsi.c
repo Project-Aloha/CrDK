@@ -102,9 +102,9 @@ CR_STATUS CrMdssDsiBuildPlan(CONST CR_MDSS_DSI_MODE *M,CR_MDSS_DSI_PLAN *Out)
   if(M->Raster.Controller!=M->FirstController||
       (M->PhyType==CrMdssCphy&&M->Raster.Lanes>3))return CR_INVALID_PARAMETER;
   if(M->Raster.InvertHsync||M->Raster.InvertVsync)return CR_UNSUPPORTED;
-  for(I=0;I<4;++I){UINT32 V=M->LaneMap[I];
-    if(!V||(V&(V-1))||(V&~15)||(Seen&V))return CR_INVALID_PARAMETER;
-    Seen|=V;
+  for(I=0;I<4;++I){UINT32 Lane=M->LaneMap[I];
+    if(!Lane||(Lane&(Lane-1))||(Lane&~15)||(Seen&Lane))return CR_INVALID_PARAMETER;
+    Seen|=Lane;
   }
   if(M->Controllers==2&&((M->Raster.Width|M->Raster.HSync|
       M->Raster.HBackPorch|M->Raster.HFrontPorch)&1))return CR_UNSUPPORTED;
@@ -207,7 +207,10 @@ STATIC CR_STATUS HostPrepare(CR_MDSS_DSI *D,UINT32 I)
  HPUT(0x2c,(H-1)|((V-1)<<16));HPUT(0x30,M->HSync<<16);HPUT(0x34,0);HPUT(0x38,M->VSync<<16);
  HPUT(0x10,M->VirtualChannel|(3U<<4)|(M->TrafficMode<<8)|
    (M->HsaHseAfterVsVe?XB(28):0)|M->VideoFlags);
- HPUT(0x20,0);HPUT(0xc4,D->Plan.HostClockTiming);HPUT(0x180,0);HPUT(0xb0,0);
+ HPUT(0x20,0);HPUT(0xc4,D->Plan.HostClockTiming);HPUT(0x180,0);
+ /* DSI v2.x encodes the one-hot lane_map_v2 entries as four nibbles. */
+ HPUT(0xb0,D->Plan.Mode.LaneMap[0]|(D->Plan.Mode.LaneMap[1]<<4)|
+   (D->Plan.Mode.LaneMap[2]<<8)|(D->Plan.Mode.LaneMap[3]<<12));
  /* Android DSI6G video timing commit, after all active/total fields. */
  HPUT(0xbc,0x3fd08);HPUT(0xa4,0x10100);HPUT(0x1e4,1);
  HPUT(0xcc,M->DisableEot?0:1);HPUT(0x2d8,D->Plan.Mode.PhyType==CrMdssCphy?1:0);

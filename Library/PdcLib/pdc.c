@@ -6,7 +6,9 @@
 
 #include "pdc_internal.h"
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "pdc.tmh"
+#endif
 #endif
 
 STATIC CR_STATUS PdcValidateRanges(IN CONST PdcDeviceContext *Ctx) {
