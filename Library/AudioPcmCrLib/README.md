@@ -1,0 +1,19 @@
+# AudioPcmCrLib
+
+This original portable library provides the shared-memory packet operations needed by a future PCM owner: one-region APM MAP/UNMAP, metadata-free V2 WRITE/READ, and exact bounded completion matching. The current AudioCr diagnostic does not submit these PCM commands; shared SDK registration is coordinated separately. It performs no memory mapping, hardware access, buffer scheduling or transport operation.
+
+`CrAudioPcmBuild` emits the documented little-endian bytes. `CrAudioPcmMatchReply` requires exact domain, source/destination port, token and opcode; data completions additionally require the entire outstanding address/map-handle tuple. It rejects a returned READ length larger than the supplied buffer and unsupported metadata. Basic responses have distinct acknowledgement/error kinds. They never manufacture a map handle or return a data buffer. WRITE DONE contains no byte count, so the decoded DataBytes stays zero. All failed calls preserve outputs, and all pointer arithmetic, alignment and aliases are checked before writes. A 36-bit aperture and one contiguous 4K-aligned region are explicit initial restrictions, not proof of a platform DMA grant.
+
+The implementation follows [APM mapping](https://github.com/AudioReach/audioreach-graphservices/blob/3094583c726710b66eb0204fc5d6a7b336d9e575/spf/api/apm/apm_memmap_api.h), [WRITE V2](https://github.com/AudioReach/audioreach-graphservices/blob/3094583c726710b66eb0204fc5d6a7b336d9e575/spf/api/modules/wr_sh_mem_ep_api.h), [READ V2](https://github.com/AudioReach/audioreach-graphservices/blob/3094583c726710b66eb0204fc5d6a7b336d9e575/spf/api/modules/rd_sh_mem_ep_api.h) and the actual `gsl_datapath.c` / `gsl_shmem_mgr.c` callers at AudioReach Graph Services commit `3094583c726710b66eb0204fc5d6a7b336d9e575`. Qualcomm's attribution and BSD-3-Clause terms are retained in LICENSE. Tests include these exact upstream C headers as an independent layout oracle; production uses no upstream header or implementation copy.
+
+The OnePlus SM8450 Android audio packet driver at `877203a7cf9b79973d44a9db716490f95d820110`, `vendor/qcom/opensource/audio-kernel/ipc/audio-pkt.c`, corroborates the APM mapping opcode and a critical platform distinction: Android converts its userspace FD-backed map before GPR transmission. This helper instead takes an already-owned DSP-visible address; an FD, CPU pointer, presumed Android IOVA or Windows physical allocation alone is not such a grant. V2 firmware support remains unqualified on the actual HDK image. GET_SPF_STATE alone does not establish it.
+
+A live PCM owner must retain its DMA/SMMU provider, graph, endpoint and the same GLINK physical PIL lease; own permanent source-port/token allocation; journal a command before Send; dispatch synchronous RX only after the explicit acceptance outcome; and hold buffers while any accepted/unknown data command remains unresolved. It may use a same-epoch matching DONE to advance the wire buffer state, then run the real cache provider before CPU reuse. Timeout, local End, PD/PIL generation or graph-close completion cannot stand in for remote DMA retirement. An UNMAP response describes only the remote map, and cannot release local DMA objects by itself. These responsibilities deliberately are not represented by a default-ready Boolean in this library.
+
+Run from the workspace root:
+
+```
+python3 Platforms/CranePkg/Tests/run_audio_pcm_tests.py --output .tmp/audio-pcm-tests
+```
+
+`check_audio_pcm_arm64.py` compiles the original core using actual EFI and Windows ARM64 WDK headers. The runners default to their canonical workspace and accept an explicit `--workspace` override. Receipts record all compiler-resolved dependencies, including upstream oracle and WDK/system headers, source hashes and artifact hashes. These tests are packet evidence, not hardware playback or DMA-retirement evidence.

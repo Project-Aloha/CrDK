@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Complete descriptor plus NT default-refusal backend; no startup grant. -->
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)CrPcieTarget.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)CrPcieBackend.c" />
+  </ItemGroup>
+</Project>

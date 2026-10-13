@@ -5,7 +5,9 @@
  */
 #include "spmi_internal.h"
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "pmic_arb_common.tmh"
+#endif
 #endif
 
 CR_STATUS
@@ -30,6 +32,9 @@ PmicArbInitApidCommonV7V8(SpmiDeviceContext *Ctx, UINT32 Index, UINT32 MaxBuses,
     log_err("SPMI: unsupported bus index %u detected", Index);
     return CR_INVALID_PARAMETER;
   }
+  if (!SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CORE,
+                     SPMI_PMIC_ARB_FEATURES+(UINT64)Index*4U,sizeof(UINT32)))
+    return CR_INVALID_PARAMETER;
 
   BaseApid = 0;
   ApidCount = 0;
@@ -110,6 +115,11 @@ PmicArbReadApidMapCommon(SpmiDeviceContext *Ctx, UINTN PpidBase, UINT64 PpidMsk,
   Bus = &Ctx->Bus;
   Apidd = &Bus->ApidData[Bus->BaseApid];
   ApidMax = (UINT32)Bus->BaseApid + Bus->ApidCount;
+  UINT32 LastOffset=Ctx->PmicArb.Ops->GetApidMapOffset((UINT16)(ApidMax-1U));
+  UINTN LastOwner=Ctx->PmicArb.Ops->GetApidOwner(Ctx,(UINT16)(ApidMax-1U));
+  if (LastOffset>MapSize-sizeof(UINT32) || PpidBase>(UINTN)-1-MapSize ||
+      OwnerBase>(UINTN)-1-OwnerSize || LastOwner<OwnerBase ||
+      LastOwner-OwnerBase>OwnerSize-sizeof(UINT32)) return CR_INVALID_PARAMETER;
   Bus->ApidMapValid = FALSE;
   for (i = Bus->BaseApid; i < ApidMax; i++, Apidd++) {
     Offset = Ctx->PmicArb.Ops->GetApidMapOffset((UINT16)i);

@@ -5,7 +5,6 @@
  */
 
 #pragma once
-#include <Library/CrTargetRpmhLib.h>
 #include <Library/cmddb.h>
 #include <Library/rpmh.h>
 
@@ -30,6 +29,13 @@
 #define RPMH_TCS_CMD_MSG_ID_RESPONSE_REQUEST_BIT BIT(8)
 #define RPMH_TCS_CMD_STATUS_ISSUED_BIT BIT(8)
 #define RPMH_TCS_CMD_STATUS_COMPLETED_BIT BIT(16)
+
+/* State, not a sampled Busy bit, decides the exact request's final owner. */
+enum {
+  RpmhTcsFree, RpmhTcsProgramming, RpmhTcsWaiting, RpmhTcsRetiring,
+  RpmhTcsCompleted, RpmhTcsConsuming, RpmhTcsFailed,
+  RpmhTcsAbandonedWaiting, RpmhTcsAbandonedRetiring
+};
 
 #define TCS_AMC_MODE_TRIGGER BIT(24)
 #define TCS_AMC_MODE_ENABLE BIT(16)
@@ -77,8 +83,9 @@ STATIC inline VOID WriteTcsReg(
       Value);
 }
 
-// 1ms max wait(unit us)
-#define RPMH_WRITE_MAX_WAIT_TIME 1 * 1000
+// Bound register acknowledgement and active-vote completion waits to 1 ms.
+#define RPMH_WRITE_MAX_WAIT_TIME 1000U
+#define RPMH_TX_MAX_WAIT_TIME    1000U
 STATIC inline VOID WriteTcsAsync(
     RpmhDeviceContext *RpmhContext, UINT32 Reg, UINT32 TcsIndex, UINT32 Value)
 {

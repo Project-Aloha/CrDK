@@ -8,7 +8,11 @@
 // OS Independent debug print lib
 #ifdef _KERNEL_MODE
 #include <ntddk.h>
-#include "trace.h"
+#include <trace.h>
+
+/* A resident consumer explicitly selects CR_OSK_LOG_WITHOUT_WPP=1 in its
+ * project. Its trace.h supplies DbgPrint macros; WPP consumers instead require
+ * the real generated per-translation-unit TMH and do not select this flag. */
 
 /* COPY THEY FOLLOWING BLOCK TO TRACE.h */
 // In WPP_CONTROL_GUIDS:
@@ -78,3 +82,19 @@
       ##__VA_ARGS__, __FILE__, __LINE__)
 
 #endif // _KERNEL_MODE
+
+/* Shared hardware libraries must not assume UEFI PrintLib formats. */
+#ifdef _KERNEL_MODE
+#if defined(CR_OSK_LOG_WITHOUT_WPP)
+#define CR_LOG_CHAR8_STR_FMT "%s"
+#define CR_LOG_STATUS_FMT "%08lx"
+#define CR_LOG_HEX64_FMT "%I64x"
+#define CR_LOG_UINT64_FMT "%I64u"
+#endif
+/* WPP consumers get all four formats from CrDK.props /D in the real TMH.
+ * Defining them before that include conflicts with tracewpp's emitted macros. */
+#else
+#define CR_LOG_STATUS_FMT "%r"
+#define CR_LOG_HEX64_FMT "%Lx"
+#define CR_LOG_UINT64_FMT "%Lu"
+#endif

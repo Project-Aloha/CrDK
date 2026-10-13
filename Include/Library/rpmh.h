@@ -30,9 +30,12 @@ typedef struct {
   UINT32 reg_drv_irq_clear;
   UINT32 reg_drv_irq_status;
   UINT32 reg_drv_irq_enable;
+  UINT32 reg_drv_cmd_wait_for_compl;
   UINT32 reg_drv_cmd_msgid;
   UINT32 reg_drv_cmd_addr;
   UINT32 reg_drv_cmd_data;
+  UINT32 reg_drv_cmd_status;
+  UINT32 reg_drv_cmd_resp_data;
   UINT32 reg_drv_control;
   UINT32 reg_drv_cmd_enable;
 
@@ -58,11 +61,25 @@ typedef struct {
 /* Driver context */
 typedef struct {
   UINTN               drv_base_address;
+  UINTN               drv_size; /* Size of the adapter's translated mapping. */
   UINT32              tcs_offset;
   UINT32              drv_id;
   CR_INTERRUPT_CONFIG InterruptConfig;
   UINT32              NumCmdsPerTcs;
   volatile UINT32     TcsBusy;
+  volatile UINT32     TcsSynchronous;
+  volatile UINT32     TcsRetiring;
+  volatile UINT32     TcsCompleted;
+  volatile UINT32     TcsFailed;
+  CR_STATUS           TcsResult[32];
+  /* Per-request ownership: no IRQ ever stores a caller's output pointer. */
+  volatile UINT32     TcsState[32];
+  volatile UINT32     TcsReading;
+  volatile UINT32     TcsResponseValid;
+  UINT32              TcsResponse[32];
+  UINT32              TcsReadAddress[32];
+  UINT64              TcsSequence[32], NextSequence;
+  UINT32              ObservationReferences; /* Passive provider serialization. */
   RpmhDrvTcsConfig    tcs_config;
   RpmhDrvRegisters   *drv_registers;
   CR_LOCK              Lock;
@@ -79,6 +96,11 @@ enum TcsIndex {
 CR_STATUS
 RpmhLibInit(IN OUT RpmhDeviceContext **RpmhContext);
 
+/* Consume the nine-byte GCFG wire buffer atomically, before initialization.
+ * The caller retains its mapping and interrupt configuration. No MMIO occurs.
+ */
+CR_STATUS RpmhLibLoadConfig(RpmhDeviceContext *Context, CONST UINT8 *Data, UINTN Length);
+
 CR_STATUS
 RpmhLibDeinit(IN OUT RpmhDeviceContext *RpmhContext);
 
@@ -86,6 +108,12 @@ CR_STATUS
 RpmhWrite(
     IN RpmhDeviceContext *RpmhContext, IN RpmhTcsCmd *TcsCmd,
     IN UINT32 NumCmds);
+
+/* Exact synchronous active-set remote read. OutRaw remains unchanged unless
+ * CR_SUCCESS is returned. Late completion owns only retained context storage;
+ * read and write share resource-alias exclusion. Adapter lifetime/serialization
+ * must outlive pending work. This returns request evidence, not PMIC voltage. */
+CR_STATUS RpmhRead(RpmhDeviceContext *Context, UINT32 Address, UINT32 *OutRaw);
 
 CR_STATUS
 RpmhEnableVreg(

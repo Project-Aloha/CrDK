@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include "cr_assert.h"
-
 #define TO_BOOL(x) ((x) ? TRUE : FALSE)
 
 #ifdef _KERNEL_MODE
@@ -19,6 +17,13 @@ typedef CHAR CHAR8;
 #else
 #include <Uefi.h>
 #endif
+
+/* Debug/assert declarations use the platform types above. This header must
+   also work as the first OSKAL include, without a prior Uefi.h/ntddk.h. */
+#include "cr_assert.h"
+
+#define CR_MAX_UINT32 ((UINT32)0xffffffffU)
+#define CR_MAX_UINT64 ((UINT64)0xffffffffffffffffULL)
 
 CR_STATIC_ASSERT(sizeof(INTN) == sizeof(void *),
                  "INTN must be same size as pointer");

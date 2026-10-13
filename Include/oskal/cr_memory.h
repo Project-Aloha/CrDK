@@ -17,6 +17,7 @@
 
 #ifdef _KERNEL_MODE
 #include <ntddk.h>
+STATIC inline VOID CrMemoryFence(VOID) { KeMemoryBarrier(); }
 #define CR_MEM_BARRIER_DATA_SYN_BARRIAR() REGISTER_FENCE();
 UINT32 CrMmioRead32(UINTN Address);
 UINT32 CrMmioWrite32(UINTN Address, UINT32 Value);
@@ -25,6 +26,8 @@ UINT32 CrMmioUpdateBits32(UINTN Address, UINT32 Mask, UINT32 Data);
 UINT32 CrMmioAnd32(UINTN Address, UINT32 DataToAnd);
 #else
 #include <Library/IoLib.h>
+#include <Library/BaseLib.h>
+STATIC inline VOID CrMemoryFence(VOID) { MemoryFence(); }
 
 #define CR_MEM_BARRIER_DATA_SYN_BARRIAR()                                        \
   do {                                                                         \

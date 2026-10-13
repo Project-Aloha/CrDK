@@ -6,14 +6,22 @@
 #include "gpio_internal.h"
 #include <oskal/cr_memory.h>
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "gpio.tmh"
 #endif
+#endif
+
+STATIC BOOLEAN GpioPinValid(GpioDeviceContext *Context, UINT16 Pin) {
+  return Context != NULL && Context->PinCount <= GPIO_PINS_MAX &&
+    Pin < Context->PinCount && Context->GpioPins[Pin].pRegCfg != NULL;
+}
 
 VOID GpioInitConfigParams(
     OUT GpioConfigParams *ConfigParams, IN UINT16 PinNumber)
 {
   if (ConfigParams == NULL) {
     log_err(CR_LOG_CHAR8_STR_FMT ": ConfigParams is NULL", __FUNCTION__);
+    return;
   }
   ConfigParams->PinNumber     = PinNumber;
   ConfigParams->OutputEnable  = FALSE; // Default to Input
@@ -26,8 +34,7 @@ VOID GpioInitConfigParams(
 VOID GpioReadConfig(
     IN GpioDeviceContext *GpioContext, IN OUT GpioConfigParams *ConfigParams)
 {
-  if (GpioContext == NULL || ConfigParams == NULL ||
-      ConfigParams->PinNumber >= GpioContext->PinCount) {
+  if (ConfigParams == NULL || !GpioPinValid(GpioContext, ConfigParams->PinNumber)) {
     log_err(CR_LOG_CHAR8_STR_FMT ": Invalid parameters", __FUNCTION__);
     return;
   }
@@ -42,30 +49,44 @@ VOID GpioReadConfig(
   // Read current control register
   UINT32 GpioCtlRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
       GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber));
-  UINT32 GpioIoRegVal  = CrMmioRead32(GpioGetCfgRegByIndex(
-      GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
-
   GpioConfigRegInfo *PinRegCfg =
       GpioContext->GpioPins[ConfigParams->PinNumber].pRegCfg;
+  UINT32 GpioIoRegVal = 0;
+  if (PinRegCfg->InputMsk != 0 || PinRegCfg->OutputMsk != 0)
+    GpioIoRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
+        GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
 
-  ConfigParams->Pull        = GET_FIELD(GpioCtlRegVal, PinRegCfg->PullMsk);
-  ConfigParams->FunctionSel = GET_FIELD(GpioCtlRegVal, PinRegCfg->MuxSelMsk);
-  ConfigParams->DriveStrength =
-      GET_FIELD(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk);
-  ConfigParams->OutputEnable =
-      GET_FIELD(GpioCtlRegVal, PinRegCfg->OutputEnableMsk) ? TRUE : FALSE;
+  ConfigParams->Pull = PinRegCfg->PullMsk != 0 ?
+      GET_FIELD(GpioCtlRegVal, PinRegCfg->PullMsk) : GPIO_PULL_UNCHANGE;
+  ConfigParams->FunctionSel = PinRegCfg->MuxSelMsk != 0 ?
+      GET_FIELD(GpioCtlRegVal, PinRegCfg->MuxSelMsk) : GPIO_FUNC_UNCHANGE;
+  if (GpioContext->EgpioFunction != GPIO_FUNC_NORMAL &&
+      (GpioCtlRegVal & PinRegCfg->EgpioPresentMsk) != 0 &&
+      PinRegCfg->EgpioEnabledMsk != 0 &&
+      (GpioCtlRegVal & PinRegCfg->EgpioEnabledMsk) == 0)
+    ConfigParams->FunctionSel = GpioContext->EgpioFunction;
+  ConfigParams->DriveStrength = PinRegCfg->DriveStrengthMsk != 0 ?
+      GET_FIELD(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) :
+      GPIO_DRIVE_STRENGTH_UNCHANGE;
+  /* Linux marks UFS_RESET's OE/input bits absent: it is output-only.
+     SDC pads have neither input nor output registers. Never shift a zero
+     field mask or read a register that the target does not implement. */
+  ConfigParams->OutputEnable = PinRegCfg->OutputEnableMsk != 0 ?
+      (GET_FIELD(GpioCtlRegVal, PinRegCfg->OutputEnableMsk) != 0) :
+      (PinRegCfg->OutputMsk != 0);
 
-  if (ConfigParams->OutputEnable)
+  if (ConfigParams->OutputEnable && PinRegCfg->OutputMsk != 0)
     ConfigParams->OutputValue = GET_FIELD(GpioIoRegVal, PinRegCfg->OutputMsk);
-  else
+  else if (PinRegCfg->InputMsk != 0)
     ConfigParams->OutputValue = GET_FIELD(GpioIoRegVal, PinRegCfg->InputMsk);
+  else
+    ConfigParams->OutputValue = GPIO_VALUE_UNCHANGE;
 }
 
 VOID GpioSetConfig(
     IN GpioDeviceContext *GpioContext, IN GpioConfigParams *ConfigParams)
 {
-  if (GpioContext == NULL || ConfigParams == NULL ||
-      ConfigParams->PinNumber >= GpioContext->PinCount) {
+  if (ConfigParams == NULL || !GpioPinValid(GpioContext, ConfigParams->PinNumber)) {
     log_err(CR_LOG_CHAR8_STR_FMT ": Invalid parameters", __FUNCTION__);
     return;
   }
@@ -87,75 +108,82 @@ VOID GpioSetConfig(
   // Read current control register
   UINT32 GpioCtlRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
       GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber));
-  UINT32 GpioIoRegVal  = CrMmioRead32(GpioGetCfgRegByIndex(
-      GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
-
   GpioConfigRegInfo *PinRegCfg =
       GpioContext->GpioPins[ConfigParams->PinNumber].pRegCfg;
+  UINT32 GpioIoRegVal = 0;
+  BOOLEAN WriteOutput = ConfigParams->OutputEnable &&
+      ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE &&
+      PinRegCfg->OutputMsk != 0;
+  if (WriteOutput)
+    GpioIoRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
+        GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
 
   // Set mux sel if changed
-  if (ConfigParams->FunctionSel != GPIO_FUNC_UNCHANGE) {
-    GpioCtlRegVal =
-        (CLR_BITS(GpioCtlRegVal, PinRegCfg->MuxSelMsk) |
-         SET_FIELD(ConfigParams->FunctionSel, PinRegCfg->MuxSelMsk));
-  }
-
-  // Set in/out ctl reg
-  GpioCtlRegVal =
-      (CLR_BITS(GpioCtlRegVal, PinRegCfg->OutputEnableMsk) |
-       SET_FIELD(ConfigParams->OutputEnable, PinRegCfg->OutputEnableMsk));
-
-  // Set output value if output
-  if (ConfigParams->OutputEnable) {
-    // Set value if output(io reg)
-    if (ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
-      GpioIoRegVal =
-          (CLR_BITS(GpioIoRegVal, PinRegCfg->OutputMsk) |
-           SET_FIELD(ConfigParams->OutputValue & 1, PinRegCfg->OutputMsk));
-
-    // Clean up pull type for output
-    GpioCtlRegVal =
-        (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
-         SET_FIELD(GPIO_PULL_NONE, PinRegCfg->PullMsk));
-    // Set drive strength for output
-    if (ConfigParams->DriveStrength != GPIO_DRIVE_STRENGTH_UNCHANGE)
+  if (ConfigParams->FunctionSel != GPIO_FUNC_UNCHANGE &&
+      PinRegCfg->MuxSelMsk != 0) {
+    /* Linux msm_pinmux_set_mux(): EGPIO ownership sits outside the mux
+       field. Selecting a local function must reclaim the physical pad. */
+    if (GpioContext->EgpioFunction != GPIO_FUNC_NORMAL &&
+        ConfigParams->FunctionSel == GpioContext->EgpioFunction) {
+      if ((GpioCtlRegVal & PinRegCfg->EgpioPresentMsk) != 0)
+        GpioCtlRegVal &= ~PinRegCfg->EgpioEnabledMsk;
+    } else {
       GpioCtlRegVal =
-          (CLR_BITS(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) |
-           SET_FIELD(ConfigParams->DriveStrength, PinRegCfg->DriveStrengthMsk));
-  }
-  else {
-    // Set pull type if input(ctl reg)
-    if (ConfigParams->Pull != GPIO_PULL_UNCHANGE) {
-      if (GpioContext->PullUpNoKeeper && ConfigParams->Pull == GPIO_PULL_UP) {
-        GpioCtlRegVal =
-            (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
-             SET_FIELD(GPIO_PULL_UP_NO_KEEPER, PinRegCfg->PullMsk));
-      }
-      else {
-        GpioCtlRegVal =
-            (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
-             SET_FIELD(ConfigParams->Pull, PinRegCfg->PullMsk));
+          (CLR_BITS(GpioCtlRegVal, PinRegCfg->MuxSelMsk) |
+           SET_FIELD(ConfigParams->FunctionSel, PinRegCfg->MuxSelMsk));
+      if (GpioContext->EgpioFunction != GPIO_FUNC_NORMAL &&
+          (GpioCtlRegVal & PinRegCfg->EgpioPresentMsk) != 0) {
+        if ((GpioCtlRegVal & PinRegCfg->EgpioEnabledMsk) == 0)
+          log_info("GPIO %d EGPIO AP ownership requested ctl=0x%08x",
+                   ConfigParams->PinNumber, GpioCtlRegVal | PinRegCfg->EgpioEnabledMsk);
+        GpioCtlRegVal |= PinRegCfg->EgpioEnabledMsk;
       }
     }
   }
 
-  // Write back to registers
-  CrMmioWrite32(
-      GpioGetCfgRegByIndex(
-          GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber),
-      GpioCtlRegVal);
-  // Only write io reg when output mode or output value changed
-  if (ConfigParams->OutputEnable &&
-      ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
+  // Set in/out ctl reg
+  if (PinRegCfg->OutputEnableMsk != 0)
+    GpioCtlRegVal =
+        (CLR_BITS(GpioCtlRegVal, PinRegCfg->OutputEnableMsk) |
+         SET_FIELD(ConfigParams->OutputEnable, PinRegCfg->OutputEnableMsk));
+
+  // Pull and drive strength are pad properties, independent of direction.
+  if (ConfigParams->Pull != GPIO_PULL_UNCHANGE && PinRegCfg->PullMsk != 0) {
+    GpioPullType Pull = ConfigParams->Pull;
+    if (GpioContext->PullUpNoKeeper && Pull == GPIO_PULL_UP)
+      Pull = GPIO_PULL_UP_NO_KEEPER;
+    GpioCtlRegVal =
+        (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
+         SET_FIELD(Pull, PinRegCfg->PullMsk));
+  }
+  if (ConfigParams->DriveStrength != GPIO_DRIVE_STRENGTH_UNCHANGE &&
+      PinRegCfg->DriveStrengthMsk != 0)
+    GpioCtlRegVal =
+        (CLR_BITS(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) |
+         SET_FIELD(ConfigParams->DriveStrength, PinRegCfg->DriveStrengthMsk));
+
+  // Preload the output latch before enabling the driver or changing its mux.
+  if (WriteOutput) {
+    GpioIoRegVal =
+        (CLR_BITS(GpioIoRegVal, PinRegCfg->OutputMsk) |
+         SET_FIELD(ConfigParams->OutputValue & 1, PinRegCfg->OutputMsk));
     CrMmioWrite32(
         GpioGetCfgRegByIndex(
             GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber),
         GpioIoRegVal);
+  }
+  CrMmioWrite32(
+      GpioGetCfgRegByIndex(
+          GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber),
+      GpioCtlRegVal);
 }
 
 GpioValueType
 GpioReadInputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 {
+  if (!GpioPinValid(GpioContext, GpioIndex) ||
+      GpioContext->GpioPins[GpioIndex].pRegCfg->InputMsk == 0)
+    return GPIO_VALUE_LOW;
 
   if (GpioContext->GpioPins[GpioIndex].Reserved) {
     log_warn(
@@ -176,6 +204,9 @@ GpioReadInputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 GpioValueType
 GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 {
+  if (!GpioPinValid(GpioContext, GpioIndex) ||
+      GpioContext->GpioPins[GpioIndex].pRegCfg->OutputMsk == 0)
+    return GPIO_VALUE_LOW;
 
   if (GpioContext->GpioPins[GpioIndex].Reserved) {
     log_warn(
@@ -193,9 +224,44 @@ GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
              : GPIO_VALUE_LOW;
 };
 
+CR_STATUS GpioApplyConfigChecked(GpioDeviceContext *Context,CONST GpioConfigParams *Config) {
+  if(Config==NULL||!GpioPinValid(Context,Config->PinNumber)||Context->TlmmBaseAddress==0||Config->OutputEnable>1)
+    return CR_INVALID_PARAMETER;
+  GpioPinInfo *Pin=&Context->GpioPins[Config->PinNumber];GpioConfigRegInfo *Reg=Pin->pRegCfg;
+  if(Pin->Reserved)return CR_BUSY;
+  if(Reg->OutputEnableMsk==0 || Reg->MuxSelMsk==0 || Reg->PullMsk==0 || Reg->DriveStrengthMsk==0 || Reg->OutputMsk==0)
+    return CR_UNSUPPORTED;
+  if(Config->FunctionSel>GPIO_FUNC_MAX||Config->Pull>GPIO_PULL_MAX||Config->DriveStrength>GPIO_DRIVE_STRENGTH_MAX||Config->OutputValue>GPIO_VALUE_MAX ||
+     !(Pin->FuncMuxMap&(1U<<Config->FunctionSel)))return CR_INVALID_PARAMETER;
+  /* Restore the original latent latch even when OE remains off. Enabling the
+   * output temporarily to achieve this would create an unwanted pad pulse. */
+  if(!Config->OutputEnable) {
+    UINTN Io=GpioGetCfgRegByIndex(Context,GPIO_CFG_REG_TYPE_IO_REG,Config->PinNumber);
+    UINT32 Value=CrMmioRead32(Io);Value=(Value&~Reg->OutputMsk)|SET_FIELD(Config->OutputValue,Reg->OutputMsk);
+    CrMmioWrite32(Io,Value);
+  }
+  GpioConfigParams Desired=*Config;GpioSetConfig(Context,&Desired);
+  GpioConfigParams Actual;GpioInitConfigParams(&Actual,Config->PinNumber);GpioReadConfig(Context,&Actual);
+  Actual.OutputValue=GpioReadOutputVal(Context,Config->PinNumber);
+  GpioPullType Pull=Context->PullUpNoKeeper&&Config->Pull==GPIO_PULL_UP ? GPIO_PULL_UP_NO_KEEPER : Config->Pull;
+  if(Actual.OutputEnable!=Config->OutputEnable||Actual.FunctionSel!=Config->FunctionSel||Actual.Pull!=Pull||
+      Actual.DriveStrength!=Config->DriveStrength||Actual.OutputValue!=Config->OutputValue)return CR_DEVICE_ERROR;
+  return CR_SUCCESS;
+}
+
+STATIC BOOLEAN GpioHasInterrupt(GpioDeviceContext *Context, UINT16 Pin) {
+  return GpioPinValid(Context, Pin) &&
+    Context->GpioPins[Pin].pRegCfg->InterruptEnMsk != 0 &&
+    Context->GpioPins[Pin].pRegCfg->InterruptDetectionMsk != 0 &&
+    Context->GpioPins[Pin].pRegCfg->InterruptRawStatusMsk != 0;
+}
+
 BOOLEAN
 GpioReadIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 {
+  if (!GpioPinValid(GpioContext, GpioIndex) ||
+      GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptStatusMsk == 0) return FALSE;
+
   if (GpioContext->GpioPins[GpioIndex].Reserved) {
     log_warn(
         CR_LOG_CHAR8_STR_FMT ": Attempt to operate reserved GPIO %d, ignored",
@@ -214,6 +280,9 @@ GpioReadIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 
 VOID GpioCleanIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
 {
+  if (!GpioPinValid(GpioContext, GpioIndex) ||
+      GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptStatusMsk == 0) return;
+
 
   if (GpioContext->GpioPins[GpioIndex].Reserved) {
     log_warn(
@@ -240,6 +309,10 @@ CR_STATUS
 GpioCheckInterruptEnabled(
     IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, BOOLEAN *Enabled)
 {
+  if (Enabled == NULL || !GpioPinValid(GpioContext, GpioIndex)) return CR_INVALID_PARAMETER;
+  *Enabled = FALSE;
+  if (!GpioHasInterrupt(GpioContext, GpioIndex)) return CR_UNSUPPORTED;
+
   if (GpioContext == NULL || GpioIndex >= GpioContext->PinCount) {
     log_err(CR_LOG_CHAR8_STR_FMT ": Invalid parameters", __FUNCTION__);
     return CR_INVALID_PARAMETER;
@@ -267,6 +340,10 @@ CR_STATUS
 GpioEnableInterrupt(
     IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, BOOLEAN Enable)
 {
+  if (Enable > TRUE) return CR_INVALID_PARAMETER;
+  if (!GpioPinValid(GpioContext, GpioIndex)) return CR_INVALID_PARAMETER;
+  if (!GpioHasInterrupt(GpioContext, GpioIndex)) return CR_UNSUPPORTED;
+
   if (GpioContext == NULL || GpioIndex >= GpioContext->PinCount) {
     log_err(CR_LOG_CHAR8_STR_FMT ": Invalid parameters", __FUNCTION__);
     return CR_INVALID_PARAMETER;
@@ -327,6 +404,10 @@ GpioEnableInterrupt(
 CR_STATUS GpioMaskInterrupt(
     IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex, IN BOOLEAN Mask)
 {
+  if (Mask > TRUE) return CR_INVALID_PARAMETER;
+  if (!GpioPinValid(GpioContext, GpioIndex)) return CR_INVALID_PARAMETER;
+  if (!GpioHasInterrupt(GpioContext, GpioIndex)) return CR_UNSUPPORTED;
+
   if (GpioContext == NULL || GpioIndex >= GpioContext->PinCount) {
     log_err(CR_LOG_CHAR8_STR_FMT ": Invalid parameters", __FUNCTION__);
     return CR_INVALID_PARAMETER;
@@ -383,6 +464,9 @@ CR_STATUS GpioSetInterruptCfg(
     IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex,
     IN CR_INTERRUPT_TRIGGER_TYPE TriggerType)
 {
+  if (!GpioPinValid(GpioContext, GpioIndex)) return CR_INVALID_PARAMETER;
+  if (!GpioHasInterrupt(GpioContext, GpioIndex)) return CR_UNSUPPORTED;
+
   CR_STATUS Status          = CR_SUCCESS;
   BOOLEAN   IrqEnabled      = FALSE;
   UINT32    IntTargetRegVal = 0;
@@ -397,6 +481,11 @@ CR_STATUS GpioSetInterruptCfg(
         GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptDetectionWidth);
     return CR_UNSUPPORTED;
   }
+  if ((UINT32)TriggerType > CR_INTERRUPT_TRIGGER_EDGE_BOTH)
+    return CR_INVALID_PARAMETER;
+  if (GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptDetectionWidth == 1 &&
+      TriggerType == CR_INTERRUPT_TRIGGER_EDGE_BOTH)
+    return CR_UNSUPPORTED;
 
   if (GpioContext->GpioPins[GpioIndex].Reserved) {
     log_warn(
@@ -608,13 +697,18 @@ CR_STATUS GpioLibInit(IN OUT GpioDeviceContext **GpioContext)
   if (GpioContext == NULL)
     return CR_INVALID_PARAMETER;
 
-  // Get Target Info if not provided
   if (*GpioContext == NULL) {
-    *GpioContext = CrTargetGetGpioContext();
-    if (*GpioContext == NULL) {
-      log_err("CrTargetGetGpioContext failed.");
-      return CR_NOT_FOUND;
-    }
+    log_err("GpioLibInit requires a target context.");
+    return CR_NOT_FOUND;
+  }
+  if ((*GpioContext)->ActiveInterrupts != 0) return CR_BUSY;
+
+  if ((*GpioContext)->TlmmBaseAddress == 0 || (*GpioContext)->PinCount == 0 ||
+      (*GpioContext)->PinCount > GPIO_PINS_MAX) return CR_INVALID_PARAMETER;
+  for (UINT16 I = 0; I < (*GpioContext)->PinCount; ++I) {
+    GpioPinInfo *Pin = &(*GpioContext)->GpioPins[I];
+    if (Pin->pTileInfo == NULL || Pin->pRegCfg == NULL || Pin->pRegCfg->Index >= GPIO_MAX_REG_CFG)
+      return CR_INVALID_PARAMETER;
   }
 
   // Calculate each pins base addresses
@@ -626,9 +720,12 @@ CR_STATUS GpioLibInit(IN OUT GpioDeviceContext **GpioContext)
           (i * GPIO_TLMM_PIN_STRIDE);
     }
     else {
+      /* Special-pad register offsets are relative to TLMM, not to a
+         per-pin bank. GpioGetCfgRegByIndex applies that offset once.
+         SM8450 UFS_RESET: 0x0f000000 + 0x1de000 = 0x0f1de000,
+         matching Linux's TLMM 0x0f100000 + UFS_RESET 0xde000. */
       (*GpioContext)->GpioPins[i].PinAddress =
-          (*GpioContext)->TlmmBaseAddress +
-          (*GpioContext)->GpioPins[i].pRegCfg->ControlRegOffset;
+          (*GpioContext)->TlmmBaseAddress;
     }
   }
 

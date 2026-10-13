@@ -7,17 +7,41 @@
 #include "cmddb_internal.h"
 // For WPP tracing
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "cmddb.tmh"
+#endif
 #endif
 
 // Validate CmdDB magic
 BOOLEAN
 ValidateCmdDBHeader(IN CmdDbHeader *cmd_db_header)
 {
+  if (cmd_db_header == NULL) return FALSE;
   if (cmd_db_header->magic == CMD_DB_MAGIC)
     return TRUE;
   log_err("Invalid cmd-db magic 0x%08X", cmd_db_header->magic);
   return FALSE;
+}
+
+BOOLEAN ValidateCmdDBRegion(CONST CmdDbHeader *Header, UINTN RegionSize) {
+  // The NT flexible-array compatibility byte is not part of the wire header.
+  CONST UINTN HeaderSize = sizeof(CmdDbHeader) - CR_FLEXIBLE_ARRAY_SIZE(UINT8);
+  if (Header == NULL || RegionSize < HeaderSize || Header->magic != CMD_DB_MAGIC) return FALSE;
+  UINTN DataSize = RegionSize - HeaderSize;
+  for (UINTN I=0; I<CMD_DB_MAX_SLAVES; ++I) {
+    CONST ResourceHeader *Resource = &Header->rscHeaders[I];
+    if (Resource->slaveId == RSC_SLAVE_HW_INVALID) continue;
+    UINTN EntriesSize = (UINTN)Resource->count * sizeof(EntryHeader);
+    if (Resource->headerOffset > DataSize || EntriesSize > DataSize - Resource->headerOffset ||
+        Resource->dataOffset > DataSize) return FALSE;
+    for (UINTN J=0; J<Resource->count; ++J) {
+      CONST EntryHeader *Entry = (CONST EntryHeader *)
+        &Header->data[Resource->headerOffset + J * sizeof(EntryHeader)];
+      UINTN Offset = (UINTN)Resource->dataOffset + Entry->offset;
+      if (Offset > DataSize || Entry->length > DataSize - Offset) return FALSE;
+    }
+  }
+  return TRUE;
 }
 
 // Seach cmd db region for request entry

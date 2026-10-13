@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><CRANE_CRDK_LIB_PIL_DIR>$(MSBuildThisFileDirectory)</CRANE_CRDK_LIB_PIL_DIR></PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="$(CRANE_CRDK_LIB_PIL_DIR)Pil.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_PIL_DIR)PilClients.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_PIL_DIR)PilElf.c" />
+    <ClCompile Include="$(CRANE_CRDK_LIB_PIL_DIR)PilSmccc.c" />
+    <CustomBuild Include="$(CRANE_CRDK_LIB_PIL_DIR)PilSmcccArm64.asm">
+      <Command>"$(VCToolsInstallDir)bin\Host$(CR_PIL_ASSEMBLER_HOST)\arm64\cl.exe" /nologo /EP /TC /D_ARM64_ /I "$(WindowsSdkDir)Include\$(WindowsTargetPlatformVersion)\shared" "%(FullPath)" &gt; "$(IntDir)CrPilSmcccArm64.pre.asm"
+if errorlevel 1 exit /b 1
+"$(VCToolsInstallDir)bin\Host$(CR_PIL_ASSEMBLER_HOST)\arm64\armasm64.exe" "$(IntDir)CrPilSmcccArm64.pre.asm" "$(IntDir)CrPilSmcccArm64.obj"</Command>
+      <Outputs>$(IntDir)CrPilSmcccArm64.obj</Outputs>
+      <LinkObjects>false</LinkObjects>
+    </CustomBuild>
+    <None Include="$(CRANE_CRDK_LIB_PIL_DIR)PilSmcccArm64.S" />
+  </ItemGroup>
+  <PropertyGroup>
+    <CR_PIL_ASSEMBLER_HOST Condition="'$(CR_PIL_ASSEMBLER_HOST)'=='' And '$(PROCESSOR_ARCHITECTURE)'=='ARM64'">arm64</CR_PIL_ASSEMBLER_HOST>
+    <CR_PIL_ASSEMBLER_HOST Condition="'$(CR_PIL_ASSEMBLER_HOST)'==''">x64</CR_PIL_ASSEMBLER_HOST>
+    <CustomBuildBeforeTargets>Link;$(CustomBuildBeforeTargets)</CustomBuildBeforeTargets>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link><AdditionalDependencies>$(IntDir)CrPilSmcccArm64.obj;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+</Project>

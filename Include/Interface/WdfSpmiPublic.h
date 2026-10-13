@@ -3,6 +3,12 @@
  *
  *  Windows has no public SPMI class extension. This interface is confined to
  *  kernel-mode consumers and preserves the OS-independent SpmiLib contract.
+ *  Read/Write/MaskedWrite/Command/GetInfo/DispatchIrqs accept IRQL at or below
+ *  DISPATCH_LEVEL. IRQ registration, removal and enable require PASSIVE_LEVEL.
+ *  Handlers run at DISPATCH_LEVEL and may use the bus methods. They must not
+ *  call IRQ mutation methods or wait. Successful UnregisterIrq drains existing
+ *  callbacks before returning; a failure retains the registration and its
+ *  caller-owned context. All requests fail while the provider is outside D0.
  *
  *  SPDX-License-Identifier: MIT
  */

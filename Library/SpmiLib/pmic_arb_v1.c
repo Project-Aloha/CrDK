@@ -5,7 +5,9 @@
  */
 #include "spmi_internal.h"
 #ifdef _KERNEL_MODE
+#if !defined(CR_OSK_LOG_WITHOUT_WPP)
 #include "pmic_arb_v1.tmh"
+#endif
 #endif
 
 CR_STATUS
@@ -62,6 +64,9 @@ PmicArbPpidToApidV1(SpmiDeviceContext *Ctx, UINT16 Ppid, UINT16 *Apid) {
   if (Ctx == NULL || Apid == NULL) {
     return CR_INVALID_PARAMETER;
   }
+  if (Ppid>=SPMI_PMIC_ARB_MAX_PPID ||
+      !SpmiRegionFits(Ctx,SPMI_MEMORY_REGION_TYPE_CONFIG,
+                     SPMI_MAPPING_TABLE_REG(255),sizeof(UINT32))) return CR_INVALID_PARAMETER;
 
   for (i = 0; i < SPMI_MAPPING_TABLE_TREE_DEPTH; ++i) {
     Data =

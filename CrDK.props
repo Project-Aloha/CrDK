@@ -3,7 +3,7 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <CRANE_CRDK_DIR_NAME>CrDK</CRANE_CRDK_DIR_NAME>
-    <CRANE_CRDK_PATH>$(MSBuildThisFileDirectory)/../$(CRANE_CRDK_DIR_NAME)/</CRANE_CRDK_PATH>
+    <CRANE_CRDK_PATH Condition="'$(CRANE_CRDK_PATH)' == ''">$(MSBuildThisFileDirectory)</CRANE_CRDK_PATH>
     <CRANE_CRDK_INCLUDE_DIR>$(CRANE_CRDK_PATH)/Include</CRANE_CRDK_INCLUDE_DIR>
     <CRANE_CRDK_LIBRARY_DIR>$(CRANE_CRDK_PATH)/Library</CRANE_CRDK_LIBRARY_DIR>
   </PropertyGroup>
@@ -14,7 +14,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WppAdditionalIncludeDirectories>$(MSBuildProjectDirectory);%(WppAdditionalIncludeDirectories)</WppAdditionalIncludeDirectories>
-      <WppPreprocessorDefinitions>CR_LOG_CHAR8_STR_FMT="%s"</WppPreprocessorDefinitions>
+      <WppPreprocessorDefinitions>CR_LOG_CHAR8_STR_FMT="%s";CR_LOG_STATUS_FMT="%!STATUS!";CR_LOG_HEX64_FMT="%I64x";CR_LOG_UINT64_FMT="%I64u";%(WppPreprocessorDefinitions)</WppPreprocessorDefinitions>
     </ClCompile>
     <PostBuildEvent>
       <Command>
