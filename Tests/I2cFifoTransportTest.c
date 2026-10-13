@@ -6,7 +6,7 @@
 
 static UINT32 Registers[0x1000 / 4];
 static UINT32 Registers0[0x1000 / 4];
-static UINT32 CommandCount;
+static UINT32 CommandCount, PinControlWrites, PinIoWrites;
 static UINT32 PinMask, ClockCalls[2];
 static GpioDeviceContext *PinContext;
 static UINT32 PinControl[208], PinIo[208];
@@ -89,8 +89,8 @@ UINT32 EFIAPI MmioWrite32 (UINTN Address, UINT32 Value) {
     UINTN Pin = (Address - 0xF100000U) / 0x1000U;
     assert(Pin == 32 || Pin == 33 || Pin == 206 || Pin == 207);
     assert((Address & 0xFFFU) == 0 || (Address & 0xFFFU) == 4);
-    if (Address & 4U) PinIo[Pin] = Value;
-    else PinControl[Pin] = DropEgpioOwner ? Value & ~BIT12 : Value;
+    if (Address & 4U) { ++PinIoWrites; PinIo[Pin] = Value; }
+    else { ++PinControlWrites; PinControl[Pin] = DropEgpioOwner ? Value & ~BIT12 : Value; }
     return Value;
   }
   BOOLEAN Qup0 = Address >= 0x994000 && Address < 0x995000;
@@ -186,6 +186,40 @@ int main (void) {
       (BIT (4) | BIT (6) | BIT (22) | BIT (23) | BIT (24) |
        BIT (25) | BIT (28) | BIT (29)));
   assert (mSeOwners[1][1].Busy == 0);
+  /* Every request still owns/votes/releases the SE and rechecks the live
+     route. An unchanged input pinmux must not cause another TLMM write. */
+  UINT32 PinWritesBefore = PinControlWrites, CommandsBefore = CommandCount;
+  UINT32 VotesBefore = IccVoteCalls;
+  for (UINT32 Request = 0; Request < 64; ++Request) {
+    assert(I2cCrFifoMuTransfer(&Instance.Protocol,&Config,Descriptors,2,
+        NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+    assert(PinControlWrites==PinWritesBefore && PinIoWrites==0);
+    assert(!mSeOwners[1][1].Busy && !IccAcquiredMask && !IccVotedMask);
+  }
+  assert(CommandCount==CommandsBefore+128 && IccVoteCalls==VotesBefore+64*3);
+  /* No cached 'configured' flag: changes to mux/OE/pull each require
+     exactly one repair write, with the other pin remaining untouched. */
+  UINT32 DriftBits[] = {BIT2, BIT9, BIT0};
+  for (UINTN Field = 0; Field < ARRAY_SIZE(DriftBits); ++Field) {
+    PinControl[32] ^= DriftBits[Field];
+    assert(I2cCrFifoMuTransfer(&Instance.Protocol,&Config,Descriptors,2,
+        NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+    assert(PinControlWrites==++PinWritesBefore && PinIoWrites==0);
+  }
+  /* The stock target inherits drive strength. Do not mistake an unspecified
+     field for a zero-valued drive request, or rewrite it just to remove logs. */
+  PinControl[32] ^= BIT6;
+  assert(I2cCrFifoMuTransfer(&Instance.Protocol,&Config,Descriptors,2,
+      NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+  assert(PinControlWrites==PinWritesBefore && (PinControl[32]&BIT6));
+  CR_TARGET_QUP_I2C_ENDPOINT FixedDrive=*Instance.Target;
+  FixedDrive.Pins[0].DriveStrength=GPIO_DRIVE_STRENGTH_2MA;
+  Instance.Target=&FixedDrive;
+  assert(I2cCrFifoMuTransfer(&Instance.Protocol,&Config,Descriptors,2,
+      NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+  assert(PinControlWrites==++PinWritesBefore && !(PinControl[32]&0x1C0U));
+  Instance.Target=&mSm8450I2c[0];
+  puts("FIFO pinmux: 64 no-write transfers, four live-route repairs and inherited drive preservation passed");
   /* Exercise the real repeated-start adapter and error cleanup: terminal
      read NACK is valid, address/write NACK and independent GP errors are not. */
   InjectCommand = I2C_CMD_READ;
@@ -241,6 +275,14 @@ int main (void) {
   assert (Instance0.FifoDepth == 8 && Instance.FifoDepth == 16);
   assert (Registers0[SE_RX_RFR_WATERMARK / 4] == 8 && Registers[SE_RX_RFR_WATERMARK / 4] == 16);
   assert (!mSeOwners[0][5].Busy && !mSeOwners[1][1].Busy && !IccAcquiredMask);
+  PinWritesBefore=PinControlWrites;
+  assert(I2cCrFifoMuTransfer(&Instance0.Protocol,&Config,Descriptors,2,
+       NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+  assert(PinControlWrites==PinWritesBefore && PinIoWrites==0);
+  PinControl[206] &= ~BIT12; /* Same mux, but the AP lost EGPIO ownership. */
+  assert(I2cCrFifoMuTransfer(&Instance0.Protocol,&Config,Descriptors,2,
+       NULL,NULL,0,&Transferred)==EFI_SUCCESS && Transferred==2);
+  assert(PinControlWrites==PinWritesBefore+1 && (PinControl[206]&BIT12));
   DropEgpioOwner=TRUE; PinControl[206]=PinControl[207]=BIT11;
   UINT32 BeforeCommands=CommandCount;
   assert(I2cCrFifoMuTransfer(&Instance0.Protocol,&Config,Descriptors,2,

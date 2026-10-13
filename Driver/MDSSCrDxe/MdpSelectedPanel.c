@@ -12,6 +12,10 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 
+/* Raw 12-bit panel level, not a measured luminance percentage. Only the
+ * explicitly selected R66451 command route uses this boot policy. */
+#define R66451_BOOT_BRIGHTNESS 1024U
+
 STATIC UINT32 mSelection;
 STATIC MDP_COMMAND_NATIVE mCommand;
 STATIC MDP_EXTENDED_OUTPUT mOutput;
@@ -36,13 +40,20 @@ STATIC EFI_STATUS GetPower(VOID *C,EFI_DISPLAY_POWER_STATE *State){
 }
 STATIC VOID StartupComplete(VOID *C,EFI_STATUS Status){
   MDP_EXTENDED_OUTPUT *O=C;
-  if(O!=&mOutput||O->Exiting)return;
+  if(O!=&mOutput||O->Exiting||O->Published)return;
   if(Status!=EFI_SUCCESS){
     DEBUG((DEBUG_ERROR,"MDSSCr: command first-frame completion %r stage=%u retained=%u\n",
       Status,mCommand.Stage,MdpSelectedPanelRetained()));
     return;
   }
-  EFI_STATUS S=MdpExtendedOutputPublishPipeline(O);
+  /* The stock sleep-out/display-on sequence does not set DCS brightness.
+   * This callback runs after the first real frame and outside the core gate;
+   * use the existing serialized command owner, not a direct DSI write. */
+  EFI_STATUS S=Exact(MdpCommandNativeBrightness(&mCommand,R66451_BOOT_BRIGHTNESS));
+  DEBUG((S==EFI_SUCCESS?DEBUG_WARN:DEBUG_ERROR,
+    "MDSSCr: R66451 boot brightness level=%u status=%r\n",R66451_BOOT_BRIGHTNESS,S));
+  if(S!=EFI_SUCCESS||O->Exiting)return;
+  S=MdpExtendedOutputPublishPipeline(O);
   DEBUG((S==EFI_SUCCESS?DEBUG_WARN:DEBUG_ERROR,
     "MDSSCr: command first-frame GOP publication %r %ux%u CPU=%lx IOVA=%lx\n",
     S,O->Info.HorizontalResolution,O->Info.VerticalResolution,O->Mode.FrameBufferBase,mCommand.Resources.FrameIova));
