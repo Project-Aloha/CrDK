@@ -225,7 +225,7 @@ ClockRcg2SetRate(
 
   if (TargetFreq == NULL) {
     log_err(
-        "No suitable frequency found for requested rate %lu Hz for clock " CR_LOG_CHAR8_STR_FMT,
+        "No suitable frequency found for requested rate " CR_LOG_UINT64_FMT " Hz for clock " CR_LOG_CHAR8_STR_FMT,
         RateHz, TargetClockNode->Name);
     return CR_NOT_FOUND;
   }

@@ -238,7 +238,7 @@
     "Library/ClockExternalLib/ClockExternalLease.c": "850d611f82f4309246b4040823f4cad52d01579e83f1670067dc1ede3e96f3b9",
     "Library/ClockExternalLib/ClockExternalLib.props": "d4cf70415276edac44c48a086d52fb63da5f3adebf9fcfa27d2955256a7be8a8",
     "Library/ClockExternalLib/ClockExternalPlan.c": "cbfea0180264efb79a2a6a58a9de274c98b6cf32b0aa0f2f755fa97f09a4a5e0",
-    "Library/ClockLib/clock.c": "20b3e6981f57468da8e886db366085e9e4c3fddc7dc765a0e42d07fa1c3efe11",
+    "Library/ClockLib/clock.c": "9d379951176caebeee8f2f277c85907103c82afbbd54c3d07ff0d40f320869e1",
     "Library/ClockLib/clock.props": "fca0e320bf631c7ba032f879cc9bc7037d2f9419758f8dfcd4796e8431bdf258",
     "Library/ClockLib/clock_config.c": "beeff69e047d956bcb566dcbaa5bf93919b46feb770891bcedc5fd97401f3ae8",
     "Library/ClockLib/clock_internal.h": "48d89eef46b9e63262a2bf2b6d38a7290aeeb72acc2ce9a6c772175da21df3f5",
