@@ -95,17 +95,10 @@ VOID GpioSetConfig(
     return;
   }
 
-  log_info(
-      CR_LOG_CHAR8_STR_FMT
-      ": Configuring GPIO %d: FuncSel=%d, OutputEnable=%d, Pull=%d, "
-      "DriveStrength=%d, OutputValue=%d",
-      __FUNCTION__, ConfigParams->PinNumber, ConfigParams->FunctionSel,
-      ConfigParams->OutputEnable, ConfigParams->Pull,
-      ConfigParams->DriveStrength, ConfigParams->OutputValue);
-
   // Read current control register
   UINT32 GpioCtlRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
       GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber));
+  UINT32 OriginalCtlRegVal = GpioCtlRegVal;
   GpioConfigRegInfo *PinRegCfg =
       GpioContext->GpioPins[ConfigParams->PinNumber].pRegCfg;
   UINT32 GpioIoRegVal = 0;
@@ -159,6 +152,21 @@ VOID GpioSetConfig(
     GpioCtlRegVal =
         (CLR_BITS(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) |
          SET_FIELD(ConfigParams->DriveStrength, PinRegCfg->DriveStrengthMsk));
+
+  /* Compare the resolved live control word, including EGPIO AP ownership,
+     rather than caching that a consumer configured this pin once. The caller's
+     lease/reservation checks and its post-call readback still apply. Keep
+     explicit output-latch writes unchanged, even when the mux is identical. */
+  if (!WriteOutput && GpioCtlRegVal == OriginalCtlRegVal)
+    return;
+
+  log_info(
+      CR_LOG_CHAR8_STR_FMT
+      ": Configuring GPIO %d: FuncSel=%d, OutputEnable=%d, Pull=%d, "
+      "DriveStrength=%d, OutputValue=%d",
+      __FUNCTION__, ConfigParams->PinNumber, ConfigParams->FunctionSel,
+      ConfigParams->OutputEnable, ConfigParams->Pull,
+      ConfigParams->DriveStrength, ConfigParams->OutputValue);
 
   // Preload the output latch before enabling the driver or changing its mux.
   if (WriteOutput) {
