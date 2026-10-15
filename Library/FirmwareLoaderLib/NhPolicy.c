@@ -1,6 +1,34 @@
 /* SPDX-License-Identifier: MIT. One selection policy for Windows and UEFI. */
 #include <Library/FirmwareLoaderLib/NhPolicy.h>
+#include <Library/FirmwareLoaderLib/NhBootSlot.h>
 #include "NhString.h"
+
+NH_STATUS NhBootSlotDecode(const void *record, size_t bytes,
+                          uint32_t attributes, uint32_t *slot) {
+  const uint8_t *raw = record;
+  uint32_t state, selected, sources;
+  if (!slot) return NH_INVALID;
+  *slot = NH_BOOT_SLOT_UNKNOWN;
+  if (!record) return NH_INVALID;
+  if (bytes != NH_BOOT_SLOT_RECORD_BYTES ||
+      attributes != NH_BOOT_SLOT_VARIABLE_ATTRIBUTES) return NH_CORRUPT;
+  if (NhU32(raw) != NH_BOOT_SLOT_SIGNATURE ||
+      NhU32(raw+4) != NH_BOOT_SLOT_VERSION ||
+      NhU32(raw+8) != NH_BOOT_SLOT_RECORD_BYTES ||
+      NhU32(raw+24) != NH_BOOT_SLOT_INITIALIZED || NhU32(raw+28))
+    return NH_CORRUPT;
+  state = NhU32(raw+12); selected = NhU32(raw+16); sources = NhU32(raw+20);
+  if (state > NH_BOOT_SLOT_CONFLICT || (sources & ~NH_BOOT_SLOT_SOURCES))
+    return NH_CORRUPT;
+  if (state == NH_BOOT_SLOT_VALID) {
+    if (selected > 1 || !sources) return NH_CORRUPT;
+    *slot = selected;
+    return NH_OK;
+  }
+  if (selected != NH_BOOT_SLOT_UNKNOWN) return NH_CORRUPT;
+  return (state == NH_BOOT_SLOT_UNAVAILABLE || state == NH_BOOT_SLOT_ABSENT)
+    ? NH_NOT_READY : NH_CORRUPT;
+}
 
 static NH_STATUS partition_name(char *name, uint32_t slot, uint32_t *needs) {
   size_t n = strlen(name);

@@ -56,12 +56,23 @@ qualified. No shared parser branch names a board model.
 
 ## Android update admission
 
-`NhBootControlSlot` validates Android's CRC-protected boot control and selected
-slot usability. `NhBootArgsSlot` parses a supplied boot-argument buffer and
-rejects conflicting slot keys. They do not prove that two raw reads were
-stable: repeated/pre/post reads and media identity comparisons remain adapter
-responsibilities. Slot arguments must not silently override conflicting disk
-slot state.
+The current boot slot comes from the immutable bootloader handoff. GPT active
+attributes can select the next boot and must not redirect this boot's firmware
+reads. `NhBootControlSlot` validates the specific AOSP CRC-protected structure;
+its existence does not make `misc + 2048` a universal Qualcomm slot authority.
+`NhBootArgsSlot` parses supplied command-line slot keys. The native adapter's
+AndroidBootCr parser additionally handles verified bootconfig and FDT values,
+rejecting contradictory sources instead of choosing an arbitrary one.
+
+`NhBootSlot.h` defines a 32-byte little-endian current-boot record for the
+`CrAndroidBootSlot` UEFI variable. The producer publishes it with boot-service
+and runtime access, without nonvolatile storage. Windows captures it once at
+driver initialization. `NhBootSlotDecode` rejects wrong length, signature,
+revision, attributes, state, slot, source bits, initialization flags and
+reserved fields. Missing or explicitly absent slot authority is not a missing
+firmware file and cannot authorize package fallback. This transport is
+provenance metadata, not an authentication mechanism. Stable storage identity
+and the independent snapshot check below remain adapter responsibilities.
 
 Runtime adapters currently require a valid 64-byte `misc_virtual_ab_message`
 with version 2, magic `0x56740AB0`, merge state `NONE`, and zero reserved bytes

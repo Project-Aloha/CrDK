@@ -76,6 +76,7 @@
     "Include/Library/Dwc3CrLib.h": "b3f3f2e20dd71d888f56ace8c1d8727431b46b6dfb60dbd55ceeb9f6feb61ce4",
     "Include/Library/Dwc3PowerCrLib.h": "8c2d477df894032a3ff2178f9f37aa6be968a98262aa7cee2b0fe8f2dbeb3810",
     "Include/Library/EpssCrLib.h": "65f12f56b0b32e4c4e2338e5f73f1843fc94a21b72062067a89655d99bb1294e",
+    "Include/Library/FirmwareLoaderLib/NhBootSlot.h": "360b52eaca3c5cdc041241b380fee6f08e135ac7dd82d399a828cf8491f2a622",
     "Include/Library/FirmwareLoaderLib/NhBundle.h": "e10ae6f6ee9ceabc2689454d97e38c9ca5e4312d61f09544977154c8ddb5f2d1",
     "Include/Library/FirmwareLoaderLib/NhFs.h": "8eae0152ceb6990a5742b7d63419420fa4e63022d865a5a52a522e8efba9dfe6",
     "Include/Library/FirmwareLoaderLib/NhPolicy.h": "50011e98254a03811aeea6b1e5ddc529a923e6b802c06f35d4f0eb87074b98de",
@@ -273,10 +274,10 @@
     "Library/FirmwareLoaderLib/NhFs.c": "5d2ea967eb5c312734f49d60c86bdab8e31bc1a39f7ce5886184725825f352e3",
     "Library/FirmwareLoaderLib/NhGpt.c": "0c52b987fc61719877a9917eef3248ac50e29a60820a6cbc6294277f86928980",
     "Library/FirmwareLoaderLib/NhInternal.h": "804f84528064f19215029cf50accba99b5a6e261ea4634b30363ddd6a6e2ed78",
-    "Library/FirmwareLoaderLib/NhPolicy.c": "60c10e416bcbc00e868f208853e7ce07436bbe9cc684c2ef308dfa166731938f",
+    "Library/FirmwareLoaderLib/NhPolicy.c": "5bc117a8df099dd6efe5d1c17a1319b99c12e4b41d43ddc1976aa99d2a464955",
     "Library/FirmwareLoaderLib/NhString.h": "9c08e56fc07606c9da1db7457412ebce3e5b53c46fbbf1aab90bfb7eb06c8de7",
     "Library/FirmwareLoaderLib/PROVENANCE.json": "31e5a7633ba6d9aa1631e1d92b7bafcc559ceeef7d81ccfefc189cb09e383ecd",
-    "Library/FirmwareLoaderLib/README.md": "9d062802a3b64750d6484aafd695675c124bab0add4fe96fd4cb7fc9ecf68ba1",
+    "Library/FirmwareLoaderLib/README.md": "aa87e9fe8964425233d1e324df052f3ccdf9ba1b69afeae14964bec82e4d498b",
     "Library/GpioConfigLib/GpioConfig.c": "21193e53da6e79f87fbcddd62d9d5ceae5e7842c67b68405e2689e6d48b25804",
     "Library/GpioConfigLib/GpioConfigLib.props": "d13274eb545648a2d0766a2d3187c7901d2810bbfb85d5a99a0e7a0fabf1d756",
     "Library/GpioLib/gpio.c": "53b0b8f808b1a370f74ddeed23100710dfe64b32df82b39cd54066d8920e984b",
@@ -491,12 +492,22 @@
       "Library/FirmwareLoaderLib/NhFs.c": "5d2ea967eb5c312734f49d60c86bdab8e31bc1a39f7ce5886184725825f352e3",
       "Library/FirmwareLoaderLib/NhGpt.c": "0c52b987fc61719877a9917eef3248ac50e29a60820a6cbc6294277f86928980",
       "Library/FirmwareLoaderLib/NhInternal.h": "804f84528064f19215029cf50accba99b5a6e261ea4634b30363ddd6a6e2ed78",
-      "Library/FirmwareLoaderLib/NhPolicy.c": "60c10e416bcbc00e868f208853e7ce07436bbe9cc684c2ef308dfa166731938f",
+      "Library/FirmwareLoaderLib/NhPolicy.c": "5bc117a8df099dd6efe5d1c17a1319b99c12e4b41d43ddc1976aa99d2a464955",
       "Library/FirmwareLoaderLib/NhString.h": "9c08e56fc07606c9da1db7457412ebce3e5b53c46fbbf1aab90bfb7eb06c8de7",
       "Library/FirmwareLoaderLib/PROVENANCE.json": "31e5a7633ba6d9aa1631e1d92b7bafcc559ceeef7d81ccfefc189cb09e383ecd",
-      "Library/FirmwareLoaderLib/README.md": "9d062802a3b64750d6484aafd695675c124bab0add4fe96fd4cb7fc9ecf68ba1"
+      "Library/FirmwareLoaderLib/README.md": "aa87e9fe8964425233d1e324df052f3ccdf9ba1b69afeae14964bec82e4d498b",
+      "Include/Library/FirmwareLoaderLib/NhBootSlot.h": "360b52eaca3c5cdc041241b380fee6f08e135ac7dd82d399a828cf8491f2a622"
     },
     "source_catalog_sha256": "a19ffac1af4e57ae07a648ba9702eb0420415358879c2f9a2fb231fc775cce9c",
     "validation": "Actual-source ASan/UBSan, independent liuqin/super/F2FS oracle, and nine UEFI ARM64 compile units"
+  },
+  "boot_slot_handoff": {
+    "sdk_parent": "d39fc7d5b7e37a425afd012e238cebc975c2a3e4",
+    "source_files": {
+      "Include/Library/FirmwareLoaderLib/NhBootSlot.h": "360b52eaca3c5cdc041241b380fee6f08e135ac7dd82d399a828cf8491f2a622",
+      "Library/FirmwareLoaderLib/NhPolicy.c": "5bc117a8df099dd6efe5d1c17a1319b99c12e4b41d43ddc1976aa99d2a464955",
+      "Library/FirmwareLoaderLib/README.md": "aa87e9fe8964425233d1e324df052f3ccdf9ba1b69afeae14964bec82e4d498b"
+    },
+    "scope": "Current-boot volatile slot record only; no peripheral code export"
   }
 }
