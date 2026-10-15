@@ -1,0 +1,74 @@
+{
+  "origin": "CrWDDK/NhlosPartition/Core",
+  "revision": "2189466aa914f6335baceeed7cbb324d18a19891",
+  "migration": "Single canonical shared Win/UEFI implementation; initial migration changes header paths only. Subsequent portability/policy changes are documented in README.md.",
+  "files": [
+    {
+      "source": "NhlosPartition/Core/NhFat.c",
+      "source_sha256": "165ddc81db28fba28e7037ec490e2ae3c00d7013935a1027d43b290fdc702804",
+      "destination": "Library/FirmwareLoaderLib/NhFat.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhBundle.h",
+      "source_sha256": "becb2ab0d43d63074d766bf87c7bd23b35a122ed80863eed18059d1b9b94486d",
+      "destination": "Include/Library/FirmwareLoaderLib/NhBundle.h"
+    },
+    {
+      "source": "NhlosPartition/Core/NhErofs.c",
+      "source_sha256": "1507ef7bb783951dc7b10797e42b550a2f67ad1387be19d233dbe0a6b034357e",
+      "destination": "Library/FirmwareLoaderLib/NhErofs.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhExt4.c",
+      "source_sha256": "2ae56ae02fbe5b5dfc567ffc9ca481e914330b2698b9ca90f649c39214ec9bfd",
+      "destination": "Library/FirmwareLoaderLib/NhExt4.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhFs.h",
+      "source_sha256": "9313a941c46838ecb27df5c4b288da1d194893d525dfce317a0217ef8568d938",
+      "destination": "Include/Library/FirmwareLoaderLib/NhFs.h"
+    },
+    {
+      "source": "NhlosPartition/Core/NhBundle.c",
+      "source_sha256": "b9ba6e114c7b30996840b75e09ccb85c792ae8369c3b2383b2a6cfd32fc5b74c",
+      "destination": "Library/FirmwareLoaderLib/NhBundle.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhF2fs.c",
+      "source_sha256": "0afe856d627fe8ba9099c0415eadd9692e3acaa3de858e7172123757d6b995d8",
+      "destination": "Library/FirmwareLoaderLib/NhF2fs.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhBase.c",
+      "source_sha256": "39a2829c9da9fcb42f05b112c72bd0a7cee2df29af45eae60b1a9b1421bf5233",
+      "destination": "Library/FirmwareLoaderLib/NhBase.c"
+    },
+    {
+      "source": "NhlosPartition/Core/NhInternal.h",
+      "source_sha256": "cad2df4aeab52be6e034f95bdb639d7ab8baa4ab973a7d599f2eac7549f2a674",
+      "destination": "Library/FirmwareLoaderLib/NhInternal.h"
+    },
+    {
+      "source": "NhlosPartition/Core/NhFs.c",
+      "source_sha256": "5d2ea967eb5c312734f49d60c86bdab8e31bc1a39f7ce5886184725825f352e3",
+      "destination": "Library/FirmwareLoaderLib/NhFs.c"
+    }
+  ],
+  "changes": [
+    "UEFI type/string glue without a second parser",
+    "Declared filesystem byte limits for all four readers",
+    "Preserve validated LP Flags on logical absence",
+    "Shared Android slot, candidate and absence-only bundle policy",
+    "Read-only GPT lookup with redundant metadata validation"
+  ],
+  "retired_unselected_draft": [
+    {
+      "path": "Include/Library/AndroidFirmwareCrLib.h",
+      "sha256": "601859a991c901483c52fcbc8988883a86e1da28e2d150a4d0af2ab37a2859a7"
+    },
+    {
+      "path": "Library/AndroidFirmwareCrLib/AndroidFirmware.c",
+      "sha256": "32bef3542065223a8af3110b3ab8fd9417dfe2d8cb112b8d6d1703c849299f73"
+    }
+  ]
+}

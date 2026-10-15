@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = FirmwareLoaderLib
+  FILE_GUID = 3E7A92F4-26D0-4BD8-A5ED-945B2A53D647
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = FirmwareLoaderLib
+[Sources]
+  NhBase.c
+  NhBundle.c
+  NhErofs.c
+  NhExt4.c
+  NhF2fs.c
+  NhFat.c
+  NhFs.c
+  NhGpt.c
+  NhPolicy.c
+[Packages]
+  MdePkg/MdePkg.dec
+  CranePkg/CranePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+[BuildOptions]
+  GCC:*_*_*_CC_FLAGS = -DNH_FIRMWARE_UEFI
+  MSFT:*_*_*_CC_FLAGS = /DNH_FIRMWARE_UEFI
+  CLANGPDB:*_*_*_CC_FLAGS = -DNH_FIRMWARE_UEFI

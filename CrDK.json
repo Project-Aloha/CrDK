@@ -764,6 +764,22 @@
         "AdrenoStopCrLib"
       ],
       "native_only_sources": []
+    },
+    "FirmwareLoaderLib": {
+      "property_sheet": "Library/FirmwareLoaderLib/FirmwareLoaderLib.props",
+      "sources": [
+        "Library/FirmwareLoaderLib/NhBase.c",
+        "Library/FirmwareLoaderLib/NhBundle.c",
+        "Library/FirmwareLoaderLib/NhErofs.c",
+        "Library/FirmwareLoaderLib/NhExt4.c",
+        "Library/FirmwareLoaderLib/NhF2fs.c",
+        "Library/FirmwareLoaderLib/NhFat.c",
+        "Library/FirmwareLoaderLib/NhFs.c",
+        "Library/FirmwareLoaderLib/NhGpt.c",
+        "Library/FirmwareLoaderLib/NhPolicy.c"
+      ],
+      "dependencies": [],
+      "native_only_sources": []
     }
   },
   "header_roots": [
@@ -886,7 +902,8 @@
   "header_directories": [
     "Include/oskal",
     "Include/ucsi",
-    "Include/Interface"
+    "Include/Interface",
+    "Include/Library/FirmwareLoaderLib"
   ],
   "export_files": [
     "CrDK.props",
@@ -937,7 +954,12 @@
     "Library/Smp2pObserveCrLib/README.md",
     "Library/Smp2pObserveCrLib/LICENSE",
     "Library/AdrenoRouteCrLib/LICENSE",
-    "Library/AdrenoRouteCrLib/README.md"
+    "Library/AdrenoRouteCrLib/README.md",
+    "Library/FirmwareLoaderLib/FirmwareLoaderLib.inf",
+    "Library/FirmwareLoaderLib/README.md",
+    "Library/FirmwareLoaderLib/PROVENANCE.json",
+    "Library/FirmwareLoaderLib/LICENSES/MIT.txt",
+    "Library/FirmwareLoaderLib/LICENSES/GPL-2.0.txt"
   ],
   "native_libraries": [
     "CrDalLib",
@@ -1063,6 +1085,9 @@
       "AudioPrmCrLib",
       "Sm8450LpassAudioCrLib",
       "SoundWireCrLib"
+    ],
+    "NhlosPartition": [
+      "FirmwareLoaderLib"
     ]
   }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhBase.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhBundle.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhErofs.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhExt4.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhF2fs.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhFat.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhFs.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhGpt.c" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)NhPolicy.c" />
+  </ItemGroup>
+</Project>
